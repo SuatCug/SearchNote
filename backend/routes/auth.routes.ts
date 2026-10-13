@@ -4,6 +4,9 @@ import authenticate from '../middlewares/auth.middleware.ts';
 import validate from '../middlewares/validate.middleware.ts';
 import {
   registerRules,
+  signupCodeRules,
+  verifySignupCodeRules,
+  completeSignupRules,
   loginRules,
   verifyEmailRules,
   forgotPasswordRules,
@@ -18,6 +21,11 @@ router.post('/login', loginRules, validate, authController.login);
 router.get('/me', authenticate, authController.me);
 router.post('/verify-email', verifyEmailRules, validate, authController.verifyEmail);
 router.post('/resend-verification', authenticate, authController.resendVerification);
+
+// Mobil kayıt: e-postaya kod gönder → kodu doğrula → bilgilerle hesabı oluştur
+router.post('/register/send-code', signupCodeRules, validate, authController.sendSignupCode);
+router.post('/register/verify-code', verifySignupCodeRules, validate, authController.verifySignupCode);
+router.post('/register/complete', completeSignupRules, validate, authController.completeSignup);
 
 // Şifre sıfırlama: hesabı bul → kod gönder → kodu doğrula → yeni şifre
 router.post('/forgot-password/lookup', forgotPasswordRules, validate, authController.findResetAccount);

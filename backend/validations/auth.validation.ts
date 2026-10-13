@@ -17,12 +17,26 @@ const registerEmailRule = body('email')
     return true;
   });
 
-const registerRules = [
+// Kayıt formunun e-posta dışındaki alanları (web'deki tek adımlı kayıt ve mobildeki kodlu kayıt ortak kullanır).
+const profileRules = [
   body('fullName').trim().notEmpty().withMessage('Full name is required.').isLength({ max: 80 }),
-  registerEmailRule,
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters.'),
   body('university').trim().notEmpty().withMessage('University is required.').isLength({ max: 120 }),
   body('department').trim().notEmpty().withMessage('Department is required.').isLength({ max: 120 }),
+];
+
+// Sıra web formundakiyle aynı kalsın (ilk hata mesajı buna göre seçiliyor)
+const [fullNameRule, ...restProfileRules] = profileRules;
+const registerRules = [fullNameRule, registerEmailRule, ...restProfileRules];
+
+const codeRule = body('code').trim().matches(/^\d{6}$/).withMessage('Enter the 6-digit code.');
+
+// Mobil kayıt: e-postaya kod gönder → kodu doğrula → bilgilerle hesabı oluştur
+const signupCodeRules = [registerEmailRule];
+const verifySignupCodeRules = [registerEmailRule, codeRule];
+const completeSignupRules = [
+  body('signupToken').trim().notEmpty().withMessage('Sign-up session is required.'),
+  ...profileRules,
 ];
 
 const loginRules = [
@@ -37,14 +51,21 @@ const resetEmailRule = body('email').trim().toLowerCase().isEmail().withMessage(
 
 const forgotPasswordRules = [resetEmailRule];
 
-const verifyResetCodeRules = [
-  resetEmailRule,
-  body('code').trim().matches(/^\d{6}$/).withMessage('Enter the 6-digit code.'),
-];
+const verifyResetCodeRules = [resetEmailRule, codeRule];
 
 const resetPasswordRules = [
   body('resetToken').trim().notEmpty().withMessage('Reset token is required.'),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters.'),
 ];
 
-export { registerRules, loginRules, verifyEmailRules, forgotPasswordRules, verifyResetCodeRules, resetPasswordRules };
+export {
+  registerRules,
+  signupCodeRules,
+  verifySignupCodeRules,
+  completeSignupRules,
+  loginRules,
+  verifyEmailRules,
+  forgotPasswordRules,
+  verifyResetCodeRules,
+  resetPasswordRules,
+};

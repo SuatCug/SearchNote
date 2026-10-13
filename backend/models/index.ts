@@ -6,3 +6,4 @@ export { ContactMessage } from './contactMessage.model.ts';
 export { Conversation } from './conversation.model.ts';
 export { DirectMessage } from './directMessage.model.ts';
 export { Notification } from './notification.model.ts';
+export { SignupCode } from './signupCode.model.ts';

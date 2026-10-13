@@ -8,9 +8,9 @@ const createVerificationToken = () => {
 
 const hashToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 
-// Şifre sıfırlama kodu: 6 haneli (başında 0 olabilir). Hash'e kullanıcı id'si katılır ki
-// aynı kod farklı kullanıcılarda aynı hash'i vermesin.
-const createResetCode = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-const hashResetCode = (userId: string, code: string) => hashToken(`${userId}:${code}`);
+// E-postaya gönderilen 6 haneli kod (şifre sıfırlama / mobil kayıt; başında 0 olabilir).
+// Hash'e kullanıcı id'si ya da e-posta (scope) katılır ki aynı kod farklı hesaplarda aynı hash'i vermesin.
+const createOneTimeCode = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+const hashOneTimeCode = (scope: string, code: string) => hashToken(`${scope}:${code}`);
 
-export { createVerificationToken, hashToken, createResetCode, hashResetCode };
+export { createVerificationToken, hashToken, createOneTimeCode, hashOneTimeCode };

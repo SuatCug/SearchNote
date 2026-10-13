@@ -116,4 +116,25 @@ const sendPasswordResetCode = async (user: { email: string; fullName: string }, 
   });
 };
 
-export { sendVerificationEmail, sendPasswordResetCode, isMailConfigured };
+// Mobil uygulamada kayıt olmadan önce e-posta adresini doğrulamak için gönderilen kod (hesap henüz yok, isim bilinmiyor).
+const sendSignupCode = async (email: string, code: string, ttlMinutes: number) => {
+  if (!isMailConfigured()) {
+    console.log(`📧 [DEV] Sign-up code for ${email}: ${code}`);
+    return;
+  }
+
+  await sendMail({
+    to: email,
+    toName: email,
+    subject: `${code} is your SearchNote confirmation code`,
+    text: `Welcome to SearchNote!\n\nEnter this code in the app to confirm your email address:\n\n${code}\n\nThe code is valid for ${ttlMinutes} minutes. If you didn't try to sign up, you can ignore this email.`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1f2937">
+      <h2 style="color:#1e3050">Confirm your email</h2>
+      <p>Welcome to SearchNote! Enter this code in the app to confirm your email address:</p>
+      <p style="margin:28px 0;font-size:32px;font-weight:bold;letter-spacing:8px;color:#1e3050">${code}</p>
+      <p style="font-size:13px;color:#6b7280">The code is valid for ${ttlMinutes} minutes. If you didn't try to sign up, you can ignore this email.</p>
+    </div>`,
+  });
+};
+
+export { sendVerificationEmail, sendPasswordResetCode, sendSignupCode, isMailConfigured };
