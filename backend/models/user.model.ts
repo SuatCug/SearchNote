@@ -20,6 +20,12 @@ export interface IUser {
   isVerified: boolean;
   verificationTokenHash?: string;
   verificationTokenExpires?: Date;
+  resetCodeHash?: string;
+  resetCodeExpires?: Date;
+  resetCodeAttempts?: number;
+  resetCodeSentAt?: Date;
+  resetTokenHash?: string;
+  resetTokenExpires?: Date;
   createdAt: Date;
 }
 
@@ -79,6 +85,13 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     isVerified: { type: Boolean, default: false },
     verificationTokenHash: { type: String, select: false },
     verificationTokenExpires: { type: Date, select: false },
+    // Şifre sıfırlama: e-postaya gönderilen 6 haneli kodun hash'i ve kod doğrulanınca verilen kısa süreli token'ın hash'i.
+    resetCodeHash: { type: String, select: false },
+    resetCodeExpires: { type: Date, select: false },
+    resetCodeAttempts: { type: Number, select: false },
+    resetCodeSentAt: { type: Date, select: false },
+    resetTokenHash: { type: String, select: false },
+    resetTokenExpires: { type: Date, select: false },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },

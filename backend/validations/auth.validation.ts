@@ -32,4 +32,19 @@ const loginRules = [
 
 const verifyEmailRules = [body('token').trim().notEmpty().withMessage('Verification token is required.')];
 
-export { registerRules, loginRules, verifyEmailRules };
+// Şifre sıfırlama (mobil uygulamadaki "Forgot password?" akışı)
+const resetEmailRule = body('email').trim().toLowerCase().isEmail().withMessage('Please enter a valid email address.');
+
+const forgotPasswordRules = [resetEmailRule];
+
+const verifyResetCodeRules = [
+  resetEmailRule,
+  body('code').trim().matches(/^\d{6}$/).withMessage('Enter the 6-digit code.'),
+];
+
+const resetPasswordRules = [
+  body('resetToken').trim().notEmpty().withMessage('Reset token is required.'),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters.'),
+];
+
+export { registerRules, loginRules, verifyEmailRules, forgotPasswordRules, verifyResetCodeRules, resetPasswordRules };

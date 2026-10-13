@@ -8,4 +8,9 @@ const createVerificationToken = () => {
 
 const hashToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 
-export { createVerificationToken, hashToken };
+// Şifre sıfırlama kodu: 6 haneli (başında 0 olabilir). Hash'e kullanıcı id'si katılır ki
+// aynı kod farklı kullanıcılarda aynı hash'i vermesin.
+const createResetCode = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+const hashResetCode = (userId: string, code: string) => hashToken(`${userId}:${code}`);
+
+export { createVerificationToken, hashToken, createResetCode, hashResetCode };

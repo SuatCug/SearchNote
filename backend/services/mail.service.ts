@@ -96,4 +96,24 @@ const sendVerificationEmail = async (user: { email: string; fullName: string }, 
   });
 };
 
-export { sendVerificationEmail, isMailConfigured };
+const sendPasswordResetCode = async (user: { email: string; fullName: string }, code: string, ttlMinutes: number) => {
+  if (!isMailConfigured()) {
+    console.log(`📧 [DEV] Password reset code for ${user.email}: ${code}`);
+    return;
+  }
+
+  await sendMail({
+    to: user.email,
+    toName: user.fullName,
+    subject: `${code} is your SearchNote password reset code`,
+    text: `Hi ${user.fullName},\n\nWe received a request to reset your SearchNote password. Enter this code in the app:\n\n${code}\n\nThe code is valid for ${ttlMinutes} minutes. If you didn't request this, you can ignore this email — your password won't change.`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1f2937">
+      <h2 style="color:#1e3050">Reset your password</h2>
+      <p>Hi ${user.fullName}, we received a request to reset your SearchNote password. Enter this code in the app:</p>
+      <p style="margin:28px 0;font-size:32px;font-weight:bold;letter-spacing:8px;color:#1e3050">${code}</p>
+      <p style="font-size:13px;color:#6b7280">The code is valid for ${ttlMinutes} minutes. If you didn't request this, you can ignore this email — your password won't change.</p>
+    </div>`,
+  });
+};
+
+export { sendVerificationEmail, sendPasswordResetCode, isMailConfigured };
