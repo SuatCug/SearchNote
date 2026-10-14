@@ -8,6 +8,7 @@ import noteRoutes from './note.routes.ts';
 import groupRoutes from './group.routes.ts';
 import messageRoutes from './message.routes.ts';
 import notificationRoutes from './notification.routes.ts';
+import universityRoutes from './university.routes.ts';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ const router = Router();
 router.use('/auth', authRoutes);
 router.use('/contact', contactRoutes);
 router.use('/stats', statsRoutes);
+router.use('/universities', universityRoutes); // kayıt ekranındaki okul seçici de kullanır
 
 // İçerik endpoint'leri: e-postasını doğrulamamış oturumlar erişemez (doğrulama şartı açıksa).
 router.use(blockUnverified);

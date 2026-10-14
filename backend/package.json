@@ -13,6 +13,7 @@
     "typecheck": "tsc",
     "seed": "node scripts/seed.ts",
     "seed:clear": "node scripts/seed.ts --clear",
+    "sync:universities": "node scripts/syncUniversities.ts",
     "migrate:cloudinary": "node scripts/migrateToCloudinary.ts"
   },
   "keywords": [],
