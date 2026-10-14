@@ -1,7 +1,8 @@
 import { Schema, model } from 'mongoose';
 
 // Üniversite listesi (LinkedIn/Facebook'taki okul seçici gibi): kayıt ve profil ekranlarında aranıp seçilir.
-// Veri OpenAlex'ten (https://openalex.org, açık ve ücretsiz) bir kez içe aktarılır; bkz. services/university.service.ts.
+// Veri OpenAlex'ten (https://openalex.org, dünya geneli) içe aktarılır; Türkiye'deki ve YÖK'e bağlı (KKTC vb.) okullar
+// ise isimleri ve bölümleriyle birlikte YÖK Atlas'tan güncellenir. Bkz. services/university.service.ts, yok.service.ts.
 // Kullanıcı modelindeki `university` alanı yine düz metindir; bu liste sadece seçim kolaylığı ve isim birliği içindir.
 export interface IUniversity {
   openalexId: string;
@@ -13,6 +14,10 @@ export interface IUniversity {
   city: string;
   worksCount: number; // yayın sayısı: aramada büyük/bilinen okulları öne almak için
   tokens: string[]; // tüm isimlerin normalize edilmiş kelimeleri (kelime başı araması, index'li)
+  yokId?: number; // YÖK Atlas üniversite kimliği
+  yokSyncedAt?: Date; // son YÖK güncellemesi (YÖK listesinde artık olmayan Türkiye okulları gizlenir)
+  departments: string[]; // YÖK'teki lisans/önlisans bölümleri (diğer ülkelerde boş)
+  hidden: boolean; // kapanmış / adı değişmiş okullar: listede ve aramada görünmez
 }
 
 const universitySchema = new Schema<IUniversity>({
@@ -25,6 +30,10 @@ const universitySchema = new Schema<IUniversity>({
   city: { type: String, default: '' },
   worksCount: { type: Number, default: 0 },
   tokens: { type: [String], index: true },
+  yokId: { type: Number, index: true },
+  yokSyncedAt: Date,
+  departments: { type: [String], default: [] },
+  hidden: { type: Boolean, default: false },
 });
 
 universitySchema.index({ country: 1, name: 1 });

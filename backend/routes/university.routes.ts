@@ -7,6 +7,8 @@ const router = Router();
 // Yazdıkça istek atıldığı için IP başına bol ama sınırlı
 const searchLimit = rateLimit({ windowMs: 60 * 1000, max: 120, message: 'Too many searches. Please wait a moment.' });
 
+router.get('/countries', universityController.countries);
+router.get('/departments', universityController.departments);
 router.get('/', universityController.listByCountry);
 router.get('/search', searchLimit, universityController.search);
 
