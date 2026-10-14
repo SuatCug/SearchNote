@@ -16,7 +16,7 @@ const router = Router();
 router.use('/auth', authRoutes);
 router.use('/contact', contactRoutes);
 router.use('/stats', statsRoutes);
-router.use('/universities', universityRoutes); // kayıt ekranındaki okul seçici de kullanır
+router.use('/universities', universityRoutes); // okul ve bölüm seçici (kayıt ekranı da kullanır)
 
 // İçerik endpoint'leri: e-postasını doğrulamamış oturumlar erişemez (doğrulama şartı açıksa).
 router.use(blockUnverified);

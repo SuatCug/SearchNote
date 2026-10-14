@@ -1,33 +1,39 @@
 import { University } from '../models/index.ts';
-import { countryName } from '../utils/country.util.ts';
 import { normalize } from '../utils/normalize.util.ts';
 
-// Türkiye'deki (ve YÖK'e bağlı KKTC / yurt dışı) üniversiteler ve bölümleri: YÖK Atlas'ın açık JSON API'si.
+// Türkiye'deki üniversiteler ve bölümleri: YÖK Atlas'ın açık JSON API'si.
 // ÖSYM tercih kılavuzundaki tüm programlar (~21 bin satır; her bölüm × dil/burs türü) 5 istekte gelir.
-// OpenAlex'in Türkiye listesi eski kalabiliyor (yeni kurulan / adı değişen / kapanan okullar), bu yüzden
-// Türkiye için doğru kaynak YÖK: eşleşen okulların adı ve bölümleri güncellenir, eşleşmeyen YÖK okulları eklenir,
-// YÖK listesinde olmayan Türkiye okulları (kapanmış, eski adı) gizlenir.
+// Yurt dışındaki (KKTC vb.) YÖK'e bağlı okullar şimdilik alınmaz.
 const YOK_URL = 'https://yokatlas.yok.gov.tr/api/tercih-kilavuz/search';
 const PAGE_SIZE = 5000;
 
 interface YokProgram {
   universiteId: number;
   universiteAdi: string; // "ABDULLAH GÜL ÜNİVERSİTESİ (KAYSERİ)"
-  uniIlAdi: string | null;
+  uniIlAdi: string | null; // yurt dışındakilerde boş, KKTC'dekilerde "KIBRIS"
   birimGrupAdi: string; // bölüm: "Bilgisayar Mühendisliği" (dil/burs eki olmadan)
   birimTuruAdi: string; // "LISANS" | "ÖNLISANS"
 }
 
-// Yurt dışındaki YÖK'e bağlı okullar: parantez içindeki yere göre ülke
-const FOREIGN_COUNTRIES: [RegExp, string][] = [
-  [/KKTC/, 'CY'],
-  [/BOSNA/, 'BA'],
-  [/KIRGIZ/, 'KG'],
-  [/MAKEDONYA/, 'MK'],
-  [/KAZAK/, 'KZ'],
-  [/ARNAVUT/, 'AL'],
-  [/AZERBAYCAN/, 'AZ'],
-];
+// Bilinen kısaltmalar: aramada "odtu", "itu" yazınca da bulunsun
+const ALIASES: Record<string, string[]> = {
+  'orta dogu teknik universitesi': ['ODTÜ', 'METU'],
+  'istanbul teknik universitesi': ['İTÜ', 'ITU'],
+  'yildiz teknik universitesi': ['YTÜ'],
+  'karadeniz teknik universitesi': ['KTÜ'],
+  'gebze teknik universitesi': ['GTÜ'],
+  'izmir yuksek teknoloji enstitusu': ['İYTE'],
+  'dokuz eylul universitesi': ['DEÜ'],
+  'tobb ekonomi ve teknoloji universitesi': ['TOBB ETÜ'],
+  'marmara universitesi': ['MÜ'],
+  'ondokuz mayis universitesi': ['OMÜ'],
+  'abdullah gul universitesi': ['AGÜ'],
+  'ankara yildirim beyazit universitesi': ['AYBÜ'],
+  'istanbul medeniyet universitesi': ['İMÜ'],
+  'mimar sinan guzel sanatlar universitesi': ['MSGSÜ'],
+  'eskisehir osmangazi universitesi': ['ESOGÜ'],
+  'kahramanmaras sutcu imam universitesi': ['KSÜ'],
+};
 
 const SMALL_WORDS = new Set(['ve', 'ile', 'de', 'da']);
 
@@ -47,8 +53,6 @@ const titleCase = (text: string) =>
     )
     .join(' ');
 
-const tokensOf = (names: string[]) => [...new Set(normalize(names.join(' ')).split(' ').filter(Boolean))];
-
 const fetchPrograms = async () => {
   const programs: YokProgram[] = [];
   for (let page = 0; ; page++) {
@@ -56,6 +60,7 @@ const fetchPrograms = async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filters: {}, page, size: PAGE_SIZE, sortBy: 'universiteAdi', direction: 'ASC' }),
+      signal: AbortSignal.timeout(120_000),
     });
     if (!res.ok) throw new Error(`YÖK Atlas request failed (${res.status}).`);
     const data = (await res.json()) as { content: YokProgram[]; last: boolean };
@@ -65,34 +70,17 @@ const fetchPrograms = async () => {
   return programs;
 };
 
-type ExistingDoc = { _id: unknown; openalexId: string; name: string; names: string[]; country: string };
-
-// YÖK adını mevcut (OpenAlex) kayıtla eşleştirir: önce birebir isim, sonra "sonu aynı" kuralı
-// ("Aydın Adnan Menderes Üniversitesi" ↔ "Adnan Menderes Üniversitesi"; en az iki kelimelik isimlerle, en uzunu).
-const findMatch = (key: string, candidates: ExistingDoc[], used: Set<string>) => {
-  let best: { doc: ExistingDoc; length: number } | null = null;
-  for (const doc of candidates) {
-    if (used.has(String(doc._id))) continue;
-    for (const n of [doc.name, ...doc.names].map(normalize)) {
-      if (n === key) return doc;
-      if (n.split(' ').length >= 2 && key.endsWith(` ${n}`) && (!best || n.length > best.length)) {
-        best = { doc, length: n.length };
-      }
-    }
-  }
-  return best?.doc ?? null;
-};
-
+// Türkiye'deki okulları ve bölümlerini YÖK'ten çekip yazar; YÖK listesinde olmayan (kapanmış) okulları siler.
 export const syncYok = async (log: (msg: string) => void = () => {}) => {
   const startedAt = new Date();
   const programs = await fetchPrograms();
   log(`YÖK: ${programs.length} programs`);
 
-  // Okul bazında grupla
-  // Okul bazında grupla: lisans bölümleri ve önlisans programları ayrı
-  type School = { rawName: string; city: string | null; bachelor: Set<string>; associate: Set<string> };
+  type School = { rawName: string; city: string; bachelor: Set<string>; associate: Set<string> };
   const schools = new Map<number, School>();
   for (const p of programs) {
+    // Sadece Türkiye: yurt dışındakilerde il boş, KKTC'dekilerin adında "(KKTC-...)" var
+    if (!p.uniIlAdi || /KKTC/.test(p.universiteAdi)) continue;
     const school = schools.get(p.universiteId) ?? {
       rawName: p.universiteAdi,
       city: p.uniIlAdi,
@@ -102,76 +90,29 @@ export const syncYok = async (log: (msg: string) => void = () => {}) => {
     (/^L/.test(p.birimTuruAdi) ? school.bachelor : school.associate).add(p.birimGrupAdi.trim());
     schools.set(p.universiteId, school);
   }
+  if (!schools.size) throw new Error('YÖK Atlas returned no universities.');
   const sorted = (set: Set<string>) => [...set].sort((a, b) => a.localeCompare(b, 'tr'));
 
-  // Eşleştirmede OpenAlex kayıtları (diğer adları ve yayın sayısıyla) YÖK'ün önceki çalıştırmada eklediklerinden önce gelir
-  const candidatesByCountry = new Map<string, ExistingDoc[]>();
-  const candidatesFor = async (country: string) => {
-    if (!candidatesByCountry.has(country)) {
-      const docs = await University.find({ country }).select('openalexId name names country').lean();
-      docs.sort((a, b) => Number(a.openalexId.startsWith('yok:')) - Number(b.openalexId.startsWith('yok:')));
-      candidatesByCountry.set(country, docs);
-    }
-    return candidatesByCountry.get(country)!;
-  };
-
-  const used = new Set<string>();
-  let matched = 0;
-  let added = 0;
-  for (const [yokId, school] of schools) {
-    const place = school.rawName.match(/\(([^)]*)\)/)?.[1] ?? '';
-    const foreign = !school.city || /KKTC/.test(place);
-    const country = foreign ? FOREIGN_COUNTRIES.find(([re]) => re.test(place))?.[1] : 'TR';
-    if (!country) {
-      log(`skipped (unknown country): ${school.rawName}`);
-      continue;
-    }
-    const plainName = school.rawName.replace(/\([^)]*\)/g, '').trim();
-    const key = normalize(plainName);
-    // Yurt dışındakilerde şehir parantezin ilk parçası: "(KKTC-GAZİMAĞUSA)" → Gazimağusa, "(BİŞKEK-KIRGIZİSTAN)" → Bişkek
-    const city = titleCase(
-      foreign ? (place.replace(/^KKTC-/, '').split('-')[0] ?? '').trim() : (school.city ?? '')
-    );
-
-    const match = findMatch(key, await candidatesFor(country), used);
-    const exactName = match && [match.name, ...match.names].find((n) => normalize(n) === key);
-    // Düzgün yazılmış bir isim varsa onu, yoksa YÖK'teki BÜYÜK HARFLİ adın düzeltilmiş halini kullan
-    const name = exactName && /Üniversitesi|Yüksekokulu/.test(exactName) ? exactName : titleCase(plainName);
-    const fields = {
+  const docs = [...schools].map(([yokId, school]) => {
+    const name = titleCase(school.rawName.replace(/\([^)]*\)/g, '').trim());
+    const aliases = ALIASES[normalize(name)] ?? [];
+    return {
+      yokId,
       name,
-      city,
+      aliases,
+      city: titleCase(school.city),
       departments: sorted(school.bachelor),
       associateDepartments: sorted(school.associate),
-      yokId,
+      tokens: [...new Set(normalize([name, ...aliases].join(' ')).split(' ').filter(Boolean))],
       yokSyncedAt: startedAt,
-      hidden: false,
     };
+  });
 
-    if (match) {
-      used.add(String(match._id));
-      const names = [...new Set([match.name, ...match.names])].filter((n) => n !== name);
-      await University.updateOne({ _id: match._id }, { $set: { ...fields, names, tokens: tokensOf([name, ...names]) } });
-      // Okul önceki bir çalıştırmada (OpenAlex verisi henüz yokken) YÖK'ten ayrı kayıt olarak eklendiyse o kopyayı sil
-      if (!match.openalexId.startsWith('yok:')) await University.deleteOne({ openalexId: `yok:${yokId}` });
-      matched++;
-    } else {
-      await University.updateOne(
-        { openalexId: `yok:${yokId}` },
-        {
-          $set: { ...fields, names: [], tokens: tokensOf([name]), country, countryName: countryName(country) },
-          $setOnInsert: { openalexId: `yok:${yokId}`, worksCount: 0 },
-        },
-        { upsert: true }
-      );
-      added++;
-    }
-  }
-
-  // YÖK listesinde olmayan Türkiye okulları: kapanmış ya da eski adıyla kalmış kayıtlar
-  const { modifiedCount: hidden } = await University.updateMany(
-    { country: 'TR', $or: [{ yokSyncedAt: { $exists: false } }, { yokSyncedAt: { $lt: startedAt } }] },
-    { $set: { hidden: true } }
-  );
-  log(`YÖK: ${matched} matched, ${added} added, ${hidden} hidden`);
-  return { matched, added, hidden };
+  // Liste her seferinde baştan yazılır (kapanan okullar düşer, eski sürümün kayıtları ve index'leri temizlenir).
+  // Kullanıcılar okul adını düz metin olarak sakladığı için kayıtların silinmesi kimseyi etkilemez.
+  await University.deleteMany({});
+  await University.syncIndexes();
+  await University.insertMany(docs, { ordered: false });
+  log(`YÖK: ${docs.length} universities`);
+  return docs.length;
 };
