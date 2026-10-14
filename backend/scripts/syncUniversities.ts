@@ -1,11 +1,11 @@
-// Türkiye'deki üniversiteleri ve bölümlerini YÖK Atlas'tan çekip MongoDB'ye yazar (tekrar çalıştırmak güvenlidir).
+// Türkiye'deki üniversiteleri ve bölümlerini YÖK Atlas'tan çekip data/universities-tr.json dosyasına yazar.
+// Liste veritabanında tutulmaz; yılda bir (yeni ÖSYM tercih kılavuzundan sonra) bu betikle yenilenip commit'lenir.
 //   npm run sync:universities
-// Not: Sunucu açılırken liste boşsa / 30 günden eskiyse bu işlem kendiliğinden yapılır; bu betik elle yenilemek içindir.
-import '../config/env.ts';
-import mongoose from 'mongoose';
-import connectDB from '../config/db.ts';
-import { syncYok } from '../services/yok.service.ts';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fetchYokUniversities } from '../services/yok.service.ts';
 
-await connectDB();
-await syncYok((msg) => console.log(`🎓 ${msg}`));
-await mongoose.disconnect();
+const universities = await fetchYokUniversities((msg) => console.log(`🎓 ${msg}`));
+const file = path.join(import.meta.dirname, '..', 'data', 'universities-tr.json');
+writeFileSync(file, `${JSON.stringify(universities, null, 1)}\n`);
+console.log(`✅ ${universities.length} universities written to data/universities-tr.json`);

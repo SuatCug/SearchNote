@@ -9,7 +9,7 @@ import connectDB from './config/db.ts';
 import routes from './routes/index.ts';
 import initSocket from './sockets/index.ts';
 import { notFound, errorHandler } from './middlewares/error.middleware.ts';
-import { ensureUniversities } from './services/university.service.ts';
+import { dropLegacyUniversityData } from './services/university.service.ts';
 
 const app = express();
 
@@ -49,6 +49,6 @@ connectDB().then(() => {
   server.listen(PORT, () => {
     console.log(`🚀 API + Socket.io running at http://localhost:${PORT}`);
   });
-  // İlk kurulumda üniversite listesini arka planda içe aktarır (liste doluysa hiçbir şey yapmaz)
-  void ensureUniversities();
+  // Üniversite listesi artık dosyada (data/universities-tr.json): eski sürümün MongoDB koleksiyonlarını siler
+  void dropLegacyUniversityData();
 });

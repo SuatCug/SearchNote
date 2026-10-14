@@ -6,7 +6,7 @@ import { User, Note } from '../models/index.ts';
 import { listNotes, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
 import { saveAvatar, removeFile } from '../services/storage.service.ts';
 import { parsePagination, buildPagination } from '../utils/pagination.util.ts';
-import { wordSearchMatch } from '../utils/regex.util.ts';
+import { exactRegex, wordSearchMatch } from '../utils/regex.util.ts';
 import { getExtension, matchesSignature } from '../utils/fileTypes.util.ts';
 import { isBlockedBetween } from '../services/block.service.ts';
 import { notify, removeNotification } from '../services/notification.service.ts';
@@ -138,28 +138,57 @@ const getActiveUsers = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, data: { users, total } });
 });
 
-// "Who to follow": henüz takip edilmeyen, aynı üniversite/bölümdekiler öncelikli, sonra en çok takipçisi olanlar.
+// "Who to follow": henüz takip edilmeyenler; aynı okul + aynı bölüm > aynı okul > aynı bölüm > diğerleri,
+// eşitlerde en çok takipçisi olan önde. Okul/bölüm karşılaştırması Türkçe karakter ve büyük/küçük harf duyarsız
+// ("ege universitesi" = "Ege Üniversitesi").
+//   ?limit=5 (en fazla 50)   ?scope=university → sadece aynı okuldakiler (kayıt sonrası "sınıf arkadaşlarını takip et")
+// Her kişide sameUniversity / sameDepartment döner (arayüz "aynı okul" etiketini gösterebilsin).
 const getSuggestions = asyncHandler<AuthedRequest>(async (req, res) => {
   const me = await User.findById(req.user.id).select('following blockedUsers university department');
   if (!me) throw new ApiError(404, 'User not found.');
   const base = excludeSelfAndBlocked(me);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 50);
+  const onlyUniversity = req.query.scope === 'university';
+  const university = me.university?.trim() ?? '';
+  const department = me.department?.trim() ?? '';
+  if (onlyUniversity && !university) return res.json({ success: true, data: { users: [] } });
+
+  const sameAs = (field: string, value: string) =>
+    value ? { $regexMatch: { input: { $ifNull: [field, ''] }, regex: exactRegex(value) } } : false;
 
   const users = await User.aggregate([
-    { $match: { ...base, _id: { $nin: [...base._id.$nin, ...me.following] } } },
+    {
+      $match: {
+        ...base,
+        _id: { $nin: [...base._id.$nin, ...me.following] },
+        ...(onlyUniversity ? { university: exactRegex(university) } : {}),
+      },
+    },
     {
       $addFields: {
         followersCount: { $size: '$followers' },
-        affinity: {
-          $add: [
-            { $cond: [{ $eq: ['$university', me.university] }, 2, 0] },
-            { $cond: [{ $eq: ['$department', me.department] }, 1, 0] },
-          ],
-        },
+        sameUniversity: sameAs('$university', university),
+        sameDepartment: sameAs('$department', department),
+      },
+    },
+    {
+      $addFields: {
+        affinity: { $add: [{ $cond: ['$sameUniversity', 2, 0] }, { $cond: ['$sameDepartment', 1, 0] }] },
       },
     },
     { $sort: { affinity: -1, followersCount: -1, _id: 1 } },
-    { $limit: 5 },
-    { $project: { fullName: 1, avatarUrl: 1, university: 1, department: 1, followersCount: 1 } },
+    { $limit: limit },
+    {
+      $project: {
+        fullName: 1,
+        avatarUrl: 1,
+        university: 1,
+        department: 1,
+        followersCount: 1,
+        sameUniversity: 1,
+        sameDepartment: 1,
+      },
+    },
   ]);
 
   res.json({ success: true, data: { users } });

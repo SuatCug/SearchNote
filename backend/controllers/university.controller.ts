@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import asyncHandler from '../utils/asyncHandler.ts';
 import { listDepartments, listUniversities } from '../services/university.service.ts';
 
@@ -6,24 +5,15 @@ import { listDepartments, listUniversities } from '../services/university.servic
 
 // GET /api/universities → Türkiye'deki tüm üniversiteler, alfabetik
 const list = asyncHandler(async (_req, res) => {
-  const universities = await listUniversities();
-  res.json({
-    success: true,
-    data: {
-      universities: universities.map((u) => ({ id: String(u._id), name: u.name, aliases: u.aliases, city: u.city })),
-    },
-  });
+  res.json({ success: true, data: { universities: listUniversities() } });
 });
 
 // GET /api/universities/departments?university=<id> (ya da ?name=<okul adı>) → bölüm listesi
 // source: 'university' (o okulun YÖK lisans + önlisans bölümleri), 'common' (Türkiye'nin klasik bölümleri)
 const departments = asyncHandler(async (req, res) => {
-  const id =
-    typeof req.query.university === 'string' && mongoose.isValidObjectId(req.query.university)
-      ? req.query.university
-      : null;
+  const id = typeof req.query.university === 'string' && req.query.university ? req.query.university : null;
   const name = typeof req.query.name === 'string' && req.query.name.trim() ? req.query.name : null;
-  res.json({ success: true, data: await listDepartments(id, name) });
+  res.json({ success: true, data: listDepartments(id, name) });
 });
 
 export { departments, list };

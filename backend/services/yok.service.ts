@@ -1,9 +1,9 @@
-import { University } from '../models/index.ts';
 import { normalize } from '../utils/normalize.util.ts';
 
 // Türkiye'deki üniversiteler ve bölümleri: YÖK Atlas'ın açık JSON API'si.
 // ÖSYM tercih kılavuzundaki tüm programlar (~21 bin satır; her bölüm × dil/burs türü) 5 istekte gelir.
 // Yurt dışındaki (KKTC vb.) YÖK'e bağlı okullar şimdilik alınmaz.
+// Sonuç veritabanına değil data/universities-tr.json dosyasına yazılır (scripts/syncUniversities.ts); liste yılda bir değişir.
 const YOK_URL = 'https://yokatlas.yok.gov.tr/api/tercih-kilavuz/search';
 const PAGE_SIZE = 5000;
 
@@ -70,9 +70,17 @@ const fetchPrograms = async () => {
   return programs;
 };
 
-// Türkiye'deki okulları ve bölümlerini YÖK'ten çekip yazar; YÖK listesinde olmayan (kapanmış) okulları siler.
-export const syncYok = async (log: (msg: string) => void = () => {}) => {
-  const startedAt = new Date();
+export interface UniversityRecord {
+  id: string; // YÖK üniversite kimliği
+  name: string;
+  aliases: string[];
+  city: string;
+  departments: string[]; // lisans
+  associateDepartments: string[]; // önlisans
+}
+
+// Türkiye'deki okulları ve bölümlerini YÖK'ten çeker (alfabetik)
+export const fetchYokUniversities = async (log: (msg: string) => void = () => {}): Promise<UniversityRecord[]> => {
   const programs = await fetchPrograms();
   log(`YÖK: ${programs.length} programs`);
 
@@ -93,26 +101,17 @@ export const syncYok = async (log: (msg: string) => void = () => {}) => {
   if (!schools.size) throw new Error('YÖK Atlas returned no universities.');
   const sorted = (set: Set<string>) => [...set].sort((a, b) => a.localeCompare(b, 'tr'));
 
-  const docs = [...schools].map(([yokId, school]) => {
-    const name = titleCase(school.rawName.replace(/\([^)]*\)/g, '').trim());
-    const aliases = ALIASES[normalize(name)] ?? [];
-    return {
-      yokId,
-      name,
-      aliases,
-      city: titleCase(school.city),
-      departments: sorted(school.bachelor),
-      associateDepartments: sorted(school.associate),
-      tokens: [...new Set(normalize([name, ...aliases].join(' ')).split(' ').filter(Boolean))],
-      yokSyncedAt: startedAt,
-    };
-  });
-
-  // Liste her seferinde baştan yazılır (kapanan okullar düşer, eski sürümün kayıtları ve index'leri temizlenir).
-  // Kullanıcılar okul adını düz metin olarak sakladığı için kayıtların silinmesi kimseyi etkilemez.
-  await University.deleteMany({});
-  await University.syncIndexes();
-  await University.insertMany(docs, { ordered: false });
-  log(`YÖK: ${docs.length} universities`);
-  return docs.length;
+  return [...schools]
+    .map(([yokId, school]) => {
+      const name = titleCase(school.rawName.replace(/\([^)]*\)/g, '').trim());
+      return {
+        id: String(yokId),
+        name,
+        aliases: ALIASES[normalize(name)] ?? [],
+        city: titleCase(school.city),
+        departments: sorted(school.bachelor),
+        associateDepartments: sorted(school.associate),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'tr'));
 };
