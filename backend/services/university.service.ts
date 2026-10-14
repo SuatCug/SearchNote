@@ -13,7 +13,7 @@ const UNIVERSITIES = readData<UniversityRecord[]>('universities-tr.json');
 const BY_ID = new Map(UNIVERSITIES.map((u) => [u.id, u]));
 const BY_NAME = new Map(UNIVERSITIES.map((u) => [normalize(u.name), u]));
 // Okul listede yoksa (elle yazılmışsa): Türkiye'nin klasik lisans bölümleri (en az 5 üniversitede okutulanlar)
-const COMMON_DEPARTMENTS = readData<string[]>('departments-tr.json');
+const COMMON_DEPARTMENTS = readData<string[]>('departments-common.json');
 
 // Liste ekranı için bölümler olmadan (hafif)
 const LIST = UNIVERSITIES.map(({ id, name, aliases, city }) => ({ id, name, aliases, city }));

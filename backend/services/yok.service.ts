@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { normalize } from '../utils/normalize.util.ts';
 
 // Türkiye'deki üniversiteler ve bölümleri: YÖK Atlas'ın açık JSON API'si.
@@ -6,6 +8,23 @@ import { normalize } from '../utils/normalize.util.ts';
 // Sonuç veritabanına değil data/universities-tr.json dosyasına yazılır (scripts/syncUniversities.ts); liste yılda bir değişir.
 const YOK_URL = 'https://yokatlas.yok.gov.tr/api/tercih-kilavuz/search';
 const PAGE_SIZE = 5000;
+
+// Uygulama İngilizce olduğu için bölüm adları İngilizce saklanır: YÖK'teki Türkçe ad → İngilizce
+// (data/department-names-en.json). Tabloda olmayan yeni bir bölüm çıkarsa Türkçe kalır ve betik uyarır.
+const DEPARTMENT_NAMES_EN: Record<string, string> = JSON.parse(
+  readFileSync(path.join(import.meta.dirname, '..', 'data', 'department-names-en.json'), 'utf8')
+);
+
+export const toEnglishDepartments = (names: Iterable<string>, missing?: Set<string>) =>
+  [
+    ...new Set(
+      [...names].map((n) => {
+        const en = DEPARTMENT_NAMES_EN[n];
+        if (!en) missing?.add(n);
+        return en ?? n;
+      })
+    ),
+  ].sort((a, b) => a.localeCompare(b, 'en'));
 
 interface YokProgram {
   universiteId: number;
@@ -99,9 +118,9 @@ export const fetchYokUniversities = async (log: (msg: string) => void = () => {}
     schools.set(p.universiteId, school);
   }
   if (!schools.size) throw new Error('YÖK Atlas returned no universities.');
-  const sorted = (set: Set<string>) => [...set].sort((a, b) => a.localeCompare(b, 'tr'));
 
-  return [...schools]
+  const missing = new Set<string>();
+  const universities = [...schools]
     .map(([yokId, school]) => {
       const name = titleCase(school.rawName.replace(/\([^)]*\)/g, '').trim());
       return {
@@ -109,9 +128,11 @@ export const fetchYokUniversities = async (log: (msg: string) => void = () => {}
         name,
         aliases: ALIASES[normalize(name)] ?? [],
         city: titleCase(school.city),
-        departments: sorted(school.bachelor),
-        associateDepartments: sorted(school.associate),
+        departments: toEnglishDepartments(school.bachelor, missing),
+        associateDepartments: toEnglishDepartments(school.associate, missing),
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+  if (missing.size) log(`⚠️ No English name for ${missing.size} departments (add to department-names-en.json): ${[...missing].join(', ')}`);
+  return universities;
 };
