@@ -1,14 +1,18 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { University } from '../models/index.ts';
+import { SyncState, University } from '../models/index.ts';
+import { countryAliases, countryName } from '../utils/country.util.ts';
 import { normalize } from '../utils/normalize.util.ts';
 import { syncYok } from './yok.service.ts';
 
 // Üniversite listesinin içe aktarılması ve aranması.
 // Kaynak: OpenAlex (type:education, ~30 bin kurum). 200'lük sayfalarla ~150 istek; anahtarsız ve ücretsiz kotada.
+// Türkiye'deki okullar ve bölümleri ayrıca YÖK Atlas'tan güncellenir (yok.service.ts).
 const OPENALEX_URL = 'https://api.openalex.org/institutions';
 const PAGE_SIZE = 200;
 const FIELDS = 'id,ror,display_name,display_name_alternatives,display_name_acronyms,geo,works_count';
+const SYNC_ID = 'openalex';
+const MAX_ATTEMPTS = 6;
 
 interface OpenAlexInstitution {
   id: string;
@@ -16,15 +20,19 @@ interface OpenAlexInstitution {
   display_name: string;
   display_name_alternatives: string[] | null;
   display_name_acronyms: string[] | null;
-  geo: { city: string | null; country_code: string | null; country: string | null } | null;
+  geo: { city: string | null; country_code: string | null } | null;
   works_count: number | null;
 }
+
+type OpenAlexPage = { meta: { count: number; next_cursor: string | null }; results: OpenAlexInstitution[] };
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const toUniversity = (inst: OpenAlexInstitution) => {
   const alternatives = inst.display_name_alternatives ?? [];
   const acronyms = inst.display_name_acronyms ?? [];
   const country = inst.geo?.country_code ?? '';
-  // Türkiye'deki okullarda Türkçe isim (kullanıcılar zaten "... Üniversitesi" diye yazıyor)
+  // Türkiye'deki okullarda Türkçe isim (YÖK adımı ayrıca resmi adı yazar)
   const turkish = country === 'TR' ? alternatives.find((n) => /Üniversitesi$/.test(n)) : undefined;
   const name = turkish ?? inst.display_name;
   const names = [...new Set([inst.display_name, ...alternatives, ...acronyms])].filter((n) => n !== name);
@@ -34,69 +42,124 @@ const toUniversity = (inst: OpenAlexInstitution) => {
     name,
     names,
     country,
-    countryName: country === 'TR' ? 'Türkiye' : (inst.geo?.country ?? ''),
+    countryName: country ? countryName(country) : '',
     city: inst.geo?.city ?? '',
     worksCount: inst.works_count ?? 0,
     tokens: [...new Set(normalize([name, ...names].join(' ')).split(' ').filter(Boolean))],
   };
 };
 
-// Tüm listeyi OpenAlex'ten çekip ekler/günceller (openalexId'ye göre upsert, tekrar çalıştırmak güvenli).
-export const syncUniversities = async (log: (msg: string) => void = () => {}) => {
-  let cursor = '*';
-  let total = 0;
-  while (cursor) {
-    const url = `${OPENALEX_URL}?filter=type:education&per-page=${PAGE_SIZE}&select=${FIELDS}&cursor=${encodeURIComponent(cursor)}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`OpenAlex request failed (${res.status}).`);
-    const page = (await res.json()) as { meta: { count: number; next_cursor: string | null }; results: OpenAlexInstitution[] };
-    if (!page.results.length) break;
-    await University.bulkWrite(
-      page.results.map((inst) => {
-        const doc = toUniversity(inst);
-        return { updateOne: { filter: { openalexId: doc.openalexId }, update: { $set: doc }, upsert: true } };
-      }),
-      { ordered: false }
-    );
-    total += page.results.length;
-    log(`${total} / ${page.meta.count}`);
-    cursor = page.meta.next_cursor ?? '';
+class PermanentError extends Error {}
+
+// Geçici hatalarda (istek sınırı, ağ, sunucu hatası) artan beklemeyle tekrar dener
+const getJson = async <T>(url: string): Promise<T> => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+      if (res.ok) return (await res.json()) as T;
+      const message = `OpenAlex request failed (${res.status}): ${(await res.text()).slice(0, 200)}`;
+      if (res.status !== 429 && res.status < 500) throw new PermanentError(message);
+      if (attempt >= MAX_ATTEMPTS) throw new Error(message);
+    } catch (error) {
+      if (error instanceof PermanentError || attempt >= MAX_ATTEMPTS) throw error;
+    }
+    await sleep(15_000 * attempt);
   }
+};
+
+// Okulu olan ülkeler ve okul sayıları (tek istek)
+const fetchCountryCounts = async () => {
+  const data = await getJson<{ group_by: { key: string; count: number }[] }>(
+    `${OPENALEX_URL}?filter=type:education&group_by=country_code&per-page=200`
+  );
+  return data.group_by
+    .map((g) => ({ code: g.key.split('/').pop() ?? '', count: g.count }))
+    .filter((g) => /^[A-Z]{2}$/.test(g.code))
+    .sort((a, b) => a.code.localeCompare(b.code));
+};
+
+// Dünya listesini OpenAlex'ten çekip ekler/günceller (openalexId'ye göre upsert, tekrar çalıştırmak güvenli).
+// OpenAlex anahtarsız kullanımda "cursor" ile sayfalamaya izin vermiyor ve sayfa numarasıyla en fazla 10 bin kayıt
+// veriyor; bu yüzden liste ülke ülke çekilir (en büyük ülke ~4.500 okul). Toplam ~300 istek.
+// İlerleme ("ülke:sayfa") her sayfadan sonra kaydedilir: `resume` ile yarım kalan aktarma kaldığı yerden devam eder.
+export const syncUniversities = async (log: (msg: string) => void = () => {}, { resume = false } = {}) => {
+  const state = resume ? await SyncState.findById(SYNC_ID).lean() : null;
+  const [resumeCountry = '', resumePage = '1'] = state && !state.done && state.cursor.includes(':') ? state.cursor.split(':') : [];
+  const countries = (await fetchCountryCounts()).filter((c) => c.code >= resumeCountry);
+  let total = 0;
+  for (const { code, count } of countries) {
+    const pages = Math.ceil(count / PAGE_SIZE);
+    for (let page = code === resumeCountry ? Number(resumePage) : 1; page <= pages; page++) {
+      await SyncState.updateOne(
+        { _id: SYNC_ID },
+        { $set: { cursor: `${code}:${page}`, done: false, updatedAt: new Date() } },
+        { upsert: true }
+      );
+      const data = await getJson<OpenAlexPage>(
+        `${OPENALEX_URL}?filter=type:education,country_code:${code}&per-page=${PAGE_SIZE}&page=${page}&select=${FIELDS}`
+      );
+      if (!data.results.length) break;
+      await University.bulkWrite(
+        data.results.map((inst) => {
+          const doc = toUniversity(inst);
+          return { updateOne: { filter: { openalexId: doc.openalexId }, update: { $set: doc }, upsert: true } };
+        }),
+        { ordered: false }
+      );
+      total += data.results.length;
+    }
+    log(`${code}: ${count} (${total} in this run)`);
+  }
+  await SyncState.updateOne({ _id: SYNC_ID }, { $set: { cursor: '', done: true, updatedAt: new Date() } }, { upsert: true });
   return total;
 };
 
 const YOK_REFRESH_MS = 30 * 24 * 60 * 60 * 1000;
+const RETRY_MS = 30 * 60 * 1000;
+let ensuring = false;
 
 // Sunucu açılışında, arka planda (istekleri bekletmez):
-// - liste boşsa (ilk kurulum) OpenAlex'ten dünya listesini içe aktarır,
-// - YÖK verisi hiç yoksa ya da 30 günden eskiyse Türkiye okullarını ve bölümlerini YÖK Atlas'tan günceller.
-export const ensureUniversities = async () => {
+// - dünya listesi hiç aktarılmadıysa ya da yarım kaldıysa OpenAlex'ten (kaldığı yerden) aktarır,
+// - ardından ya da YÖK verisi 30 günden eskiyse Türkiye okullarını ve bölümlerini YÖK Atlas'tan günceller
+//   (OpenAlex adımı Türkiye okullarının adlarını eskisiyle değiştirebildiği için her zaman ondan sonra).
+// Hata olursa 30 dakika sonra tekrar dener.
+export const ensureUniversities = async (): Promise<void> => {
+  if (ensuring) return;
+  ensuring = true;
   try {
-    if ((await University.estimatedDocumentCount()) === 0) {
-      console.log('🎓 University list is empty, importing from OpenAlex...');
-      const total = await syncUniversities();
-      console.log(`🎓 Imported ${total} universities.`);
+    const state = await SyncState.findById(SYNC_ID).lean();
+    let runYok = false;
+    if (!state?.done) {
+      console.log(`🎓 ${state ? 'Resuming' : 'Starting'} university import from OpenAlex...`);
+      const total = await syncUniversities((msg) => console.log(`🎓 OpenAlex ${msg}`), { resume: true });
+      console.log(`🎓 OpenAlex import finished (${total} in this run).`);
+      runYok = true;
     }
-    const fresh = await University.exists({ yokSyncedAt: { $gt: new Date(Date.now() - YOK_REFRESH_MS) } });
-    if (!fresh) {
+    if (!runYok) {
+      runYok = !(await University.exists({ yokSyncedAt: { $gt: new Date(Date.now() - YOK_REFRESH_MS) } }));
+    }
+    if (runYok) {
       console.log('🎓 Updating Turkish universities and departments from YÖK Atlas...');
       await syncYok((msg) => console.log(`🎓 ${msg}`));
     }
+    countriesCache = null;
   } catch (error) {
-    console.error('❌ University import failed:', (error as Error).message);
+    console.error('❌ University import failed, retrying in 30 minutes:', (error as Error).message);
+    setTimeout(() => void ensureUniversities(), RETRY_MS);
+  } finally {
+    ensuring = false;
   }
 };
 
 type Candidate = { name: string; names: string[]; tokens: string[]; country: string; worksCount: number };
 
-// Sıralama (küçük = üstte): adı yazılan kelimeyle tam başlayan ya da bir ismi/kısaltması birebir aynı olan >
-// adı yazılanla başlayan > bir kelimesi tam eşleşen > sadece kelime başlarıyla eşleşen.
-// "koç" → Koç Üniversitesi, Kocaeli'nin önünde; "mit" → Massachusetts Institute of Technology (kısaltması MIT).
+// Sıralama (küçük = üstte), eşitlerde bilinen (çok yayını olan) okul önde:
+// 0: adı ya da bir kısaltması birebir yazılan ("mit" → MIT, "odtu" → ODTÜ)
+// 1: yazılan her kelime tam kelime olarak geçen ("oxford" → University of Oxford, "koç" → Koç Üniversitesi)
+// 2: sadece kelime başlarıyla eşleşen ("harv" → Harvard, "koç" → Kocaeli)
 const scoreMatch = (u: Candidate, q: string, words: string[]) => {
-  const name = `${normalize(u.name)} `;
-  if (name.startsWith(`${q} `) || u.names.some((n) => normalize(n) === q)) return 0;
-  if (name.startsWith(q)) return 1;
-  return words.some((w) => u.tokens.includes(w)) ? 2 : 3;
+  if (normalize(u.name) === q || u.names.some((n) => normalize(n) === q)) return 0;
+  return words.every((w) => u.tokens.includes(w)) ? 1 : 2;
 };
 
 const MAX_CANDIDATES = 300;
@@ -124,49 +187,47 @@ export const searchUniversities = async (query: string, country: string | null, 
     .map(({ u }) => u);
 };
 
-// Ülke seçici: okulu olan ülkeler ve okul sayıları. Liste sadece içe aktarmayla değiştiği için bellekte tutulur.
-let countriesCache: { at: number; list: { code: string; name: string; count: number }[] } | null = null;
-const COUNTRIES_TTL = 6 * 60 * 60 * 1000;
+// Ülke seçici: okulu olan ülkeler, okul sayıları ve aramada kullanılacak diğer adları ("Almanya", "Turkey").
+// Liste sadece içe aktarmayla değişir; kısa süre bellekte tutulur.
+type CountryItem = { code: string; name: string; aliases: string[]; count: number };
+let countriesCache: { at: number; list: CountryItem[] } | null = null;
+const COUNTRIES_TTL = 10 * 60 * 1000;
 
 export const listCountries = async () => {
   if (countriesCache && Date.now() - countriesCache.at < COUNTRIES_TTL) return countriesCache.list;
-  const groups = await University.aggregate<{ _id: string; name: string; count: number }>([
+  const groups = await University.aggregate<{ _id: string; count: number }>([
     { $match: { country: { $ne: '' }, hidden: { $ne: true } } },
-    { $group: { _id: '$country', name: { $first: '$countryName' }, count: { $sum: 1 } } },
+    { $group: { _id: '$country', count: { $sum: 1 } } },
   ]);
   const list = groups
-    .map((g) => ({ code: g._id, name: g.name || g._id, count: g.count }))
+    .map((g) => ({ code: g._id, name: countryName(g._id), aliases: countryAliases(g._id), count: g.count }))
     .sort((a, b) => a.name.localeCompare(b.name, 'en'));
-  // İçe aktarma sürerken (liste eksikken) önbelleğe alma
-  if (list.length > 100) countriesCache = { at: Date.now(), list };
+  countriesCache = { at: Date.now(), list };
   return list;
 };
 
-// Bölüm listesi: okulun YÖK'teki bölümleri; yoksa Türkiye için tüm YÖK bölüm adları, diğer ülkeler için
-// genel İngilizce alan listesi (ABD Eğitim Bakanlığı CIP 2020, kamu malı; data/fields-of-study.json).
-// Listeler birkaç yüz/bin satır: hepsi bir kerede gönderilir, arama uygulamada yapılır.
-const FIELDS_OF_STUDY: string[] = JSON.parse(
-  readFileSync(path.join(import.meta.dirname, '..', 'data', 'fields-of-study.json'), 'utf8')
-);
-let turkishDepartmentsCache: { at: number; list: string[] } | null = null;
-
-const allTurkishDepartments = async () => {
-  if (turkishDepartmentsCache && Date.now() - turkishDepartmentsCache.at < COUNTRIES_TTL) return turkishDepartmentsCache.list;
-  const list = ((await University.distinct('departments', { country: 'TR' })) as string[]).sort((a, b) =>
-    a.localeCompare(b, 'tr')
-  );
-  if (list.length) turkishDepartmentsCache = { at: Date.now(), list };
-  return list;
-};
+// Bölüm listeleri:
+// - Türkiye'deki (YÖK'teki) okul: o okulun lisans bölümleri + önlisans programları
+// - Türkiye'de listede olmayan okul: Türkiye'nin klasik lisans bölümleri (en az 5 üniversitede okutulanlar, YÖK)
+// - Diğer ülkeler: klasik İngilizce bölüm listesi
+const readList = (file: string): string[] =>
+  JSON.parse(readFileSync(path.join(import.meta.dirname, '..', 'data', file), 'utf8'));
+const DEPARTMENTS_TR = readList('departments-tr.json');
+const DEPARTMENTS_EN = readList('departments-en.json');
 
 export const listDepartments = async (universityId: string | null, country: string | null) => {
   const university = universityId
-    ? await University.findById(universityId).select('departments country').lean()
+    ? await University.findById(universityId).select('departments associateDepartments country').lean()
     : null;
-  if (university?.departments.length) return { source: 'university' as const, departments: university.departments };
-  if ((university?.country ?? country) === 'TR') {
-    const departments = await allTurkishDepartments();
-    if (departments.length) return { source: 'country' as const, departments };
+  if (university && (university.departments?.length || university.associateDepartments?.length)) {
+    return {
+      source: 'university' as const,
+      departments: university.departments ?? [],
+      associateDepartments: university.associateDepartments ?? [],
+    };
   }
-  return { source: 'general' as const, departments: FIELDS_OF_STUDY };
+  if ((university?.country ?? country) === 'TR') {
+    return { source: 'country' as const, departments: DEPARTMENTS_TR, associateDepartments: [] };
+  }
+  return { source: 'general' as const, departments: DEPARTMENTS_EN, associateDepartments: [] };
 };

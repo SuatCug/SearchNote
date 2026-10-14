@@ -16,7 +16,8 @@ export interface IUniversity {
   tokens: string[]; // tüm isimlerin normalize edilmiş kelimeleri (kelime başı araması, index'li)
   yokId?: number; // YÖK Atlas üniversite kimliği
   yokSyncedAt?: Date; // son YÖK güncellemesi (YÖK listesinde artık olmayan Türkiye okulları gizlenir)
-  departments: string[]; // YÖK'teki lisans/önlisans bölümleri (diğer ülkelerde boş)
+  departments: string[]; // YÖK'teki lisans bölümleri (diğer ülkelerde boş)
+  associateDepartments: string[]; // YÖK'teki önlisans programları
   hidden: boolean; // kapanmış / adı değişmiş okullar: listede ve aramada görünmez
 }
 
@@ -33,6 +34,7 @@ const universitySchema = new Schema<IUniversity>({
   yokId: { type: Number, index: true },
   yokSyncedAt: Date,
   departments: { type: [String], default: [] },
+  associateDepartments: { type: [String], default: [] },
   hidden: { type: Boolean, default: false },
 });
 

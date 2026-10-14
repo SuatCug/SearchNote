@@ -30,7 +30,6 @@ const toDto = (u: UniversityDoc) => ({
 
 // GET /api/universities/countries → [{ code: 'TR', name: 'Türkiye', count: 222 }, ...] (alfabetik)
 const countries = asyncHandler(async (_req, res) => {
-  res.set('Cache-Control', 'public, max-age=86400');
   res.json({ success: true, data: { countries: await listCountries() } });
 });
 
@@ -49,7 +48,6 @@ const listByCountry = asyncHandler(async (req, res) => {
       .lean(),
     University.countDocuments({ country, hidden: { $ne: true } }),
   ]);
-  res.set('Cache-Control', 'public, max-age=86400');
   res.json({
     success: true,
     data: { universities: universities.map(toDto), page, hasMore: page * PAGE_SIZE < total, total },
@@ -61,17 +59,16 @@ const search = asyncHandler(async (req, res) => {
   const q = typeof req.query.q === 'string' ? req.query.q : '';
   const limit = Math.min(Math.max(Number(req.query.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
   const universities = await searchUniversities(q, countryParam(req), limit);
-  res.set('Cache-Control', 'public, max-age=3600');
   res.json({ success: true, data: { universities: universities.map(toDto) } });
 });
 
 // GET /api/universities/departments?university=<id>&country=TR → bölüm listesi
-// source: 'university' (o okulun YÖK bölümleri), 'country' (Türkiye'deki tüm bölüm adları), 'general' (İngilizce alanlar)
+// source: 'university' (o okulun YÖK lisans + önlisans bölümleri), 'country' (Türkiye'nin klasik bölümleri),
+// 'general' (klasik İngilizce bölümler)
 const departments = asyncHandler(async (req, res) => {
   const id = typeof req.query.university === 'string' && mongoose.isValidObjectId(req.query.university)
     ? req.query.university
     : null;
-  res.set('Cache-Control', 'public, max-age=86400');
   res.json({ success: true, data: await listDepartments(id, countryParam(req)) });
 });
 

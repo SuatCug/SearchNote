@@ -8,3 +8,4 @@ export { DirectMessage } from './directMessage.model.ts';
 export { Notification } from './notification.model.ts';
 export { SignupCode } from './signupCode.model.ts';
 export { University } from './university.model.ts';
+export { SyncState } from './syncState.model.ts';
