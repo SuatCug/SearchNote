@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
@@ -8,9 +9,10 @@ import {
   sendPasswordResetCode,
   sendSignupCode as sendSignupCodeEmail,
 } from '../services/mail.service.ts';
+import { verifyGoogleIdToken } from '../services/google.service.ts';
 import { User, SignupCode } from '../models/index.ts';
-import { requireEmailVerification } from '../config/features.ts';
-import type { UserDocument } from '../models/user.model.ts';
+import { requireEduEmail, requireEmailVerification } from '../config/features.ts';
+import { EDU_EMAIL_REGEX, type UserDocument } from '../models/user.model.ts';
 
 const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -239,6 +241,89 @@ const completeSignup = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, message: 'Registration successful.', data: { user: user.toSafeJSON(), token } });
 });
 
+// --- Google ile devam et (mobil) ---
+// E-posta Google tarafından doğrulandığı için kod gönderilmez. Kayıtlı hesap varsa doğrudan giriş yapılır;
+// yoksa Google'dan gelen bilgiler bekletilir ve okul adımı bitince hesap açılır.
+
+// 1) idToken'ı doğrular. Kayıtlıysa { user, token }, değilse { needsSignup, signupToken, profile } döner.
+const googleSignIn = asyncHandler(async (req, res) => {
+  const profile = await verifyGoogleIdToken(req.body.idToken);
+
+  const user =
+    (await User.findOne({ googleId: profile.googleId })) ?? (await User.findOne({ email: profile.email }));
+  if (user) {
+    // Aynı e-postayla şifreli açılmış hesap: ilk Google girişinde bağlanır, e-posta da doğrulanmış sayılır.
+    user.googleId = profile.googleId;
+    user.isVerified = true;
+    user.verificationTokenHash = undefined;
+    user.verificationTokenExpires = undefined;
+    await user.save();
+
+    const token = generateToken({ id: user._id });
+    res.json({ success: true, message: 'Logged in successfully.', data: { user: user.toSafeJSON(), token } });
+    return;
+  }
+
+  if (requireEduEmail() && !EDU_EMAIL_REGEX.test(profile.email)) {
+    throw new ApiError(422, 'Only institutional .edu.tr email addresses can register.');
+  }
+
+  const { token, tokenHash } = createVerificationToken();
+  const record = (await SignupCode.findOne({ email: profile.email })) ?? new SignupCode({ email: profile.email });
+  record.codeHash = undefined;
+  record.codeExpires = undefined;
+  record.attempts = 0;
+  record.tokenHash = tokenHash;
+  record.tokenExpires = new Date(Date.now() + CODE_TOKEN_TTL_MS);
+  record.googleId = profile.googleId;
+  record.fullName = profile.fullName;
+  record.avatarUrl = profile.avatarUrl;
+  record.expiresAt = new Date(Date.now() + SIGNUP_RECORD_TTL_MS);
+  await record.save();
+
+  res.json({
+    success: true,
+    data: {
+      needsSignup: true,
+      signupToken: token,
+      profile: { email: profile.email, fullName: profile.fullName, avatarUrl: profile.avatarUrl },
+    },
+  });
+});
+
+// 2) Google ile yeni hesap: okul bilgisiyle hesabı oluşturur. Şifre yoktur (rastgele bir hash konur);
+// kullanıcı isterse "Forgot password?" ile kendine şifre belirleyebilir.
+const completeGoogleSignup = asyncHandler(async (req, res) => {
+  const { signupToken, fullName, university, department } = req.body;
+  const record = await SignupCode.findOne({
+    tokenHash: hashToken(signupToken),
+    tokenExpires: { $gt: new Date() },
+    googleId: { $exists: true },
+  });
+  if (!record?.googleId) throw new ApiError(400, 'Your sign-up session has expired. Please start again.');
+
+  if (await User.exists({ $or: [{ email: record.email }, { googleId: record.googleId }] })) {
+    await record.deleteOne();
+    throw new ApiError(409, 'This email address is already registered.');
+  }
+
+  const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+  const user = await User.create({
+    fullName,
+    email: record.email,
+    passwordHash,
+    googleId: record.googleId,
+    avatarUrl: record.avatarUrl ?? '',
+    university,
+    department,
+    isVerified: true,
+  });
+  await record.deleteOne();
+
+  const token = generateToken({ id: user._id });
+  res.status(201).json({ success: true, message: 'Registration successful.', data: { user: user.toSafeJSON(), token } });
+});
+
 // --- Şifre sıfırlama (mobil uygulamadaki "Forgot password?" akışı) ---
 
 // "suatcug60@gmail.com" -> "s*******0@gmail.com"
@@ -353,6 +438,8 @@ export {
   sendSignupCode,
   verifySignupCode,
   completeSignup,
+  googleSignIn,
+  completeGoogleSignup,
   findResetAccount,
   sendResetCode,
   verifyResetCode,

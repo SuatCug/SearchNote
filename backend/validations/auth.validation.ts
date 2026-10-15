@@ -39,6 +39,15 @@ const completeSignupRules = [
   ...profileRules,
 ];
 
+// Google ile giriş: idToken → (yeni hesapsa) okul bilgisiyle hesabı oluştur
+const googleRules = [body('idToken').trim().notEmpty().withMessage('Google token is required.')];
+const completeGoogleSignupRules = [
+  body('signupToken').trim().notEmpty().withMessage('Sign-up session is required.'),
+  fullNameRule,
+  body('university').trim().notEmpty().withMessage('University is required.').isLength({ max: 120 }),
+  body('department').trim().notEmpty().withMessage('Department is required.').isLength({ max: 120 }),
+];
+
 const loginRules = [
   body('email').trim().toLowerCase().isEmail().withMessage('Please enter a valid email address.'),
   body('password').notEmpty().withMessage('Password is required.'),
@@ -63,6 +72,8 @@ export {
   signupCodeRules,
   verifySignupCodeRules,
   completeSignupRules,
+  googleRules,
+  completeGoogleSignupRules,
   loginRules,
   verifyEmailRules,
   forgotPasswordRules,

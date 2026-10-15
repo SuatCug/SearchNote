@@ -11,6 +11,10 @@ export interface ISignupCode {
   sentAt?: Date;
   tokenHash?: string;
   tokenExpires?: Date;
+  // Google ile kayıtta kod yoktur; Google'dan gelen bilgiler okul adımı bitene kadar burada bekler.
+  googleId?: string;
+  fullName?: string;
+  avatarUrl?: string;
   expiresAt: Date;
 }
 
@@ -22,6 +26,9 @@ const signupCodeSchema = new Schema<ISignupCode>({
   sentAt: Date,
   tokenHash: { type: String, index: true },
   tokenExpires: Date,
+  googleId: String,
+  fullName: String,
+  avatarUrl: String,
   expiresAt: { type: Date, required: true, index: { expireAfterSeconds: 0 } },
 });
 

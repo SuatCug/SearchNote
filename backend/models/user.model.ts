@@ -26,6 +26,7 @@ export interface IUser {
   resetCodeSentAt?: Date;
   resetTokenHash?: string;
   resetTokenExpires?: Date;
+  googleId?: string;
   createdAt: Date;
 }
 
@@ -92,6 +93,8 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     resetCodeSentAt: { type: Date, select: false },
     resetTokenHash: { type: String, select: false },
     resetTokenExpires: { type: Date, select: false },
+    // "Google ile devam et": Google hesabının değişmeyen kimliği (sub). Aynı e-postayla açılmış hesaba ilk Google girişinde bağlanır.
+    googleId: { type: String, unique: true, sparse: true, select: false },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },

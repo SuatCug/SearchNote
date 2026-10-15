@@ -7,6 +7,8 @@ import {
   signupCodeRules,
   verifySignupCodeRules,
   completeSignupRules,
+  googleRules,
+  completeGoogleSignupRules,
   loginRules,
   verifyEmailRules,
   forgotPasswordRules,
@@ -26,6 +28,10 @@ router.post('/resend-verification', authenticate, authController.resendVerificat
 router.post('/register/send-code', signupCodeRules, validate, authController.sendSignupCode);
 router.post('/register/verify-code', verifySignupCodeRules, validate, authController.verifySignupCode);
 router.post('/register/complete', completeSignupRules, validate, authController.completeSignup);
+
+// Google ile devam et: kayıtlıysa giriş yapar, değilse okul adımından sonra hesap açılır
+router.post('/google', googleRules, validate, authController.googleSignIn);
+router.post('/google/complete', completeGoogleSignupRules, validate, authController.completeGoogleSignup);
 
 // Şifre sıfırlama: hesabı bul → kod gönder → kodu doğrula → yeni şifre
 router.post('/forgot-password/lookup', forgotPasswordRules, validate, authController.findResetAccount);
