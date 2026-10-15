@@ -1,16 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Sans+3:wght@300;400;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: 'Inter', system-ui, sans-serif;
-  /* Karşılama sayfasındaki el yazısı notlar */
-  --font-hand: 'Caveat', cursive;
-  /* Karşılama sayfası başlıklarındaki italik vurgu kelimeleri */
-  --font-serif: 'Instrument Serif', Georgia, serif;
-
-  /* Karşılama sayfası animasyonları (kullanımda motion-safe: ile) */
-  --animate-toast: toast 6s ease-in-out infinite;
-  --animate-caret: caret 1s steps(1) infinite;
+  /* Karşılama sayfası yazı tipi */
+  --font-display: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
 
   /* Marka rengi: lacivert (üst bar, birincil butonlar, vurgular) */
   --color-navy-50: #f1f5fb;
@@ -24,15 +18,6 @@
   --color-navy-800: #263a5e;
   --color-navy-900: #1e3050;
   --color-navy-950: #141f36;
-}
-
-@keyframes toast {
-  0%, 8% { opacity: 0; transform: translateY(-8px); }
-  14%, 80% { opacity: 1; transform: none; }
-  90%, 100% { opacity: 0; transform: translateY(-8px); }
-}
-@keyframes caret {
-  50% { opacity: 0; }
 }
 
 /* Telefonlarda alttaki sekme çubuğu + iPhone ana ekran çizgisi kadar boşluk. */

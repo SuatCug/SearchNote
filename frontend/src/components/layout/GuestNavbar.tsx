@@ -1,17 +1,18 @@
 import { Link, useLocation } from 'react-router-dom';
-import Logo from './Logo';
+import { BookOpen, GraduationCap, Info, UserRound, Users, type LucideIcon } from 'lucide-react';
 
-const SECTION_LINKS = [
-  { id: 'top', label: 'Home' },
-  { id: 'features', label: 'Features' },
-  { id: 'how-it-works', label: 'How It Works' },
-  { id: 'community', label: 'Community' },
+type NavItem = { label: string; icon: LucideIcon } & ({ section: string } | { to: string });
+
+const NAV_ITEMS: NavItem[] = [
+  { section: 'features', label: 'Courses', icon: BookOpen },
+  { section: 'departments', label: 'Departments', icon: GraduationCap },
+  { section: 'how-it-works', label: 'Profiles', icon: UserRound },
+  { section: 'community', label: 'Groups', icon: Users },
+  { to: '/about', label: 'About', icon: Info },
 ];
 
-const linkClass = 'text-sm font-medium text-gray-600 hover:text-navy-700 transition-colors';
-
-// Giriş yapmamış ziyaretçinin üst çubuğu (karşılama sayfası ve diğer tüm sayfalar).
-// Bölüm bağlantıları karşılama sayfasındaki bölümlere gider; telefonda gizlenir, sadece Log In / Sign Up görünür.
+// Giriş yapmamış ziyaretçinin lacivert üst çubuğu (karşılama sayfası ve diğer tüm sayfalar).
+// Simgeli bağlantılar karşılama sayfasındaki bölümlere gider; telefonda gizlenir, sadece Sign up / Log in görünür.
 export default function GuestNavbar() {
   const location = useLocation();
   const onLanding = location.pathname === '/' && !location.search;
@@ -25,38 +26,56 @@ export default function GuestNavbar() {
   };
 
   return (
-    <header className="sticky top-0 z-50 border-b border-gray-100 bg-white/90 backdrop-blur">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
-        <Logo />
+    <header className="sticky top-0 z-50 bg-navy-900 font-display">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
+        <Link
+          to="/"
+          onClick={() => handleSectionClick('top')}
+          className="flex min-h-11 items-center text-2xl sm:text-[28px] font-bold tracking-[-0.03em] text-white"
+          aria-label="SearchNote home"
+        >
+          SearchNote
+        </Link>
 
-        <nav aria-label="Sections" className="hidden lg:flex items-center gap-7">
-          {SECTION_LINKS.map((l) => (
-            <Link key={l.id} to={`/#${l.id}`} onClick={() => handleSectionClick(l.id)} className={linkClass}>
-              {l.label}
-            </Link>
-          ))}
-          <Link
-            to="/about"
-            className={location.pathname === '/about' ? 'text-sm font-semibold text-navy-700' : linkClass}
-          >
-            About
-          </Link>
-        </nav>
+        <nav aria-label="Main" className="flex items-center">
+          <div className="hidden lg:flex items-center">
+            {NAV_ITEMS.map(({ label, icon: Icon, ...item }) => {
+              const active = 'to' in item && location.pathname === item.to;
+              const className = `flex min-h-11 flex-col items-center gap-0.5 px-4 py-1.5 text-xs transition-colors ${
+                active ? 'text-white' : 'text-[#c9d3e3] hover:text-white'
+              }`;
+              const content = (
+                <>
+                  <Icon size={22} strokeWidth={1.7} aria-hidden="true" />
+                  {label}
+                </>
+              );
+              return 'to' in item ? (
+                <Link key={label} to={item.to} className={className} aria-current={active ? 'page' : undefined}>
+                  {content}
+                </Link>
+              ) : (
+                <Link key={label} to={`/#${item.section}`} onClick={() => handleSectionClick(item.section)} className={className}>
+                  {content}
+                </Link>
+              );
+            })}
+            <span aria-hidden="true" className="ml-4 mr-5 h-10 w-px bg-white/25" />
+          </div>
 
-        <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
-          <Link
-            to="/login"
-            className="rounded-lg border border-navy-200 px-3 sm:px-4 py-2 text-sm font-semibold text-navy-700 hover:bg-navy-50 transition-colors whitespace-nowrap"
-          >
-            Log In
-          </Link>
           <Link
             to="/register"
-            className="rounded-lg bg-navy-600 px-3 sm:px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-navy-700 transition-colors whitespace-nowrap"
+            className="flex min-h-11 items-center justify-center rounded-full bg-white w-24 sm:w-32 text-[15px] sm:text-base font-semibold text-navy-900 hover:bg-navy-50 transition-colors whitespace-nowrap"
           >
-            Sign Up
+            Sign up
           </Link>
-        </div>
+          <Link
+            to="/login"
+            className="ml-2 flex min-h-11 items-center justify-center rounded-full bg-navy-500 w-24 sm:w-32 text-[15px] sm:text-base font-semibold text-white ring-1 ring-white/30 hover:bg-navy-400 transition-colors whitespace-nowrap"
+          >
+            Log in
+          </Link>
+        </nav>
       </div>
     </header>
   );
