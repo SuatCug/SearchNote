@@ -58,9 +58,30 @@ interface SendInput {
   clientId?: string | null;
 }
 
+// Kullanıcı başına sıra: istemci mesajları birbirini beklemeden gönderebilir, sunucu yine de
+// geliş sırasıyla kaydeder (aksi halde notlu mesajın kontrolü uzun sürüp sonraki mesajın önüne geçebilirdi).
+const senderQueues = new Map<string, Promise<unknown>>();
+
+const inSenderOrder = <T>(senderId: string, task: () => Promise<T>) => {
+  const run = (senderQueues.get(senderId) ?? Promise.resolve()).then(task);
+  const tail = run.then(
+    () => {},
+    () => {}
+  );
+  senderQueues.set(senderId, tail);
+  // Sıra boşalınca kayıt silinir (bellek büyümesin).
+  tail.then(() => {
+    if (senderQueues.get(senderId) === tail) senderQueues.delete(senderId);
+  });
+  return run;
+};
+
 // Birebir mesaj gönderme (REST endpoint'i ve socket "dm:send" olayı bunu kullanır).
+const sendDirectMessage = (me: string, conversationId: string, input: SendInput) =>
+  inSenderOrder(me, () => saveDirectMessage(me, conversationId, input));
+
 // Birbirinden bağımsız kontroller paralel çalışır; böylece veritabanına sırayla 5-6 kez gidilmez.
-const sendDirectMessage = async (me: string, conversationId: string, { text, noteId, replyTo, clientId }: SendInput) => {
+const saveDirectMessage = async (me: string, conversationId: string, { text, noteId, replyTo, clientId }: SendInput) => {
   const conversation = await findConversationOrFail(conversationId, me);
   const otherId = otherParticipantOf(conversation, me);
 
