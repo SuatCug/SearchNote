@@ -3,14 +3,16 @@ import * as messageController from '../controllers/message.controller.ts';
 import authenticate from '../middlewares/auth.middleware.ts';
 import requireVerified from '../middlewares/verified.middleware.ts';
 import validate from '../middlewares/validate.middleware.ts';
-import rateLimit from '../middlewares/rateLimit.middleware.ts';
+import rateLimit, { rateLimitWith } from '../middlewares/rateLimit.middleware.ts';
+import { allowMessage, MESSAGE_RATE_ERROR } from '../services/directMessage.service.ts';
 import { idParamRules } from '../validations/common.validation.ts';
 import { startConversationRules, sendMessageRules, editMessageRules, messageParamRules } from '../validations/message.validation.ts';
 
 const router = Router();
 
 // Spam'e karşı: kullanıcı başına dakikada en fazla 20 mesaj / 10 yeni konuşma.
-const messageLimit = rateLimit({ windowMs: 60 * 1000, max: 20, message: 'You are sending messages too fast. Please wait a moment.' });
+// Mesaj sayacı socket ile gönderimle ortaktır; gönderimde sınır servisin içinde uygulanır.
+const messageLimit = rateLimitWith(allowMessage, MESSAGE_RATE_ERROR);
 const startLimit = rateLimit({ windowMs: 60 * 1000, max: 10, message: 'Too many new conversations. Please wait a moment.' });
 
 // Tüm mesaj endpoint'leri giriş gerektirir; yazmak için e-posta doğrulaması da gerekir.
@@ -28,7 +30,6 @@ router.post(
   sendMessageRules,
   validate,
   requireVerified,
-  messageLimit,
   messageController.sendMessage
 );
 router.patch(

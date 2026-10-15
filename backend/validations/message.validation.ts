@@ -14,6 +14,11 @@ const sendMessageRules = [
   messageTextRule(),
   body('noteId').optional({ values: 'falsy' }).isMongoId().withMessage('Invalid note id.'),
   body('replyTo').optional({ values: 'falsy' }).isMongoId().withMessage('Invalid message id.'),
+  body('clientId')
+    .optional({ values: 'falsy' })
+    .isString()
+    .isLength({ max: 64 })
+    .withMessage('Invalid client id.'),
 ];
 
 const editMessageRules = [messageTextRule()];

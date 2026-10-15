@@ -1,32 +1,20 @@
 import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
-import { User, Note, Conversation, DirectMessage } from '../models/index.ts';
-import { assertNoteVisible } from '../services/note.service.ts';
+import { User, Conversation, DirectMessage } from '../models/index.ts';
 import { isBlockedBetween } from '../services/block.service.ts';
 import { emitToUsers, isOnline } from '../services/realtime.service.ts';
+import {
+  NOTE_CARD_FIELDS,
+  findConversationOrFail,
+  otherParticipantOf,
+  toMessageJSON,
+  sendDirectMessage,
+} from '../services/directMessage.service.ts';
 import type { Types } from 'mongoose';
-import type { ConversationDocument } from '../models/conversation.model.ts';
 
 const USER_CARD_FIELDS = 'fullName avatarUrl university department';
-const NOTE_CARD_FIELDS = 'title courseCode courseName fileType';
 const MESSAGE_LIMIT = 100;
 const CONVERSATION_LIMIT = 100;
-// Yanıt alıntısında saklanan metnin en fazla uzunluğu.
-const REPLY_SNIPPET_LENGTH = 200;
-
-// Sadece katılımcıların görebildiği konuşma; değilse konuşma yokmuş gibi 404 döner.
-const findConversationOrFail = async (id: string, userId: string) => {
-  const conversation = await Conversation.findById(id);
-  if (!conversation || !conversation.hasParticipant(userId)) throw new ApiError(404, 'Conversation not found.');
-  return conversation;
-};
-
-// Konuşmanın diğer katılımcısı (her konuşmada iki katılımcı vardır).
-const otherParticipantOf = (conversation: ConversationDocument, userId: string) => {
-  const other = conversation.otherParticipant(userId);
-  if (!other) throw new ApiError(404, 'Conversation not found.');
-  return other;
-};
 
 // Map alanları dokümanda Map, .lean() sonucunda düz obje olarak gelir.
 type UserIdMap<T> = Map<string, T> | Record<string, T> | null | undefined;
@@ -44,26 +32,6 @@ const lastReadAtFor = (conversation: { lastReadAt?: UserIdMap<Date> }, userId: s
   mapValue(conversation.lastReadAt, userId) || null;
 
 const hasId = (ids: Types.ObjectId[] | undefined, id: Types.ObjectId | string) => Boolean(ids?.some((x) => x.equals(id)));
-
-interface MessageLike {
-  _id: Types.ObjectId;
-  sender: Types.ObjectId;
-  text: string;
-  note?: unknown;
-  reply?: { message: Types.ObjectId; sender: Types.ObjectId; text: string } | null;
-  editedAt?: Date | null;
-  createdAt: Date;
-}
-
-const toMessageJSON = (m: MessageLike) => ({
-  _id: m._id,
-  sender: m.sender,
-  text: m.text,
-  note: m.note ?? null,
-  reply: m.reply?.message ? { message: m.reply.message, sender: m.reply.sender, text: m.reply.text } : null,
-  editedAt: m.editedAt ?? null,
-  createdAt: m.createdAt,
-});
 
 interface PopulatedParticipant {
   _id: Types.ObjectId;
@@ -209,63 +177,14 @@ const getConversation = asyncHandler<AuthedRequest>(async (req, res) => {
 });
 
 const sendMessage = asyncHandler<AuthedRequest>(async (req, res) => {
-  const me = req.user.id;
-  const conversation = await findConversationOrFail(req.params.id, me);
-  const otherId = otherParticipantOf(conversation, me);
-
-  if (!(await User.exists({ _id: otherId }))) throw new ApiError(404, 'This user no longer exists.');
-  if (await isBlockedBetween(me, otherId)) throw new ApiError(403, 'You cannot message this user.');
-
-  // Eklenen not hem gönderene hem alıcıya görünür olmalı (grup notları sadece grup üyelerine görünür).
-  let noteId;
-  if (req.body.noteId) {
-    const note = await Note.findById(req.body.noteId).select('group author visibility');
-    if (!note) throw new ApiError(404, 'Note not found.');
-    await assertNoteVisible(note, me);
-    try {
-      await assertNoteVisible(note, otherId.toString());
-    } catch {
-      throw new ApiError(403, "The recipient can't see this note (it's shared with a group or only with the author's followers).");
-    }
-    noteId = note._id;
-  }
-
-  // Yanıtlanan mesaj aynı konuşmada olmalı.
-  let reply;
-  if (req.body.replyTo) {
-    const original = await DirectMessage.findOne({ _id: req.body.replyTo, conversation: conversation._id })
-      .select('sender text')
-      .lean();
-    if (!original) throw new ApiError(404, 'The message you are replying to no longer exists.');
-    reply = { message: original._id, sender: original.sender, text: original.text.slice(0, REPLY_SNIPPET_LENGTH) };
-  }
-
-  const message = await DirectMessage.create({
-    conversation: conversation._id,
-    sender: me,
+  // Asıl iş serviste: aynı kod socket "dm:send" olayında da kullanılır.
+  const message = await sendDirectMessage(req.user.id, req.params.id, {
     text: req.body.text,
-    note: noteId,
-    reply,
+    noteId: req.body.noteId,
+    replyTo: req.body.replyTo,
+    clientId: req.body.clientId,
   });
-
-  await Conversation.updateOne(
-    { _id: conversation._id },
-    {
-      $set: {
-        lastMessage: { text: message.text, sender: me, hasNote: Boolean(noteId), createdAt: message.createdAt },
-        lastMessageAt: message.createdAt,
-        // Mesaj atan, konuşmadaki önceki mesajları da görmüş sayılır.
-        [`lastReadAt.${me}`]: message.createdAt,
-      },
-      $inc: { [`unreadCounts.${otherId}`]: 1 },
-    }
-  );
-
-  await message.populate('note', NOTE_CARD_FIELDS);
-  // İki tarafın da açık sekmeleri konuşmayı ve okunmamış sayısını anında yeniler.
-  // senderId: alıcı tarafta "yazıyor..." göstergesi hemen kalksın.
-  emitToUsers([me, otherId], 'message:changed', { conversationId: String(conversation._id), senderId: me });
-  res.status(201).json({ success: true, data: { message: toMessageJSON(message) } });
+  res.status(201).json({ success: true, data: { message } });
 });
 
 // Mesajı düzenleme: sadece gönderen düzenleyebilir.

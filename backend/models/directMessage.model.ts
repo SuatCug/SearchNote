@@ -21,11 +21,18 @@ const directMessageSchema = new mongoose.Schema(
     },
     // Gönderen mesajı düzenlediyse son düzenleme zamanı.
     editedAt: { type: Date },
+    // İstemcinin mesaja verdiği kimlik (mobil uygulama). Aynı mesaj tekrar gönderilirse ikinci kayıt oluşmaz.
+    clientId: { type: String, maxlength: 64 },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );
 
 directMessageSchema.index({ conversation: 1, createdAt: -1 });
+// clientId sadece verildiyse benzersiz olmalı (web istemcisi göndermez).
+directMessageSchema.index(
+  { sender: 1, clientId: 1 },
+  { unique: true, partialFilterExpression: { clientId: { $type: 'string' } } }
+);
 
 export const DirectMessage = mongoose.model('DirectMessage', directMessageSchema);
 export default DirectMessage;
