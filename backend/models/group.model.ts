@@ -8,6 +8,8 @@ export interface IGroup {
   members: Types.ObjectId[];
   isPrivate: boolean;
   joinRequests: Types.ObjectId[];
+  lastReadAt: Map<string, Date>;
+  lastActivityAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +39,10 @@ const groupSchema = new Schema<IGroup, GroupModel, IGroupMethods>(
     isPrivate: { type: Boolean, default: false },
     // Özel gruba gönderilmiş, kurucunun onayını bekleyen katılma istekleri.
     joinRequests: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    // userId -> grup sohbetini en son açtığı an; bundan sonraki başkalarının mesajları "okunmamış" sayılır.
+    lastReadAt: { type: Map, of: Date, default: {} },
+    // Son mesaj ya da paylaşılan not zamanı: "Gruplarım" listesi buna göre sıralanır.
+    lastActivityAt: { type: Date },
   },
   {
     timestamps: true,

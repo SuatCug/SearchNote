@@ -3,7 +3,7 @@ import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
 import { Note, User } from '../models/index.ts';
 import { listNotes, assertNoteVisible, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
-import { assertMember } from '../services/group.service.ts';
+import { assertMember, recordGroupActivity } from '../services/group.service.ts';
 import { notify, removeNotification } from '../services/notification.service.ts';
 import { saveNoteFile, readNoteFile, removeFile } from '../services/storage.service.ts';
 import { parsePagination, buildPagination } from '../utils/pagination.util.ts';
@@ -210,6 +210,8 @@ const createNote = asyncHandler<AuthedRequest>(async (req, res) => {
     { path: 'author', select: USER_CARD_FIELDS },
     { path: 'group', select: 'name isPrivate' },
   ]);
+  // Gruba paylaşılan not, üyelerin "Gruplarım" listesinde son hareket olarak görünür.
+  if (req.body.group) await recordGroupActivity(req.body.group, req.user.id, note.createdAt);
 
   res.status(201).json({
     success: true,

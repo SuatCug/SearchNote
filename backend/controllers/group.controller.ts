@@ -1,13 +1,19 @@
 import mongoose from 'mongoose';
 import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
-import { Group, GroupMessage, Note } from '../models/index.ts';
-import { listGroups } from '../services/group.service.ts';
+import { Group, GroupMessage, Note, User } from '../models/index.ts';
+import {
+  followedMembersFor,
+  listGroups,
+  listMyGroupActivity,
+  markGroupRead,
+  recordGroupActivity,
+} from '../services/group.service.ts';
 import { listNotes } from '../services/note.service.ts';
 import { notify } from '../services/notification.service.ts';
 import { emitToGroup } from '../services/realtime.service.ts';
-import { parsePagination } from '../utils/pagination.util.ts';
-import { wordSearchMatch } from '../utils/regex.util.ts';
+import { buildPagination, parsePagination } from '../utils/pagination.util.ts';
+import { exactRegex, wordSearchMatch } from '../utils/regex.util.ts';
 import type { GroupDocument } from '../models/group.model.ts';
 import type { UserDocument } from '../models/user.model.ts';
 import type { IdLike } from '../types/common.ts';
@@ -36,13 +42,21 @@ const assertCanView = (group: GroupDocument, userId: string | undefined) => {
 // Grup detay görünümü: üye / istek dizileri yerine sayılar + izleyiciye göre durum bilgisi.
 const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined) => {
   await group.populate('owner', USER_CARD_FIELDS);
-  const notesCount = await Note.countDocuments({ group: group._id });
-  const { members, joinRequests, __v, ...rest } = group.toObject();
+  const [notesCount, followed] = await Promise.all([
+    Note.countDocuments({ group: group._id }),
+    followedMembersFor(viewerId ? String(viewerId) : undefined, [group._id]),
+  ]);
+  // lastReadAt üyelerin okuma zamanlarıdır; kimseye gösterilmez.
+  const { members, joinRequests, lastReadAt: _lastReadAt, __v, ...rest } = group.toObject();
   const isOwner = viewerId ? group.owner._id.equals(viewerId) : false;
+  const mine = followed.get(String(group._id));
   return {
     ...rest,
     membersCount: members.length,
     notesCount,
+    // İzleyicinin takip ettiği üyeler ("Ayşe ve Mert üye")
+    followedMembers: mine?.users ?? [],
+    followedMembersCount: mine?.count ?? 0,
     isMember: group.hasMember(viewerId),
     isPending: group.hasPendingRequest(viewerId),
     isOwner,
@@ -52,17 +66,47 @@ const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined)
 };
 
 // Keşfet: tüm gruplar, isim/açıklamada arama.
+// Mobil için ek (isteğe bağlı) parametreler:
+// - scope=university: kurucusu benimle aynı üniversitede olan gruplar
+// - exclude=mine: zaten üyesi olduğum gruplar listelenmez
+// Giriş yapmış kullanıcıya her kartta takip ettiği üyeler de döner (followedMembers).
 const searchGroups = asyncHandler(async (req, res) => {
-  const match = wordSearchMatch(req.query.q, ['name', 'description']) || {};
+  const viewerId = req.user?.id;
+  const match: Record<string, unknown> = { ...(wordSearchMatch(req.query.q, ['name', 'description']) || {}) };
+
+  if (viewerId && req.query.exclude === 'mine') {
+    match.members = { $ne: new mongoose.Types.ObjectId(viewerId) };
+  }
+  if (viewerId && req.query.scope === 'university') {
+    const viewer = await User.findById(viewerId).select('university').lean();
+    if (!viewer?.university) {
+      return res.json({ success: true, data: { items: [], pagination: buildPagination(1, 1, 0) } });
+    }
+    const owners = await User.find({ university: exactRegex(viewer.university) }).distinct('_id');
+    match.owner = { $in: owners };
+  }
 
   const data = await listGroups({
     match,
     sort: req.query.sort,
     ...parsePagination(req.query),
-    viewerId: req.user?.id,
+    viewerId,
+  });
+  const followed = await followedMembersFor(
+    viewerId,
+    data.items.map((g: { _id: unknown }) => g._id)
+  );
+  const items = data.items.map((g: { _id: unknown }) => {
+    const f = followed.get(String(g._id));
+    return { ...g, followedMembers: f?.users ?? [], followedMembersCount: f?.count ?? 0 };
   });
 
-  res.json({ success: true, data });
+  res.json({ success: true, data: { ...data, items } });
+});
+
+// "Gruplarım" sohbet listesi: son hareket + okunmamış sayısı, en son hareket eden en üstte.
+const getMyGroupActivity = asyncHandler<AuthedRequest>(async (req, res) => {
+  res.json({ success: true, data: { groups: await listMyGroupActivity(req.user.id) } });
 });
 
 // Giriş yapan kullanıcının üyesi olduğu gruplar (kurduğu gruplar dahil).
@@ -285,6 +329,7 @@ const getMessages = asyncHandler<AuthedRequest>(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(MESSAGE_LIMIT)
     .populate('user', 'fullName avatarUrl');
+  await markGroupRead(group._id, req.user.id);
 
   res.json({ success: true, data: { messages: messages.reverse() } });
 });
@@ -296,6 +341,7 @@ const sendMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   const message = await GroupMessage.create({ group: group._id, user: req.user.id, text: req.body.text });
   await message.populate('user', 'fullName avatarUrl');
   emitToGroup(group._id, 'group:message', { groupId: String(group._id) });
+  await recordGroupActivity(group._id, req.user.id, message.createdAt);
 
   res.status(201).json({ success: true, data: { message } });
 });
@@ -318,6 +364,7 @@ const deleteMessage = asyncHandler<AuthedRequest>(async (req, res) => {
 export {
   searchGroups,
   getMyGroups,
+  getMyGroupActivity,
   getGroup,
   createGroup,
   updateGroup,

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
-import { Group } from '../models/index.ts';
+import { Group, GroupMessage, Note, User } from '../models/index.ts';
+import { emitToUsers } from './realtime.service.ts';
 import ApiError from '../utils/apiError.ts';
 import { buildPagination, type PaginationParams } from '../utils/pagination.util.ts';
 import type { IdLike, MatchFilter, SortSpec } from '../types/common.ts';
@@ -73,4 +74,125 @@ const assertMember = async (groupId: IdLike, userId: IdLike) => {
   if (!isMember) throw new ApiError(403, 'You must be a member of the group to share notes in it.');
 };
 
-export { listGroups, assertMember, GROUP_SORT_OPTIONS };
+// Grupta yeni mesaj / not: grubun son aktivite zamanı ilerler, yapan kişi için grup okunmuş sayılır
+// ve üyelerin "Gruplarım" listesi yenilensin diye hepsine haber verilir.
+const recordGroupActivity = async (groupId: IdLike, actorId: IdLike, at: Date) => {
+  const group = await Group.findByIdAndUpdate(
+    groupId,
+    { $max: { lastActivityAt: at, [`lastReadAt.${actorId}`]: at } },
+    { projection: { members: 1 } }
+  ).lean();
+  if (group) emitToUsers(group.members, 'group:activity', { groupId: String(groupId) });
+};
+
+// Kullanıcı grup sohbetini açtı: o ana kadarki mesajlar okunmuş sayılır.
+const markGroupRead = (groupId: IdLike, userId: IdLike) =>
+  Group.updateOne({ _id: groupId }, { $set: { [`lastReadAt.${userId}`]: new Date() } });
+
+const UNREAD_CAP = 99;
+
+// "Gruplarım" sohbet listesi gibi: her grubun son hareketi (mesaj ya da paylaşılan not), okunmamış mesaj
+// sayısı; en son hareket eden grup en üstte. Sohbeti hiç açılmamış (eski) gruplar okunmamış gösterilmez.
+const listMyGroupActivity = async (userId: string) => {
+  const me = new mongoose.Types.ObjectId(userId);
+  const groups = await Group.find({ members: me })
+    .select('name isPrivate owner members lastReadAt lastActivityAt createdAt')
+    .lean();
+  if (!groups.length) return [];
+  const ids = groups.map((g) => g._id);
+  const readAtOf = (g: (typeof groups)[number]) => {
+    const map = g.lastReadAt as unknown as Record<string, Date> | Map<string, Date> | undefined;
+    return (map instanceof Map ? map.get(userId) : map?.[userId]) ?? null;
+  };
+  const unreadClauses = groups
+    .map((g) => ({ group: g._id, readAt: readAtOf(g) }))
+    .filter((x): x is { group: typeof x.group; readAt: Date } => Boolean(x.readAt))
+    .map((x) => ({ group: x.group, createdAt: { $gt: x.readAt } }));
+
+  const [lastMessages, lastNotes, unread] = await Promise.all([
+    GroupMessage.aggregate([
+      { $match: { group: { $in: ids } } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$group', text: { $first: '$text' }, user: { $first: '$user' }, createdAt: { $first: '$createdAt' } } },
+      { $lookup: { from: 'users', localField: 'user', foreignField: '_id', as: 'user', pipeline: [{ $project: { fullName: 1 } }] } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+    ]),
+    Note.aggregate([
+      { $match: { group: { $in: ids } } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$group', title: { $first: '$title' }, user: { $first: '$author' }, createdAt: { $first: '$createdAt' }, count: { $sum: 1 } } },
+      { $lookup: { from: 'users', localField: 'user', foreignField: '_id', as: 'user', pipeline: [{ $project: { fullName: 1 } }] } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+    ]),
+    unreadClauses.length
+      ? GroupMessage.aggregate([
+          { $match: { user: { $ne: me }, $or: unreadClauses } },
+          { $group: { _id: '$group', count: { $sum: 1 } } },
+        ])
+      : Promise.resolve([]),
+  ]);
+
+  const byGroup = <T extends { _id: unknown }>(rows: T[]) => new Map(rows.map((r) => [String(r._id), r]));
+  const messageMap = byGroup(lastMessages);
+  const noteMap = byGroup(lastNotes);
+  const unreadMap = byGroup(unread as { _id: unknown; count: number }[]);
+
+  const items = groups.map((g) => {
+    const id = String(g._id);
+    const message = messageMap.get(id);
+    const note = noteMap.get(id);
+    // Not mesajdan yeniyse son hareket "X bir not paylaştı" olur
+    const useNote = note && (!message || note.createdAt > message.createdAt);
+    const latest = useNote ? note : message;
+    const lastActivity = latest
+      ? {
+          type: useNote ? 'note' : 'message',
+          text: useNote ? note.title : message.text,
+          userName: latest.user?.fullName ?? null,
+          isMine: latest.user ? String(latest.user._id) === userId : false,
+          createdAt: latest.createdAt,
+        }
+      : null;
+    return {
+      _id: g._id,
+      name: g.name,
+      isPrivate: g.isPrivate,
+      isOwner: String(g.owner) === userId,
+      membersCount: g.members?.length ?? 0,
+      notesCount: note?.count ?? 0,
+      lastActivity,
+      unreadCount: Math.min(unreadMap.get(id)?.count ?? 0, UNREAD_CAP),
+      activityAt: lastActivity?.createdAt ?? g.createdAt,
+    };
+  });
+
+  return items.sort((a, b) => new Date(b.activityAt).getTime() - new Date(a.activityAt).getTime());
+};
+
+// Kullanıcının takip ettiği ve verilen gruplara üye olan kişiler (en fazla 3'ü) + toplam sayıları.
+const followedMembersFor = async (viewerId: string | undefined, groupIds: unknown[]) => {
+  const result = new Map<string, { users: { _id: unknown; fullName: string; avatarUrl?: string }[]; count: number }>();
+  if (!viewerId || !groupIds.length) return result;
+  const viewer = await User.findById(viewerId).select('following').lean();
+  const following = viewer?.following ?? [];
+  if (!following.length) return result;
+  const rows = await Group.aggregate([
+    { $match: { _id: { $in: groupIds } } },
+    { $project: { followed: { $setIntersection: [{ $ifNull: ['$members', []] }, following] } } },
+    { $match: { 'followed.0': { $exists: true } } },
+    { $project: { count: { $size: '$followed' }, preview: { $slice: ['$followed', 3] } } },
+    { $lookup: { from: 'users', localField: 'preview', foreignField: '_id', as: 'users', pipeline: [{ $project: { fullName: 1, avatarUrl: 1 } }] } },
+  ]);
+  rows.forEach((r) => result.set(String(r._id), { users: r.users, count: r.count }));
+  return result;
+};
+
+export {
+  listGroups,
+  assertMember,
+  recordGroupActivity,
+  markGroupRead,
+  listMyGroupActivity,
+  followedMembersFor,
+  GROUP_SORT_OPTIONS,
+};

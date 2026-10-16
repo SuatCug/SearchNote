@@ -19,6 +19,7 @@ const verifiedOnly = [authenticate, requireVerified];
 // Listeleme (anonim ziyaretçilere açık) ve kullanıcının kendi grupları
 router.get('/', optionalAuth, groupController.searchGroups);
 router.get('/mine', authenticate, groupController.getMyGroups);
+router.get('/mine/activity', authenticate, groupController.getMyGroupActivity);
 router.get('/:id', idParamRules, validate, optionalAuth, groupController.getGroup);
 router.get('/:id/members', idParamRules, validate, optionalAuth, groupController.getMembers);
 router.get('/:id/notes', idParamRules, validate, optionalAuth, groupController.getGroupNotes);
