@@ -6,7 +6,7 @@ import { User, Note, Report } from '../models/index.ts';
 import { deleteAccount as deleteAccountData } from '../services/account.service.ts';
 import { sendAccountDeletionCode, sendAccountDeletedEmail } from '../services/mail.service.ts';
 import { createOneTimeCode, hashOneTimeCode } from '../utils/token.util.ts';
-import { listNotes, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
+import { listNotes, listUserCourses, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
 import { saveAvatar, removeFile } from '../services/storage.service.ts';
 import { parsePagination, buildPagination } from '../utils/pagination.util.ts';
 import { exactRegex, wordSearchMatch } from '../utils/regex.util.ts';
@@ -197,16 +197,72 @@ const getSuggestions = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, data: { users } });
 });
 
-const getFollowers = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id).populate('followers', USER_CARD_FIELDS);
-  if (!user) throw new ApiError(404, 'User not found.');
-  res.json({ success: true, data: { users: user.followers } });
+// Takipçi / takip edilen listesi.
+//  - ?limit yoksa (web): listenin tamamı, eskisi gibi.
+//  - ?limit varsa (mobil): sayfalı, en yeni takip önce; ?q ile ad/okul/bölümde arama; giriş yapılmışsa
+//    her kişide isFollowing (izleyici bu kişiyi takip ediyor mu).
+const listConnections = (field: 'followers' | 'following') =>
+  asyncHandler(async (req, res) => {
+    if (req.query.limit === undefined) {
+      const user = await User.findById(req.params.id).populate(field, USER_CARD_FIELDS);
+      if (!user) throw new ApiError(404, 'User not found.');
+      return res.json({ success: true, data: { users: user[field] } });
+    }
+
+    const user = await User.findById(req.params.id).select(field).lean();
+    if (!user) throw new ApiError(404, 'User not found.');
+    const { page, limit, skip } = parsePagination(req.query);
+
+    // Diziye en son eklenen en yeni takiptir
+    let ids = [...user[field]].reverse();
+    const qMatch = wordSearchMatch(req.query.q, ['fullName', 'university', 'department']);
+    if (qMatch) {
+      const found = await User.find({ $and: [{ _id: { $in: ids } }, qMatch] }).select('_id').lean();
+      const matched = new Set(found.map((u) => String(u._id)));
+      ids = ids.filter((id) => matched.has(String(id)));
+    }
+
+    const pageIds = ids.slice(skip, skip + limit);
+    const [cards, viewer] = await Promise.all([
+      User.find({ _id: { $in: pageIds } }).select(USER_CARD_FIELDS).lean(),
+      req.user ? User.findById(req.user.id).select('following').lean() : null,
+    ]);
+    const byId = new Map(cards.map((u) => [String(u._id), u]));
+    const viewerFollowing = new Set((viewer?.following ?? []).map(String));
+    const users = pageIds.flatMap((id) => {
+      const card = byId.get(String(id));
+      return card ? [{ ...card, isFollowing: viewerFollowing.has(String(id)) }] : [];
+    });
+
+    res.json({ success: true, data: { users, pagination: buildPagination(page, limit, ids.length) } });
+  });
+
+const getFollowers = listConnections('followers');
+const getFollowing = listConnections('following');
+
+// "Followed by …" satırı: bu kişiyi takip edenlerden izleyicinin de takip ettikleri (en yeni 3 kişi + toplam).
+const getMutualFollowers = asyncHandler<AuthedRequest>(async (req, res) => {
+  const [target, me] = await Promise.all([
+    User.findById(req.params.id).select('followers').lean(),
+    User.findById(req.user.id).select('following').lean(),
+  ]);
+  if (!target || !me) throw new ApiError(404, 'User not found.');
+
+  const myFollowing = new Set(me.following.map(String));
+  const mutual = [...target.followers].reverse().filter((id) => myFollowing.has(String(id)));
+  const top = mutual.slice(0, 3);
+  const cards = await User.find({ _id: { $in: top } }).select(USER_CARD_FIELDS).lean();
+  const byId = new Map(cards.map((u) => [String(u._id), u]));
+  const users = top.flatMap((id) => byId.get(String(id)) ?? []);
+
+  res.json({ success: true, data: { users, total: mutual.length } });
 });
 
-const getFollowing = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id).populate('following', USER_CARD_FIELDS);
-  if (!user) throw new ApiError(404, 'User not found.');
-  res.json({ success: true, data: { users: user.following } });
+// Kişinin not paylaştığı dersler ve not sayıları (izleyicinin görebildiği notlardan).
+const getUserCourses = asyncHandler(async (req, res) => {
+  if (!(await User.exists({ _id: req.params.id }))) throw new ApiError(404, 'User not found.');
+  const courses = await listUserCourses(req.params.id, req.user?.id);
+  res.json({ success: true, data: { courses } });
 });
 
 const follow = asyncHandler<AuthedRequest>(async (req, res) => {
@@ -438,6 +494,8 @@ export {
   getUserNotes,
   getFollowers,
   getFollowing,
+  getMutualFollowers,
+  getUserCourses,
   follow,
   unfollow,
   block,

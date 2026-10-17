@@ -119,4 +119,38 @@ const listNotes = async ({ match = {}, sort = 'newest', page, limit, skip, viewe
   return { items: result.items, pagination: buildPagination(page, limit, total) };
 };
 
-export { listNotes, assertNoteVisible, PUBLIC_NOTES_MATCH, SORT_OPTIONS };
+// Kişinin not paylaştığı dersler (profildeki "Courses shared" ve ders filtresi): izleyicinin görebildiği
+// grupsuz notlardan, ders kodu (yoksa ders adı) başına not sayısı. En son not paylaşılan ders önce.
+const listUserCourses = async (authorId: string, viewerId?: string) => {
+  const viewer = viewerId ? await User.findById(viewerId).select('following').lean() : null;
+  const courses: { code: string; name: string; count: number }[] = await Note.aggregate([
+    {
+      $match: {
+        $and: [{ author: new mongoose.Types.ObjectId(authorId) }, visibleNotesMatch(viewerId, viewer?.following)],
+      },
+    },
+    {
+      $addFields: {
+        course: {
+          $trim: {
+            input: {
+              $cond: [
+                { $gt: [{ $strLenCP: { $ifNull: ['$courseCode', ''] } }, 0] },
+                '$courseCode',
+                { $ifNull: ['$courseName', ''] },
+              ],
+            },
+          },
+        },
+      },
+    },
+    { $match: { course: { $ne: '' } } },
+    { $sort: { createdAt: -1 } },
+    { $group: { _id: '$course', name: { $first: '$courseName' }, count: { $sum: 1 }, latest: { $first: '$createdAt' } } },
+    { $sort: { latest: -1 } },
+    { $project: { _id: 0, code: '$_id', name: { $trim: { input: { $ifNull: ['$name', ''] } } }, count: 1 } },
+  ]);
+  return courses;
+};
+
+export { listNotes, listUserCourses, assertNoteVisible, PUBLIC_NOTES_MATCH, SORT_OPTIONS };

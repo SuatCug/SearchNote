@@ -30,8 +30,10 @@ router.get('/active', authenticate, userController.getActiveUsers);
 router.get('/suggestions', authenticate, userController.getSuggestions);
 router.get('/:id', idParamRules, validate, optionalAuth, userController.getProfile);
 router.get('/:id/notes', idParamRules, validate, optionalAuth, userController.getUserNotes);
-router.get('/:id/followers', idParamRules, validate, userController.getFollowers);
-router.get('/:id/following', idParamRules, validate, userController.getFollowing);
+router.get('/:id/courses', idParamRules, validate, optionalAuth, userController.getUserCourses);
+router.get('/:id/followers', idParamRules, validate, optionalAuth, userController.getFollowers);
+router.get('/:id/following', idParamRules, validate, optionalAuth, userController.getFollowing);
+router.get('/:id/mutual-followers', idParamRules, validate, authenticate, userController.getMutualFollowers);
 
 // Takip sistemi (sadece doğrulanmış kullanıcılar)
 router.post('/:id/follow', idParamRules, validate, authenticate, requireVerified, userController.follow);
