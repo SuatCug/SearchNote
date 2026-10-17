@@ -1,4 +1,4 @@
-import { User, Note, Group } from '../models/index.ts';
+import { User, Note, Group, Conversation, Notification } from '../models/index.ts';
 import type { NotificationType } from '../models/notification.model.ts';
 import type { NotificationSettings, PushCategory } from '../models/user.model.ts';
 import type { IdLike } from '../types/common.ts';
@@ -19,6 +19,9 @@ interface PushMessage {
   body: string;
   // Bildirime dokununca açılacak uygulama içi adres (ör. /messages/abc)
   url: string;
+  // Aynı etiketli yeni bildirim telefondaki eskisinin yerine geçer (Instagram/WhatsApp gibi:
+  // bir sohbetten 10 mesaj gelince 10 ayrı bildirim değil, güncellenen tek bildirim)
+  tag?: string;
 }
 
 interface ExpoTicket {
@@ -32,7 +35,7 @@ const truncate = (text: string, max = 120) => (text.length > max ? `${text.slice
 const wantsPush = (settings: NotificationSettings | undefined, category: PushCategory) =>
   settings?.[category] !== false && !(settings?.pausedUntil && new Date(settings.pausedUntil) > new Date());
 
-const sendPush = async (recipients: IdLike[], category: PushCategory, { title, body, url }: PushMessage) => {
+const sendPush = async (recipients: IdLike[], category: PushCategory, { title, body, url, tag }: PushMessage) => {
   try {
     const ids = [...new Set(recipients.map(String))].filter((id) => !isOnline(id));
     if (!ids.length) return;
@@ -52,6 +55,8 @@ const sendPush = async (recipients: IdLike[], category: PushCategory, { title, b
       sound: 'default',
       channelId: 'default',
       priority: 'high',
+      // tag: Android'de ekrandaki eski bildirimi değiştirir; collapseId: iOS'ta aynısı, Android'de yoldakileri birleştirir
+      ...(tag && { tag, collapseId: tag }),
     }));
 
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
@@ -90,7 +95,12 @@ const removePushToken = (userId: string, token: string) =>
 
 const firstName = (fullName?: string | null) => fullName?.split(' ')[0] || 'Someone';
 
-// Birebir mesaj: başlık gönderenin adı, metin mesajın kendisi
+// Map alanı .lean() ile düz obje gelir
+const mapValue = <T>(map: Map<string, T> | Record<string, T> | null | undefined, key: string) =>
+  map instanceof Map ? map.get(key) : map?.[key];
+
+// Birebir mesaj: sohbet başına tek bildirim. Başlık gönderenin adı (birden fazla okunmamışta sayıyla:
+// "Ali Veli (3 messages)"), metin son mesaj.
 const pushDirectMessage = async (
   recipient: IdLike,
   senderId: IdLike,
@@ -98,15 +108,21 @@ const pushDirectMessage = async (
   text: string,
   hasNote: boolean
 ) => {
-  const sender = await User.findById(senderId).select('fullName').lean();
+  const [sender, conversation] = await Promise.all([
+    User.findById(senderId).select('fullName').lean(),
+    Conversation.findById(conversationId).select('unreadCounts').lean(),
+  ]);
+  const unread = Number(mapValue(conversation?.unreadCounts, String(recipient)) ?? 0);
+  const name = sender?.fullName ?? 'New message';
   await sendPush([recipient], 'messages', {
-    title: sender?.fullName ?? 'New message',
+    title: unread > 1 ? `${name} (${unread} messages)` : name,
     body: text || (hasNote ? '📄 Shared a note' : 'Sent a message'),
     url: `/messages/${conversationId}`,
+    tag: `dm:${conversationId}`,
   });
 };
 
-// Grup sohbeti: başlık grup adı, metin "Ad: mesaj"
+// Grup sohbeti: grup başına tek bildirim (son mesajla güncellenir); başlık grup adı, metin "Ad: mesaj"
 const pushGroupMessage = async (
   group: { _id: IdLike; name: string; members: IdLike[] },
   senderId: IdLike,
@@ -116,7 +132,12 @@ const pushGroupMessage = async (
   await sendPush(
     group.members.filter((m) => String(m) !== String(senderId)),
     'groups',
-    { title: group.name, body: `${firstName(sender?.fullName)}: ${text}`, url: `/groups/${group._id}` }
+    {
+      title: group.name,
+      body: `${firstName(sender?.fullName)}: ${text}`,
+      url: `/groups/${group._id}`,
+      tag: `group:${group._id}`,
+    }
   );
 };
 
@@ -134,6 +155,7 @@ const pushGroupNote = async (groupId: IdLike, authorId: IdLike, noteTitle: strin
       title: group.name,
       body: `${firstName(author?.fullName)} shared a note: ${noteTitle}`,
       url: `/groups/${group._id}`,
+      tag: `group:${group._id}`,
     }
   );
 };
@@ -164,22 +186,35 @@ const pushActivity = async ({
   group?: IdLike;
   text?: string;
 }) => {
-  const [actorDoc, noteDoc, groupDoc] = await Promise.all([
+  const [actorDoc, noteDoc, groupDoc, likers] = await Promise.all([
     User.findById(actor).select('fullName').lean(),
     note ? Note.findById(note).select('title').lean() : null,
     group ? Group.findById(group).select('name').lean() : null,
+    // Aynı nota gelen okunmamış beğeniler tek bildirimde toplanır: "Ali Veli and 3 others liked …"
+    type === 'like' ? Notification.countDocuments({ recipient, type: 'like', note, read: false }) : 0,
   ]);
   const name = actorDoc?.fullName ?? 'Someone';
   const noteTitle = noteDoc?.title ? `“${truncate(noteDoc.title, 60)}”` : 'your note';
   const groupName = groupDoc?.name ?? 'your group';
+  const others = likers - 1;
+  const likedBy = others > 0 ? `${name} and ${others} ${others === 1 ? 'other' : 'others'}` : name;
 
-  const content: Record<NotificationType, { body: string; url: string }> = {
-    like: { body: `${name} liked ${noteTitle}`, url: `/notes/${note}` },
-    comment: { body: `${name} commented: ${text ?? ''}`, url: `/notes/${note}` },
-    follow: { body: `${name} started following you`, url: `/users/${actor}` },
-    group_join: { body: `${name} joined ${groupName}`, url: `/groups/${group}` },
-    group_request: { body: `${name} wants to join ${groupName}`, url: `/groups/${group}` },
-    group_approved: { body: `You're now a member of ${groupName}`, url: `/groups/${group}` },
+  // tag: aynı nota gelen beğeniler / yorumlar, takipler ve aynı gruptaki olaylar tek bildirimde kalır
+  const content: Record<NotificationType, { body: string; url: string; tag: string }> = {
+    like: { body: `${likedBy} liked ${noteTitle}`, url: `/notes/${note}`, tag: `like:${note}` },
+    comment: { body: `${name} commented: ${text ?? ''}`, url: `/notes/${note}`, tag: `comment:${note}` },
+    follow: { body: `${name} started following you`, url: `/users/${actor}`, tag: 'follow' },
+    group_join: { body: `${name} joined ${groupName}`, url: `/groups/${group}`, tag: `group-join:${group}` },
+    group_request: {
+      body: `${name} wants to join ${groupName}`,
+      url: `/groups/${group}`,
+      tag: `group-request:${group}`,
+    },
+    group_approved: {
+      body: `You're now a member of ${groupName}`,
+      url: `/groups/${group}`,
+      tag: `group-approved:${group}`,
+    },
   };
   await sendPush([recipient], CATEGORY_OF[type], { title: 'SearchNote', ...content[type] });
 };
