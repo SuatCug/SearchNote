@@ -19,6 +19,6 @@ const reportRules = [
   body('details').optional().trim().isLength({ max: 1000 }).withMessage('Details can be at most 1000 characters.'),
 ];
 
-const deleteAccountRules = [body('password').optional().isString(), body('code').optional().isString()];
+const deleteAccountRules = [body('code').optional().isString()];
 
 export { updateProfileRules, changePasswordRules, reportRules, deleteAccountRules };

@@ -137,7 +137,7 @@ const sendSignupCode = async (email: string, code: string, ttlMinutes: number) =
   });
 };
 
-// Şifresi olmayan (Google ile açılmış) hesabı silmeden önce gönderilen onay kodu.
+// Hesabı silmeden önce gönderilen onay kodu.
 const sendAccountDeletionCode = async (user: { email: string; fullName: string }, code: string, ttlMinutes: number) => {
   if (!isMailConfigured()) {
     console.log(`📧 [DEV] Account deletion code for ${user.email}: ${code}`);
@@ -148,12 +148,12 @@ const sendAccountDeletionCode = async (user: { email: string; fullName: string }
     to: user.email,
     toName: user.fullName,
     subject: `${code} is your SearchNote account deletion code`,
-    text: `Hi ${user.fullName},\n\nWe received a request to permanently delete your SearchNote account. Enter this code in the app to confirm:\n\n${code}\n\nThe code is valid for ${ttlMinutes} minutes. If you didn't request this, don't share this code with anyone and change your Google password.`,
+    text: `Hi ${user.fullName},\n\nWe received a request to permanently delete your SearchNote account. Enter this code in the app to confirm:\n\n${code}\n\nThe code is valid for ${ttlMinutes} minutes. If you didn't request this, don't share this code with anyone and change your password — someone may have access to your account.`,
     html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1f2937">
       <h2 style="color:#1e3050">Confirm account deletion</h2>
       <p>Hi ${user.fullName}, we received a request to permanently delete your SearchNote account. Enter this code in the app to confirm:</p>
       <p style="margin:28px 0;font-size:32px;font-weight:bold;letter-spacing:8px;color:#b91c1c">${code}</p>
-      <p style="font-size:13px;color:#6b7280">The code is valid for ${ttlMinutes} minutes. If you didn't request this, don't share this code with anyone and change your Google password.</p>
+      <p style="font-size:13px;color:#6b7280">The code is valid for ${ttlMinutes} minutes. If you didn't request this, don't share this code with anyone and change your password — someone may have access to your account.</p>
     </div>`,
   });
 };

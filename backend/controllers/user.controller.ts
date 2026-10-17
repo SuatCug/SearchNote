@@ -363,11 +363,10 @@ const DELETE_CODE_TTL_MINUTES = 10;
 const DELETE_CODE_RESEND_SECONDS = 60;
 const DELETE_CODE_MAX_ATTEMPTS = 5;
 
-// Şifresi olmayan (Google) hesap için silme onay kodunu e-postaya gönderir.
+// Hesap silme onay kodunu e-postaya gönderir (her hesap türünde).
 const sendDeleteCode = asyncHandler<AuthedRequest>(async (req, res) => {
   const user = await User.findById(req.user.id).select('+deleteCodeSentAt');
   if (!user) throw new ApiError(404, 'User not found.');
-  if (user.hasPassword !== false) throw new ApiError(400, 'Enter your password to delete your account.');
 
   const sinceLast = user.deleteCodeSentAt ? (Date.now() - user.deleteCodeSentAt.getTime()) / 1000 : Infinity;
   if (sinceLast < DELETE_CODE_RESEND_SECONDS) {
@@ -398,37 +397,28 @@ const sendDeleteCode = asyncHandler<AuthedRequest>(async (req, res) => {
   });
 });
 
-// Hesabı kalıcı olarak siler. Şifresi olan hesapta şifre, olmayanda (Google) e-postaya gelen kod istenir.
-// Silindikten sonra bilgilendirme e-postası gönderilir.
+// Hesabı kalıcı olarak siler. Her hesapta e-postaya gelen kod istenir: telefonu ele geçiren biri
+// e-postaya erişemiyorsa hesabı silemez. Silindikten sonra bilgilendirme e-postası gönderilir.
 const deleteAccount = asyncHandler<AuthedRequest>(async (req, res) => {
-  const user = await User.findById(req.user.id).select(
-    '+passwordHash +deleteCodeHash +deleteCodeExpires +deleteCodeAttempts'
-  );
+  const user = await User.findById(req.user.id).select('+deleteCodeHash +deleteCodeExpires +deleteCodeAttempts');
   if (!user) throw new ApiError(404, 'User not found.');
 
-  if (user.hasPassword !== false) {
-    const password = String(req.body.password ?? '');
-    if (!password || !(await bcrypt.compare(password, user.passwordHash))) {
-      throw new ApiError(401, 'Password is incorrect.');
-    }
-  } else {
-    if (!user.deleteCodeHash || !user.deleteCodeExpires || user.deleteCodeExpires < new Date()) {
-      throw new ApiError(400, 'This code has expired. Please request a new one.');
-    }
-    if ((user.deleteCodeAttempts ?? 0) >= DELETE_CODE_MAX_ATTEMPTS) {
-      throw new ApiError(429, 'Too many incorrect attempts. Please request a new code.');
-    }
-    if (hashOneTimeCode(`delete:${user._id}`, String(req.body.code ?? '')) !== user.deleteCodeHash) {
-      user.deleteCodeAttempts = (user.deleteCodeAttempts ?? 0) + 1;
-      await user.save();
-      const left = DELETE_CODE_MAX_ATTEMPTS - user.deleteCodeAttempts;
-      throw new ApiError(
-        400,
-        left > 0
-          ? `The code is incorrect. ${left} attempt${left === 1 ? '' : 's'} left.`
-          : 'Too many incorrect attempts. Please request a new code.'
-      );
-    }
+  if (!user.deleteCodeHash || !user.deleteCodeExpires || user.deleteCodeExpires < new Date()) {
+    throw new ApiError(400, 'This code has expired. Please request a new one.');
+  }
+  if ((user.deleteCodeAttempts ?? 0) >= DELETE_CODE_MAX_ATTEMPTS) {
+    throw new ApiError(429, 'Too many incorrect attempts. Please request a new code.');
+  }
+  if (hashOneTimeCode(`delete:${user._id}`, String(req.body.code ?? '')) !== user.deleteCodeHash) {
+    user.deleteCodeAttempts = (user.deleteCodeAttempts ?? 0) + 1;
+    await user.save();
+    const left = DELETE_CODE_MAX_ATTEMPTS - user.deleteCodeAttempts;
+    throw new ApiError(
+      400,
+      left > 0
+        ? `The code is incorrect. ${left} attempt${left === 1 ? '' : 's'} left.`
+        : 'Too many incorrect attempts. Please request a new code.'
+    );
   }
 
   const contact = { email: user.email, fullName: user.fullName };
