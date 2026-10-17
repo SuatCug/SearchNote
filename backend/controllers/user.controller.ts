@@ -2,7 +2,8 @@ import bcrypt from 'bcryptjs';
 import mongoose, { type Types } from 'mongoose';
 import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
-import { User, Note } from '../models/index.ts';
+import { User, Note, Report } from '../models/index.ts';
+import { deleteAccount as deleteAccountData } from '../services/account.service.ts';
 import { listNotes, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
 import { saveAvatar, removeFile } from '../services/storage.service.ts';
 import { parsePagination, buildPagination } from '../utils/pagination.util.ts';
@@ -287,18 +288,90 @@ const updateAvatar = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, message: 'Profile photo updated.', data: { user: user.toSafeJSON() } });
 });
 
+// Profil fotoğrafını kaldırır (baş harfler gösterilir).
+const removeAvatar = asyncHandler<AuthedRequest>(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) throw new ApiError(404, 'User not found.');
+  const oldAvatar = user.avatarUrl;
+  user.avatarUrl = '';
+  await user.save();
+  // Google'dan gelen fotoğraf bizim depomuzda değil; sadece kendi dosyalarımız silinir.
+  if (oldAvatar.startsWith('/uploads/') || oldAvatar.startsWith('https://res.cloudinary.com/')) {
+    await removeFile(oldAvatar);
+  }
+
+  res.json({ success: true, message: 'Profile photo removed.', data: { user: user.toSafeJSON() } });
+});
+
+// Şifre değiştirme. Google ile açılmış ve henüz şifresi olmayan hesapta (hasPassword=false)
+// mevcut şifre istenmez: kullanıcı ilk şifresini belirler.
 const changePassword = asyncHandler<AuthedRequest>(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
   const user = await User.findById(req.user.id).select('+passwordHash');
   if (!user) throw new ApiError(404, 'User not found.');
-  const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
-  if (!isMatch) throw new ApiError(401, 'Current password is incorrect.');
+  if (user.hasPassword !== false) {
+    if (!currentPassword) throw new ApiError(400, 'Current password is required.');
+    const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isMatch) throw new ApiError(401, 'Current password is incorrect.');
+  }
 
   user.passwordHash = await bcrypt.hash(newPassword, 10);
+  user.hasPassword = true;
   await user.save();
 
-  res.json({ success: true, message: 'Password updated.' });
+  res.json({ success: true, message: 'Password updated.', data: { user: user.toSafeJSON() } });
+});
+
+// Engellediğim kişiler (Ayarlar > Blocked accounts), en son engellenen önce.
+const getBlockedUsers = asyncHandler<AuthedRequest>(async (req, res) => {
+  const me = await User.findById(req.user.id).populate('blockedUsers', USER_CARD_FIELDS);
+  if (!me) throw new ApiError(404, 'User not found.');
+  res.json({ success: true, data: { users: [...me.blockedUsers].reverse() } });
+});
+
+// Beni takip eden birini takipçilerimden çıkarır (Instagram'daki "Remove"). Karşı tarafa bildirim gitmez.
+const removeFollower = asyncHandler<AuthedRequest>(async (req, res) => {
+  const followerId = req.params.id;
+  const me = await User.findByIdAndUpdate(req.user.id, { $pull: { followers: followerId } }, { returnDocument: 'after' });
+  if (!me) throw new ApiError(404, 'User not found.');
+  await User.updateOne({ _id: followerId }, { $pull: { following: req.user.id } });
+  await removeNotification({ recipient: me._id, actor: followerId, type: 'follow' });
+
+  res.json({ success: true, message: 'Follower removed.', data: { followersCount: me.followers.length } });
+});
+
+// Kullanıcıyı şikâyet et. Aynı kişiyi tekrar şikâyet etmek önceki kaydı günceller.
+const reportUser = asyncHandler<AuthedRequest>(async (req, res) => {
+  const targetId = req.params.id;
+  if (targetId === req.user.id) throw new ApiError(400, 'You cannot report yourself.');
+  if (!(await User.exists({ _id: targetId }))) throw new ApiError(404, 'User not found.');
+
+  await Report.findOneAndUpdate(
+    { reporter: req.user.id, targetType: 'user', target: targetId },
+    { reason: req.body.reason, details: req.body.details ?? '', status: 'new' },
+    { upsert: true }
+  );
+
+  res.status(201).json({ success: true, message: 'Thanks for letting us know.' });
+});
+
+// Hesabı kalıcı olarak siler. Şifresi olan hesapta şifre, olmayanda (Google) "DELETE" yazılması istenir.
+const deleteAccount = asyncHandler<AuthedRequest>(async (req, res) => {
+  const user = await User.findById(req.user.id).select('+passwordHash');
+  if (!user) throw new ApiError(404, 'User not found.');
+
+  if (user.hasPassword !== false) {
+    const password = String(req.body.password ?? '');
+    if (!password || !(await bcrypt.compare(password, user.passwordHash))) {
+      throw new ApiError(401, 'Password is incorrect.');
+    }
+  } else if (req.body.confirm !== 'DELETE') {
+    throw new ApiError(400, 'Type DELETE to confirm.');
+  }
+
+  await deleteAccountData(req.user.id);
+  res.json({ success: true, message: 'Your account has been deleted.' });
 });
 
 export {
@@ -315,5 +388,10 @@ export {
   unblock,
   updateProfile,
   updateAvatar,
+  removeAvatar,
   changePassword,
+  getBlockedUsers,
+  removeFollower,
+  reportUser,
+  deleteAccount,
 };

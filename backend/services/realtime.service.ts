@@ -49,7 +49,13 @@ const getOnlineUserIds = () => [...connections.keys()];
 
 const isOnline = (userId: IdLike) => connections.has(String(userId));
 
+// Kullanıcının tüm açık bağlantılarını kapatır (hesap silindiğinde).
+const disconnectUser = (userId: IdLike) => {
+  io?.in(userRoom(userId)).disconnectSockets(true);
+};
+
 export {
+  disconnectUser,
   setIo,
   userRoom,
   groupRoom,

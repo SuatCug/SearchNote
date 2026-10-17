@@ -312,6 +312,7 @@ const completeGoogleSignup = asyncHandler(async (req, res) => {
     fullName,
     email: record.email,
     passwordHash,
+    hasPassword: false,
     googleId: record.googleId,
     avatarUrl: record.avatarUrl ?? '',
     university,
@@ -417,6 +418,7 @@ const resetPassword = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(400, 'This reset session has expired. Please start again.');
 
   user.passwordHash = await bcrypt.hash(req.body.password, 10);
+  user.hasPassword = true;
   user.resetTokenHash = undefined;
   user.resetTokenExpires = undefined;
   user.resetCodeSentAt = undefined;

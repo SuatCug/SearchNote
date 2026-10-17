@@ -27,6 +27,7 @@ export interface IUser {
   resetTokenHash?: string;
   resetTokenExpires?: Date;
   googleId?: string;
+  hasPassword?: boolean;
   createdAt: Date;
 }
 
@@ -47,6 +48,7 @@ export interface PublicUserJSON {
 export interface SafeUserJSON extends PublicUserJSON {
   email: string;
   isVerified: boolean;
+  hasPassword: boolean;
 }
 
 interface IUserMethods {
@@ -95,6 +97,9 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     resetTokenExpires: { type: Date, select: false },
     // "Google ile devam et": Google hesabının değişmeyen kimliği (sub). Aynı e-postayla açılmış hesaba ilk Google girişinde bağlanır.
     googleId: { type: String, unique: true, sparse: true, select: false },
+    // Google ile açılan hesapta kullanıcının bildiği bir şifre yoktur (rastgele hash konur) -> false.
+    // Şifre belirleyince / sıfırlayınca true olur. Alanı olmayan eski hesaplar şifreli sayılır.
+    hasPassword: { type: Boolean, default: true },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
@@ -114,7 +119,12 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
         };
       },
       toSafeJSON() {
-        return { ...this.toPublicJSON(), email: this.email, isVerified: this.hasVerifiedAccess() };
+        return {
+          ...this.toPublicJSON(),
+          email: this.email,
+          isVerified: this.hasVerifiedAccess(),
+          hasPassword: this.hasPassword !== false,
+        };
       },
       // Doğrulama şartı kapalıyken (REQUIRE_EMAIL_VERIFICATION=false) herkes doğrulanmış sayılır.
       hasVerifiedAccess() {

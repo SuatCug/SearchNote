@@ -5,14 +5,23 @@ import requireVerified from '../middlewares/verified.middleware.ts';
 import validate from '../middlewares/validate.middleware.ts';
 import { uploadAvatar } from '../middlewares/upload.middleware.ts';
 import { idParamRules } from '../validations/common.validation.ts';
-import { updateProfileRules, changePasswordRules } from '../validations/user.validation.ts';
+import {
+  updateProfileRules,
+  changePasswordRules,
+  reportRules,
+  deleteAccountRules,
+} from '../validations/user.validation.ts';
 
 const router = Router();
 
 // Kendi hesabı
 router.patch('/me', authenticate, updateProfileRules, validate, userController.updateProfile);
+router.delete('/me', authenticate, deleteAccountRules, validate, userController.deleteAccount);
 router.put('/me/avatar', authenticate, uploadAvatar, userController.updateAvatar);
+router.delete('/me/avatar', authenticate, userController.removeAvatar);
 router.patch('/me/password', authenticate, changePasswordRules, validate, userController.changePassword);
+router.get('/me/blocked', authenticate, userController.getBlockedUsers);
+router.delete('/me/followers/:id', idParamRules, validate, authenticate, userController.removeFollower);
 
 // Herkese açık profiller (/search, /:id'den önce tanımlanmalı)
 router.get('/search', authenticate, userController.searchUsers);
@@ -30,5 +39,8 @@ router.delete('/:id/follow', idParamRules, validate, authenticate, requireVerifi
 // Engelleme
 router.post('/:id/block', idParamRules, validate, authenticate, userController.block);
 router.delete('/:id/block', idParamRules, validate, authenticate, userController.unblock);
+
+// Şikâyet
+router.post('/:id/report', idParamRules, reportRules, validate, authenticate, userController.reportUser);
 
 export default router;
