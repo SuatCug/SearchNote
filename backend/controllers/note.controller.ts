@@ -5,6 +5,7 @@ import { Note, User } from '../models/index.ts';
 import { listNotes, assertNoteVisible, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
 import { assertMember, recordGroupActivity } from '../services/group.service.ts';
 import { notify, removeNotification } from '../services/notification.service.ts';
+import { pushGroupNote } from '../services/push.service.ts';
 import { saveNoteFile, readNoteFile, removeFile } from '../services/storage.service.ts';
 import { parsePagination, buildPagination } from '../utils/pagination.util.ts';
 import { containsRegex, exactRegex, splitSearchWords, wordSearchMatch } from '../utils/regex.util.ts';
@@ -211,7 +212,13 @@ const createNote = asyncHandler<AuthedRequest>(async (req, res) => {
     { path: 'group', select: 'name isPrivate' },
   ]);
   // Gruba paylaşılan not, üyelerin "Gruplarım" listesinde son hareket olarak görünür.
-  if (req.body.group) await recordGroupActivity(req.body.group, req.user.id, note.createdAt);
+  if (req.body.group) {
+    await recordGroupActivity(req.body.group, req.user.id, note.createdAt);
+    // Uygulaması kapalı üyelere telefon bildirimi (beklenmez)
+    pushGroupNote(req.body.group, req.user.id, note.title).catch((e) =>
+      console.error('Push error:', (e as Error).message)
+    );
+  }
 
   res.status(201).json({
     success: true,

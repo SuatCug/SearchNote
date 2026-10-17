@@ -11,6 +11,7 @@ import {
   reportRules,
   deleteAccountRules,
   pushTokenRules,
+  notificationSettingsRules,
 } from '../validations/user.validation.ts';
 
 const router = Router();
@@ -27,6 +28,14 @@ router.delete('/me/followers/:id', idParamRules, validate, authenticate, userCon
 // Mobil push bildirimi: cihaz token'ını kaydet (girişte) / sil (çıkışta)
 router.post('/me/push-tokens', authenticate, pushTokenRules, validate, userController.addPushToken);
 router.delete('/me/push-tokens', authenticate, pushTokenRules, validate, userController.deletePushToken);
+router.get('/me/notification-settings', authenticate, userController.getNotificationSettings);
+router.patch(
+  '/me/notification-settings',
+  authenticate,
+  notificationSettingsRules,
+  validate,
+  userController.updateNotificationSettings
+);
 
 // Herkese açık profiller (/search, /:id'den önce tanımlanmalı)
 router.get('/search', authenticate, userController.searchUsers);

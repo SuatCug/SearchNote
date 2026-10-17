@@ -1,5 +1,6 @@
 import { body } from 'express-validator';
 import { REPORT_REASONS } from '../models/report.model.ts';
+import { PUSH_CATEGORIES } from '../models/user.model.ts';
 import { PUSH_TOKEN_REGEX } from '../services/push.service.ts';
 
 const updateProfileRules = [
@@ -24,4 +25,19 @@ const deleteAccountRules = [body('code').optional().isString()];
 
 const pushTokenRules = [body('token').matches(PUSH_TOKEN_REGEX).withMessage('Invalid push token.')];
 
-export { updateProfileRules, changePasswordRules, reportRules, deleteAccountRules, pushTokenRules };
+const notificationSettingsRules = [
+  ...PUSH_CATEGORIES.map((c) => body(c).optional().isBoolean().withMessage(`${c} must be true or false.`)),
+  body('pauseMinutes')
+    .optional()
+    .isInt({ min: 0, max: 7 * 24 * 60 })
+    .withMessage('Pause must be between 0 minutes and 7 days.'),
+];
+
+export {
+  updateProfileRules,
+  changePasswordRules,
+  reportRules,
+  deleteAccountRules,
+  pushTokenRules,
+  notificationSettingsRules,
+};

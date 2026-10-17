@@ -4,6 +4,11 @@ import { requireEmailVerification } from '../config/features.ts';
 // .edu.tr şartı (REQUIRE_EDU_EMAIL) validations/auth.validation.ts'te uygulanır.
 export const EDU_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.edu\.tr$/;
 
+// Telefon bildirimi kategorileri (mobil Ayarlar > Notifications). Uygulama içi bildirim listesi etkilenmez.
+export const PUSH_CATEGORIES = ['likes', 'comments', 'follows', 'messages', 'groups'] as const;
+export type PushCategory = (typeof PUSH_CATEGORIES)[number];
+export type NotificationSettings = Partial<Record<PushCategory, boolean>> & { pausedUntil?: Date | null };
+
 export interface IUser {
   email: string;
   passwordHash: string;
@@ -33,6 +38,7 @@ export interface IUser {
   deleteCodeAttempts?: number;
   deleteCodeSentAt?: Date;
   pushTokens?: string[];
+  notificationSettings?: NotificationSettings;
   createdAt: Date;
 }
 
@@ -61,6 +67,18 @@ interface IUserMethods {
   toSafeJSON(): SafeUserJSON;
   hasVerifiedAccess(): boolean;
 }
+
+const notificationSettingsSchema = new Schema<NotificationSettings>(
+  {
+    likes: Boolean,
+    comments: Boolean,
+    follows: Boolean,
+    messages: Boolean,
+    groups: Boolean,
+    pausedUntil: Date,
+  },
+  { _id: false }
+);
 
 type UserModel = Model<IUser, object, IUserMethods>;
 export type UserDocument = HydratedDocument<IUser, IUserMethods>;
@@ -112,6 +130,8 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     deleteCodeSentAt: { type: Date, select: false },
     // Mobil uygulamanın Expo push token'ları (her cihaz için bir tane; çıkış yapınca silinir).
     pushTokens: { type: [String], default: undefined, select: false },
+    // Hangi olaylar telefona bildirim olarak gelsin (alan yoksa açık sayılır) ve "Pause all" bitiş zamanı.
+    notificationSettings: { type: notificationSettingsSchema, default: undefined, select: false },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },

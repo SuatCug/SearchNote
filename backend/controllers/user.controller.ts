@@ -3,6 +3,7 @@ import mongoose, { type Types } from 'mongoose';
 import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
 import { User, Note, Report } from '../models/index.ts';
+import { PUSH_CATEGORIES, type NotificationSettings } from '../models/user.model.ts';
 import { deleteAccount as deleteAccountData } from '../services/account.service.ts';
 import { sendAccountDeletionCode, sendAccountDeletedEmail } from '../services/mail.service.ts';
 import { registerPushToken, removePushToken } from '../services/push.service.ts';
@@ -412,6 +413,35 @@ const deletePushToken = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, message: 'Push notifications disabled.' });
 });
 
+// Ayarlar > Notifications: hangi olaylar telefona bildirim olarak gelsin (kayıt yoksa hepsi açık)
+const toSettingsJSON = (s: NotificationSettings | undefined) => ({
+  ...Object.fromEntries(PUSH_CATEGORIES.map((c) => [c, s?.[c] !== false])),
+  pausedUntil: s?.pausedUntil && new Date(s.pausedUntil) > new Date() ? s.pausedUntil : null,
+});
+
+const getNotificationSettings = asyncHandler<AuthedRequest>(async (req, res) => {
+  const user = await User.findById(req.user.id).select('+notificationSettings').lean();
+  if (!user) throw new ApiError(404, 'User not found.');
+  res.json({ success: true, data: { settings: toSettingsJSON(user.notificationSettings) } });
+});
+
+// Gövde: { likes?, comments?, follows?, messages?, groups?: boolean, pauseMinutes?: number (0 = devam et) }
+const updateNotificationSettings = asyncHandler<AuthedRequest>(async (req, res) => {
+  const set: Record<string, unknown> = {};
+  for (const c of PUSH_CATEGORIES) {
+    if (typeof req.body[c] === 'boolean') set[`notificationSettings.${c}`] = req.body[c];
+  }
+  if (req.body.pauseMinutes !== undefined) {
+    const minutes = Number(req.body.pauseMinutes);
+    set['notificationSettings.pausedUntil'] = minutes > 0 ? new Date(Date.now() + minutes * 60 * 1000) : null;
+  }
+  const user = await User.findByIdAndUpdate(req.user.id, { $set: set }, { returnDocument: 'after' })
+    .select('+notificationSettings')
+    .lean();
+  if (!user) throw new ApiError(404, 'User not found.');
+  res.json({ success: true, data: { settings: toSettingsJSON(user.notificationSettings) } });
+});
+
 // Kullanıcıyı şikâyet et. Aynı kişiyi tekrar şikâyet etmek önceki kaydı günceller.
 const reportUser = asyncHandler<AuthedRequest>(async (req, res) => {
   const targetId = req.params.id;
@@ -522,6 +552,8 @@ export {
   reportUser,
   addPushToken,
   deletePushToken,
+  getNotificationSettings,
+  updateNotificationSettings,
   sendDeleteCode,
   deleteAccount,
 };
