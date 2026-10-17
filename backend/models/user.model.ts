@@ -32,6 +32,7 @@ export interface IUser {
   deleteCodeExpires?: Date;
   deleteCodeAttempts?: number;
   deleteCodeSentAt?: Date;
+  pushTokens?: string[];
   createdAt: Date;
 }
 
@@ -109,6 +110,8 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     deleteCodeExpires: { type: Date, select: false },
     deleteCodeAttempts: { type: Number, select: false },
     deleteCodeSentAt: { type: Date, select: false },
+    // Mobil uygulamanın Expo push token'ları (her cihaz için bir tane; çıkış yapınca silinir).
+    pushTokens: { type: [String], default: undefined, select: false },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },

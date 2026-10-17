@@ -3,6 +3,7 @@ import { User, Note, Conversation, DirectMessage } from '../models/index.ts';
 import { assertNoteVisible } from './note.service.ts';
 import { isBlockedBetween } from './block.service.ts';
 import { emitToUsers } from './realtime.service.ts';
+import { pushDirectMessage } from './push.service.ts';
 import { createLimiter } from '../middlewares/rateLimit.middleware.ts';
 import type { Types } from 'mongoose';
 import type { ConversationDocument } from '../models/conversation.model.ts';
@@ -161,6 +162,10 @@ const saveDirectMessage = async (me: string, conversationId: string, { text, not
   // İki tarafın da açık sekmeleri konuşmayı ve okunmamış sayısını anında yeniler.
   // senderId: alıcı tarafta "yazıyor..." göstergesi hemen kalksın.
   emitToUsers([me, otherId], 'message:changed', { conversationId: String(conversation._id), senderId: me });
+  // Uygulaması kapalıysa telefonuna bildirim (beklenmez; hata gönderimi bozmaz)
+  pushDirectMessage(otherId, me, conversation._id, message.text, Boolean(note)).catch((e) =>
+    console.error('Push error:', (e as Error).message)
+  );
   return toMessageJSON(message);
 };
 

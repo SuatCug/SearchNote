@@ -5,6 +5,7 @@ import ApiError from '../utils/apiError.ts';
 import { User, Note, Report } from '../models/index.ts';
 import { deleteAccount as deleteAccountData } from '../services/account.service.ts';
 import { sendAccountDeletionCode, sendAccountDeletedEmail } from '../services/mail.service.ts';
+import { registerPushToken, removePushToken } from '../services/push.service.ts';
 import { createOneTimeCode, hashOneTimeCode } from '../utils/token.util.ts';
 import { listNotes, listUserCourses, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
 import { saveAvatar, removeFile } from '../services/storage.service.ts';
@@ -399,6 +400,18 @@ const removeFollower = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, message: 'Follower removed.', data: { followersCount: me.followers.length } });
 });
 
+// Mobil push: bu cihazın token'ı hesaba eklenir (aynı cihaz başka hesapta kayıtlıysa oradan alınır)
+const addPushToken = asyncHandler<AuthedRequest>(async (req, res) => {
+  await registerPushToken(req.user.id, req.body.token);
+  res.json({ success: true, message: 'Push notifications enabled.' });
+});
+
+// Çıkış yapılırken: bu cihaza artık bu hesabın bildirimleri gitmez
+const deletePushToken = asyncHandler<AuthedRequest>(async (req, res) => {
+  await removePushToken(req.user.id, req.body.token);
+  res.json({ success: true, message: 'Push notifications disabled.' });
+});
+
 // Kullanıcıyı şikâyet et. Aynı kişiyi tekrar şikâyet etmek önceki kaydı günceller.
 const reportUser = asyncHandler<AuthedRequest>(async (req, res) => {
   const targetId = req.params.id;
@@ -507,6 +520,8 @@ export {
   getBlockedUsers,
   removeFollower,
   reportUser,
+  addPushToken,
+  deletePushToken,
   sendDeleteCode,
   deleteAccount,
 };

@@ -12,6 +12,7 @@ import {
 import { listNotes } from '../services/note.service.ts';
 import { notify } from '../services/notification.service.ts';
 import { emitToGroup } from '../services/realtime.service.ts';
+import { pushGroupMessage } from '../services/push.service.ts';
 import { buildPagination, parsePagination } from '../utils/pagination.util.ts';
 import { exactRegex, wordSearchMatch } from '../utils/regex.util.ts';
 import type { GroupDocument } from '../models/group.model.ts';
@@ -342,6 +343,8 @@ const sendMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   await message.populate('user', 'fullName avatarUrl');
   emitToGroup(group._id, 'group:message', { groupId: String(group._id) });
   await recordGroupActivity(group._id, req.user.id, message.createdAt);
+  // Uygulaması kapalı üyelere telefon bildirimi (beklenmez)
+  pushGroupMessage(group, req.user.id, message.text).catch((e) => console.error('Push error:', (e as Error).message));
 
   res.status(201).json({ success: true, data: { message } });
 });

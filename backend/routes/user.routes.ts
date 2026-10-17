@@ -10,6 +10,7 @@ import {
   changePasswordRules,
   reportRules,
   deleteAccountRules,
+  pushTokenRules,
 } from '../validations/user.validation.ts';
 
 const router = Router();
@@ -23,6 +24,9 @@ router.delete('/me/avatar', authenticate, userController.removeAvatar);
 router.patch('/me/password', authenticate, changePasswordRules, validate, userController.changePassword);
 router.get('/me/blocked', authenticate, userController.getBlockedUsers);
 router.delete('/me/followers/:id', idParamRules, validate, authenticate, userController.removeFollower);
+// Mobil push bildirimi: cihaz token'ını kaydet (girişte) / sil (çıkışta)
+router.post('/me/push-tokens', authenticate, pushTokenRules, validate, userController.addPushToken);
+router.delete('/me/push-tokens', authenticate, pushTokenRules, validate, userController.deletePushToken);
 
 // Herkese açık profiller (/search, /:id'den önce tanımlanmalı)
 router.get('/search', authenticate, userController.searchUsers);

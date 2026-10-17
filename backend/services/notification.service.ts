@@ -2,6 +2,7 @@ import { Notification } from '../models/index.ts';
 import type { NotificationType } from '../models/notification.model.ts';
 import type { IdLike } from '../types/common.ts';
 import { emitToUsers } from './realtime.service.ts';
+import { pushActivity } from './push.service.ts';
 
 // Aynı kişinin aynı hedefe tekrar yaptığı bu olaylar yeni kayıt açmaz; mevcut bildirim öne alınıp okunmamış yapılır.
 const COLLAPSIBLE_TYPES: NotificationType[] = ['like', 'follow', 'group_join', 'group_request', 'group_approved'];
@@ -33,6 +34,10 @@ const notify = async ({ recipient, actor, type, note, group, text }: Notificatio
     }
     // Alıcının açık sekmelerine anında haber verilir (zil rozeti ve liste yenilenir).
     emitToUsers(recipient, 'notifications:changed');
+    // Uygulaması kapalıysa telefonuna bildirim (beklenmez)
+    pushActivity({ recipient, actor, type, note, group, text }).catch((e) =>
+      console.error('Push error:', (e as Error).message)
+    );
   } catch (error) {
     console.error('Notification error:', (error as Error).message);
   }

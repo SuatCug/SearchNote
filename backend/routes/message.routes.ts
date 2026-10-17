@@ -24,6 +24,7 @@ router.post('/conversations', requireVerified, startLimit, startConversationRule
 router.get('/conversations/:id', idParamRules, validate, messageController.getConversation);
 router.delete('/conversations/:id', idParamRules, validate, messageController.deleteConversation);
 
+router.get('/conversations/:id/messages', idParamRules, validate, messageController.getOlderMessages);
 router.post(
   '/conversations/:id/messages',
   idParamRules,

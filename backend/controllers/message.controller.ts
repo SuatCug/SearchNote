@@ -170,9 +170,37 @@ const getConversation = asyncHandler<AuthedRequest>(async (req, res) => {
         otherLastReadAt: lastReadAtFor(conversation, String(otherId)),
       },
       messages: messages.reverse().map(toMessageJSON),
+      // Daha eski mesaj olabilir: istemci yukarı kaydırınca GET .../messages?before= ile ister.
+      hasMore: messages.length === MESSAGE_LIMIT,
       // İstemci bu durumda okunmamış rozetini ve konuşma listesini yeniler.
       markedRead,
     },
+  });
+});
+
+const OLDER_LIMIT = 50;
+
+// Daha eski mesajlar (sohbette yukarı kaydırınca): ?before=<ISO tarih> anından önceki en fazla 50 mesaj,
+// eskiden yeniye. Konuşmayı silen kullanıcı, sildiği andan önceki mesajları yine göremez.
+const getOlderMessages = asyncHandler<AuthedRequest>(async (req, res) => {
+  const me = req.user.id;
+  const conversation = await findConversationOrFail(req.params.id, me);
+  const before = new Date(String(req.query.before ?? ''));
+  if (Number.isNaN(before.getTime())) throw new ApiError(400, 'A valid "before" date is required.');
+
+  const cleared = clearedAtFor(conversation, me);
+  const messages = await DirectMessage.find({
+    conversation: conversation._id,
+    createdAt: { $lt: before, ...(cleared && { $gt: cleared }) },
+  })
+    .sort({ createdAt: -1 })
+    .limit(OLDER_LIMIT)
+    .populate('note', NOTE_CARD_FIELDS)
+    .lean();
+
+  res.json({
+    success: true,
+    data: { messages: messages.reverse().map(toMessageJSON), hasMore: messages.length === OLDER_LIMIT },
   });
 });
 
@@ -267,6 +295,7 @@ export {
   getUnreadCount,
   startConversation,
   getConversation,
+  getOlderMessages,
   sendMessage,
   editMessage,
   deleteMessage,

@@ -1,5 +1,6 @@
 import { body } from 'express-validator';
 import { REPORT_REASONS } from '../models/report.model.ts';
+import { PUSH_TOKEN_REGEX } from '../services/push.service.ts';
 
 const updateProfileRules = [
   body('fullName').optional().trim().notEmpty().withMessage('Full name cannot be empty.').isLength({ max: 80 }),
@@ -21,4 +22,6 @@ const reportRules = [
 
 const deleteAccountRules = [body('code').optional().isString()];
 
-export { updateProfileRules, changePasswordRules, reportRules, deleteAccountRules };
+const pushTokenRules = [body('token').matches(PUSH_TOKEN_REGEX).withMessage('Invalid push token.')];
+
+export { updateProfileRules, changePasswordRules, reportRules, deleteAccountRules, pushTokenRules };
