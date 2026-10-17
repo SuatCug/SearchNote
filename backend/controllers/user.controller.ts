@@ -4,6 +4,8 @@ import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
 import { User, Note, Report } from '../models/index.ts';
 import { deleteAccount as deleteAccountData } from '../services/account.service.ts';
+import { sendAccountDeletionCode, sendAccountDeletedEmail } from '../services/mail.service.ts';
+import { createOneTimeCode, hashOneTimeCode } from '../utils/token.util.ts';
 import { listNotes, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
 import { saveAvatar, removeFile } from '../services/storage.service.ts';
 import { parsePagination, buildPagination } from '../utils/pagination.util.ts';
@@ -356,9 +358,52 @@ const reportUser = asyncHandler<AuthedRequest>(async (req, res) => {
   res.status(201).json({ success: true, message: 'Thanks for letting us know.' });
 });
 
-// Hesabı kalıcı olarak siler. Şifresi olan hesapta şifre, olmayanda (Google) "DELETE" yazılması istenir.
+// Hesap silme onay kodu (şifre sıfırlama koduyla aynı kurallar: 10 dk geçerli, dakikada bir, 5 deneme).
+const DELETE_CODE_TTL_MINUTES = 10;
+const DELETE_CODE_RESEND_SECONDS = 60;
+const DELETE_CODE_MAX_ATTEMPTS = 5;
+
+// Şifresi olmayan (Google) hesap için silme onay kodunu e-postaya gönderir.
+const sendDeleteCode = asyncHandler<AuthedRequest>(async (req, res) => {
+  const user = await User.findById(req.user.id).select('+deleteCodeSentAt');
+  if (!user) throw new ApiError(404, 'User not found.');
+  if (user.hasPassword !== false) throw new ApiError(400, 'Enter your password to delete your account.');
+
+  const sinceLast = user.deleteCodeSentAt ? (Date.now() - user.deleteCodeSentAt.getTime()) / 1000 : Infinity;
+  if (sinceLast < DELETE_CODE_RESEND_SECONDS) {
+    const wait = Math.ceil(DELETE_CODE_RESEND_SECONDS - sinceLast);
+    throw new ApiError(429, `Please wait ${wait} seconds before requesting a new code.`);
+  }
+
+  const code = createOneTimeCode();
+  user.deleteCodeHash = hashOneTimeCode(`delete:${user._id}`, code);
+  user.deleteCodeExpires = new Date(Date.now() + DELETE_CODE_TTL_MINUTES * 60 * 1000);
+  user.deleteCodeAttempts = 0;
+  user.deleteCodeSentAt = new Date();
+  await user.save();
+
+  try {
+    await sendAccountDeletionCode(user, code, DELETE_CODE_TTL_MINUTES);
+  } catch (error) {
+    console.error('Account deletion code email error:', (error as Error).message);
+    user.deleteCodeSentAt = undefined;
+    await user.save();
+    throw new ApiError(502, 'We could not send the code. Please try again in a few minutes.');
+  }
+
+  res.json({
+    success: true,
+    message: 'We sent a code to your email.',
+    data: { email: user.email, resendIn: DELETE_CODE_RESEND_SECONDS },
+  });
+});
+
+// Hesabı kalıcı olarak siler. Şifresi olan hesapta şifre, olmayanda (Google) e-postaya gelen kod istenir.
+// Silindikten sonra bilgilendirme e-postası gönderilir.
 const deleteAccount = asyncHandler<AuthedRequest>(async (req, res) => {
-  const user = await User.findById(req.user.id).select('+passwordHash');
+  const user = await User.findById(req.user.id).select(
+    '+passwordHash +deleteCodeHash +deleteCodeExpires +deleteCodeAttempts'
+  );
   if (!user) throw new ApiError(404, 'User not found.');
 
   if (user.hasPassword !== false) {
@@ -366,11 +411,32 @@ const deleteAccount = asyncHandler<AuthedRequest>(async (req, res) => {
     if (!password || !(await bcrypt.compare(password, user.passwordHash))) {
       throw new ApiError(401, 'Password is incorrect.');
     }
-  } else if (req.body.confirm !== 'DELETE') {
-    throw new ApiError(400, 'Type DELETE to confirm.');
+  } else {
+    if (!user.deleteCodeHash || !user.deleteCodeExpires || user.deleteCodeExpires < new Date()) {
+      throw new ApiError(400, 'This code has expired. Please request a new one.');
+    }
+    if ((user.deleteCodeAttempts ?? 0) >= DELETE_CODE_MAX_ATTEMPTS) {
+      throw new ApiError(429, 'Too many incorrect attempts. Please request a new code.');
+    }
+    if (hashOneTimeCode(`delete:${user._id}`, String(req.body.code ?? '')) !== user.deleteCodeHash) {
+      user.deleteCodeAttempts = (user.deleteCodeAttempts ?? 0) + 1;
+      await user.save();
+      const left = DELETE_CODE_MAX_ATTEMPTS - user.deleteCodeAttempts;
+      throw new ApiError(
+        400,
+        left > 0
+          ? `The code is incorrect. ${left} attempt${left === 1 ? '' : 's'} left.`
+          : 'Too many incorrect attempts. Please request a new code.'
+      );
+    }
   }
 
+  const contact = { email: user.email, fullName: user.fullName };
   await deleteAccountData(req.user.id);
+  // E-posta gönderilemezse silme yine de tamamlanmış sayılır
+  sendAccountDeletedEmail(contact).catch((error) =>
+    console.error('Account deleted email error:', (error as Error).message)
+  );
   res.json({ success: true, message: 'Your account has been deleted.' });
 });
 
@@ -393,5 +459,6 @@ export {
   getBlockedUsers,
   removeFollower,
   reportUser,
+  sendDeleteCode,
   deleteAccount,
 };

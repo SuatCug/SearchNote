@@ -17,6 +17,7 @@ const router = Router();
 // Kendi hesabı
 router.patch('/me', authenticate, updateProfileRules, validate, userController.updateProfile);
 router.delete('/me', authenticate, deleteAccountRules, validate, userController.deleteAccount);
+router.post('/me/delete-code', authenticate, userController.sendDeleteCode);
 router.put('/me/avatar', authenticate, uploadAvatar, userController.updateAvatar);
 router.delete('/me/avatar', authenticate, userController.removeAvatar);
 router.patch('/me/password', authenticate, changePasswordRules, validate, userController.changePassword);

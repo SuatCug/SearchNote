@@ -137,4 +137,54 @@ const sendSignupCode = async (email: string, code: string, ttlMinutes: number) =
   });
 };
 
-export { sendVerificationEmail, sendPasswordResetCode, sendSignupCode, isMailConfigured };
+// Şifresi olmayan (Google ile açılmış) hesabı silmeden önce gönderilen onay kodu.
+const sendAccountDeletionCode = async (user: { email: string; fullName: string }, code: string, ttlMinutes: number) => {
+  if (!isMailConfigured()) {
+    console.log(`📧 [DEV] Account deletion code for ${user.email}: ${code}`);
+    return;
+  }
+
+  await sendMail({
+    to: user.email,
+    toName: user.fullName,
+    subject: `${code} is your SearchNote account deletion code`,
+    text: `Hi ${user.fullName},\n\nWe received a request to permanently delete your SearchNote account. Enter this code in the app to confirm:\n\n${code}\n\nThe code is valid for ${ttlMinutes} minutes. If you didn't request this, don't share this code with anyone and change your Google password.`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1f2937">
+      <h2 style="color:#1e3050">Confirm account deletion</h2>
+      <p>Hi ${user.fullName}, we received a request to permanently delete your SearchNote account. Enter this code in the app to confirm:</p>
+      <p style="margin:28px 0;font-size:32px;font-weight:bold;letter-spacing:8px;color:#b91c1c">${code}</p>
+      <p style="font-size:13px;color:#6b7280">The code is valid for ${ttlMinutes} minutes. If you didn't request this, don't share this code with anyone and change your Google password.</p>
+    </div>`,
+  });
+};
+
+// Hesap silindikten sonra bilgilendirme (kullanıcı farkında olmadan silindiyse haberi olsun).
+const sendAccountDeletedEmail = async (user: { email: string; fullName: string }) => {
+  if (!isMailConfigured()) {
+    console.log(`📧 [DEV] Account deleted notice for ${user.email}`);
+    return;
+  }
+
+  const contact = `${getClientUrl()}/contact`;
+  await sendMail({
+    to: user.email,
+    toName: user.fullName,
+    subject: 'Your SearchNote account has been deleted',
+    text: `Hi ${user.fullName},\n\nYour SearchNote account (${user.email}) and everything in it — notes, messages, comments and followers — has been permanently deleted.\n\nIf you didn't do this, please contact us right away: ${contact}\n\nThanks for being part of SearchNote.`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1f2937">
+      <h2 style="color:#1e3050">Your account has been deleted</h2>
+      <p>Hi ${user.fullName}, your SearchNote account (<b>${user.email}</b>) and everything in it — notes, messages, comments and followers — has been permanently deleted.</p>
+      <p style="font-size:13px;color:#6b7280;margin-top:24px">If you didn't do this, please <a href="${contact}" style="color:#365188">contact us</a> right away.</p>
+      <p style="font-size:13px;color:#6b7280">Thanks for being part of SearchNote.</p>
+    </div>`,
+  });
+};
+
+export {
+  sendVerificationEmail,
+  sendPasswordResetCode,
+  sendSignupCode,
+  sendAccountDeletionCode,
+  sendAccountDeletedEmail,
+  isMailConfigured,
+};

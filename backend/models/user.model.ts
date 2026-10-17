@@ -28,6 +28,10 @@ export interface IUser {
   resetTokenExpires?: Date;
   googleId?: string;
   hasPassword?: boolean;
+  deleteCodeHash?: string;
+  deleteCodeExpires?: Date;
+  deleteCodeAttempts?: number;
+  deleteCodeSentAt?: Date;
   createdAt: Date;
 }
 
@@ -100,6 +104,11 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     // Google ile açılan hesapta kullanıcının bildiği bir şifre yoktur (rastgele hash konur) -> false.
     // Şifre belirleyince / sıfırlayınca true olur. Alanı olmayan eski hesaplar şifreli sayılır.
     hasPassword: { type: Boolean, default: true },
+    // Hesap silme onayı: şifresi olmayan (Google) hesapta e-postaya gönderilen 6 haneli kodun hash'i.
+    deleteCodeHash: { type: String, select: false },
+    deleteCodeExpires: { type: Date, select: false },
+    deleteCodeAttempts: { type: Number, select: false },
+    deleteCodeSentAt: { type: Date, select: false },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
