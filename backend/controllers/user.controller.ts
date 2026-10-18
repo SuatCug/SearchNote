@@ -118,7 +118,9 @@ const excludeSelfAndBlocked = (me: { _id: Types.ObjectId; blockedUsers: Types.Ob
 });
 
 // "Active now": karşılıklı takipleşilen kişilerden şu an Socket.io ile bağlı (uygulamayı açık tutan) olanlar.
+// ?limit (varsayılan 8, en fazla 100): mobildeki "See all" ekranı hepsini ister.
 const getActiveUsers = asyncHandler<AuthedRequest>(async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 8, 1), 100);
   const me = await User.findById(req.user.id).select('following blockedUsers');
   if (!me) throw new ApiError(404, 'User not found.');
   const base = excludeSelfAndBlocked(me);
@@ -134,7 +136,7 @@ const getActiveUsers = asyncHandler<AuthedRequest>(async (req, res) => {
     User.aggregate([
       { $match: match },
       { $sort: { lastActiveAt: -1 } },
-      { $limit: 8 },
+      { $limit: limit },
       { $project: { fullName: 1, avatarUrl: 1, university: 1, department: 1 } },
     ]),
     User.countDocuments(match),
