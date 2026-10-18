@@ -58,10 +58,10 @@ const cardProjection = (viewerId: string | undefined, favorites: unknown[]) => {
     color: { $ifNull: ['$color', 'navy'] },
     membersCount: 1,
     notesCount: { $ifNull: [{ $arrayElemAt: ['$notes.count', 0] }, 0] },
-    // Özel grubun son notunun adı sadece üyelere görünür
+    // Grubun son notu (adı dahil) sadece üyelere görünür; grup herkese açık olsa da
     lastNote: {
       $cond: [
-        { $and: [{ $gt: [{ $size: '$notes' }, 0] }, { $or: [{ $not: ['$isPrivate'] }, isMember] }] },
+        { $and: [{ $gt: [{ $size: '$notes' }, 0] }, isMember] },
         { $let: { vars: { n: latest }, in: { title: '$$n.title', fileType: '$$n.fileType', createdAt: '$$n.createdAt' } } },
         null,
       ],
