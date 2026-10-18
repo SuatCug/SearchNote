@@ -59,7 +59,7 @@ const visibleNotesMatch = (viewerId: string | undefined, following: mongoose.Typ
 });
 
 // Tek bir notun izleyiciye görünür olup olmadığını kontrol eder; görünmüyorsa not yokmuş gibi 404 döner.
-// Grup notlarını sadece grup üyeleri, "sadece takipçiler" notlarını sadece yazarı takip edenler görebilir;
+// Özel grup notlarını sadece grup üyeleri (herkese açık grubunkileri herkes), "sadece takipçiler" notlarını sadece yazarı takip edenler görebilir;
 // notun yazarı her zaman görür.
 // note: group, author ve visibility alanları seçilmiş not dokümanı (group/author populate edilmiş olabilir).
 // group / author: ObjectId ya da populate edilmiş doküman; ikisinde de _id vardır (ObjectId'nin _id'si kendisidir).
@@ -76,8 +76,12 @@ const assertNoteVisible = async (
   const authorId = note.author?._id;
   if (viewerId && authorId?.equals(viewerId)) return;
 
+  // Herkese açık grubun notları herkese, özel grubunkiler sadece üyelere görünür
   const allowed = groupId
-    ? viewerId && (await Group.exists({ _id: groupId, members: viewerId }))
+    ? await Group.exists({
+        _id: groupId,
+        $or: [{ isPrivate: { $ne: true } }, ...(viewerId ? [{ members: new mongoose.Types.ObjectId(viewerId) }] : [])],
+      })
     : viewerId && (await User.exists({ _id: viewerId, following: authorId }));
   if (!allowed) throw new ApiError(404, 'Note not found.');
 };
