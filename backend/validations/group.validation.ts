@@ -13,6 +13,7 @@ const groupFieldRules = (isUpdate: boolean) => {
       .withMessage('Group name can be at most 80 characters.'),
     body('description').optional().trim().isLength({ max: 1000 }).withMessage('Description can be at most 1000 characters.'),
     body('isPrivate').optional().isBoolean().withMessage('isPrivate must be true or false.').toBoolean(),
+    body('university').optional().isString().trim().isLength({ max: 200 }).withMessage('University can be at most 200 characters.'),
     body('color').optional().isIn([...GROUP_COLORS]).withMessage('Invalid group color.'),
     body('courseCode')
       .optional()

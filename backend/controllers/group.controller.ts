@@ -75,7 +75,7 @@ const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined)
 
 // Keşfet: tüm gruplar, isim/açıklamada arama.
 // Mobil için ek (isteğe bağlı) parametreler:
-// - scope=university: kurucusu benimle aynı üniversitede olan gruplar
+// - scope=university: benim üniversitemin grupları (grubun üniversitesi; yoksa kurucunun okulu)
 // - exclude=mine: zaten üyesi olduğum gruplar listelenmez
 // - privacy=public|private: herkese açık / onay gerekli gruplar
 // - course=CENG: ders kodu (yoksa grup adı) bu harflerle başlayan gruplar
@@ -103,8 +103,15 @@ const searchGroups = asyncHandler(async (req, res) => {
     if (!viewer?.university) {
       return res.json({ success: true, data: { items: [], pagination: buildPagination(1, 1, 0) } });
     }
+    // Grubun üniversitesi seçilmişse ona, seçilmemiş (eski) gruplarda kurucunun okuluna bakılır
     const owners = await User.find({ university: exactRegex(viewer.university) }).distinct('_id');
-    match.owner = { $in: owners };
+    clauses.push({
+      $or: [
+        { university: exactRegex(viewer.university) },
+        { university: { $exists: false }, owner: { $in: owners } },
+      ],
+    });
+    match.$and = clauses;
   }
 
   const data = await listGroups({
@@ -148,8 +155,15 @@ const getGroup = asyncHandler(async (req, res) => {
 });
 
 // Grubu kuran kişi otomatik olarak kurucu ve ilk üye olur.
+// university gönderilmezse (ör. web) kurucunun üniversitesi yazılır; boş metin ('') = hiçbir okula bağlı değil
+// (alanı hiç olmayan eski gruplardan ayrılsın diye boş metin olarak saklanır).
 const createGroup = asyncHandler<AuthedRequest>(async (req, res) => {
+  const university =
+    typeof req.body.university === 'string'
+      ? req.body.university.trim()
+      : (await User.findById(req.user.id).select('university').lean())?.university || undefined;
   const group = await Group.create({
+    university,
     name: req.body.name,
     description: req.body.description,
     isPrivate: req.body.isPrivate,
@@ -170,8 +184,9 @@ const updateGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   assertOwner(group, req.user.id);
 
-  ['name', 'description', 'isPrivate', 'color', 'courseCode'].forEach((field) => {
-    if (req.body[field] !== undefined) group.set(field, req.body[field] === '' ? undefined : req.body[field]);
+  ['name', 'description', 'isPrivate', 'color', 'courseCode', 'university'].forEach((field) => {
+    if (req.body[field] === undefined) return;
+    group.set(field, req.body[field] === '' && field !== 'university' ? undefined : req.body[field]);
   });
   // Grup herkese açık hale getirilirse bekleyen istekler otomatik onaylanır.
   if (!group.isPrivate && group.joinRequests.length) {

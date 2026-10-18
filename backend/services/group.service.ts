@@ -54,6 +54,7 @@ const cardProjection = (viewerId: string | undefined, favorites: unknown[]) => {
     isPrivate: 1,
     createdAt: 1,
     courseCode: 1,
+    university: 1,
     color: { $ifNull: ['$color', 'navy'] },
     membersCount: 1,
     notesCount: { $ifNull: [{ $arrayElemAt: ['$notes.count', 0] }, 0] },
