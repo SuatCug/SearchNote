@@ -351,12 +351,10 @@ const rejectJoinRequest = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, message: 'Join request rejected.' });
 });
 
-// Herkese açık grubun notlarını herkes (katılmadan önce içeriğe bakılabilsin), özel grubunkileri sadece üyeler görür.
+// Grup notları (herkese açık grupta da) sadece üyelere görünür.
 const getGroupNotes = asyncHandler(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
-  if (group.isPrivate && !group.hasMember(req.user?.id)) {
-    throw new ApiError(403, 'Only group members can see the notes shared in this group.');
-  }
+  if (!group.hasMember(req.user?.id)) throw new ApiError(403, 'Only group members can see the notes shared in this group.');
 
   // İsteğe bağlı dosya türü filtresi (mobil "PDF / Docs / Images" çipleri)
   const fileType = ['pdf', 'docx', 'image', 'archive'].includes(String(req.query.fileType)) ? String(req.query.fileType) : undefined;
