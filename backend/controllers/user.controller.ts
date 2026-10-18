@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import mongoose, { type Types } from 'mongoose';
-import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
+import asyncHandler, { type AppRequest, type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
 import { User, Note, Report } from '../models/index.ts';
 import { PUSH_CATEGORIES, type NotificationSettings } from '../models/user.model.ts';
@@ -201,10 +201,35 @@ const getSuggestions = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, data: { users } });
 });
 
+// Sıralı kişi listesinden bir sayfa (mobil listeler): ?page, ?limit, ?q ile ad/okul/bölümde arama;
+// giriş yapılmışsa her kişide isFollowing (izleyici bu kişiyi takip ediyor mu).
+const pageOfUsers = async (req: AppRequest, orderedIds: Types.ObjectId[]) => {
+  const { page, limit, skip } = parsePagination(req.query);
+  let ids = orderedIds;
+  const qMatch = wordSearchMatch(req.query.q, ['fullName', 'university', 'department']);
+  if (qMatch) {
+    const found = await User.find({ $and: [{ _id: { $in: ids } }, qMatch] }).select('_id').lean();
+    const matched = new Set(found.map((u) => String(u._id)));
+    ids = ids.filter((id) => matched.has(String(id)));
+  }
+
+  const pageIds = ids.slice(skip, skip + limit);
+  const [cards, viewer] = await Promise.all([
+    User.find({ _id: { $in: pageIds } }).select(USER_CARD_FIELDS).lean(),
+    req.user ? User.findById(req.user.id).select('following').lean() : null,
+  ]);
+  const byId = new Map(cards.map((u) => [String(u._id), u]));
+  const viewerFollowing = new Set((viewer?.following ?? []).map(String));
+  const users = pageIds.flatMap((id) => {
+    const card = byId.get(String(id));
+    return card ? [{ ...card, isFollowing: viewerFollowing.has(String(id)) }] : [];
+  });
+  return { users, pagination: buildPagination(page, limit, ids.length) };
+};
+
 // Takipçi / takip edilen listesi.
 //  - ?limit yoksa (web): listenin tamamı, eskisi gibi.
-//  - ?limit varsa (mobil): sayfalı, en yeni takip önce; ?q ile ad/okul/bölümde arama; giriş yapılmışsa
-//    her kişide isFollowing (izleyici bu kişiyi takip ediyor mu).
+//  - ?limit varsa (mobil): sayfalı, en yeni takip önce (bkz. pageOfUsers).
 const listConnections = (field: 'followers' | 'following') =>
   asyncHandler(async (req, res) => {
     if (req.query.limit === undefined) {
@@ -215,36 +240,15 @@ const listConnections = (field: 'followers' | 'following') =>
 
     const user = await User.findById(req.params.id).select(field).lean();
     if (!user) throw new ApiError(404, 'User not found.');
-    const { page, limit, skip } = parsePagination(req.query);
-
     // Diziye en son eklenen en yeni takiptir
-    let ids = [...user[field]].reverse();
-    const qMatch = wordSearchMatch(req.query.q, ['fullName', 'university', 'department']);
-    if (qMatch) {
-      const found = await User.find({ $and: [{ _id: { $in: ids } }, qMatch] }).select('_id').lean();
-      const matched = new Set(found.map((u) => String(u._id)));
-      ids = ids.filter((id) => matched.has(String(id)));
-    }
-
-    const pageIds = ids.slice(skip, skip + limit);
-    const [cards, viewer] = await Promise.all([
-      User.find({ _id: { $in: pageIds } }).select(USER_CARD_FIELDS).lean(),
-      req.user ? User.findById(req.user.id).select('following').lean() : null,
-    ]);
-    const byId = new Map(cards.map((u) => [String(u._id), u]));
-    const viewerFollowing = new Set((viewer?.following ?? []).map(String));
-    const users = pageIds.flatMap((id) => {
-      const card = byId.get(String(id));
-      return card ? [{ ...card, isFollowing: viewerFollowing.has(String(id)) }] : [];
-    });
-
-    res.json({ success: true, data: { users, pagination: buildPagination(page, limit, ids.length) } });
+    res.json({ success: true, data: await pageOfUsers(req, [...user[field]].reverse()) });
   });
 
 const getFollowers = listConnections('followers');
 const getFollowing = listConnections('following');
 
 // "Followed by …" satırı: bu kişiyi takip edenlerden izleyicinin de takip ettikleri (en yeni 3 kişi + toplam).
+// ?limit varsa (mobil "Mutual" sekmesi): hepsi sayfalı, takipçi listesiyle aynı biçimde.
 const getMutualFollowers = asyncHandler<AuthedRequest>(async (req, res) => {
   const [target, me] = await Promise.all([
     User.findById(req.params.id).select('followers').lean(),
@@ -254,6 +258,7 @@ const getMutualFollowers = asyncHandler<AuthedRequest>(async (req, res) => {
 
   const myFollowing = new Set(me.following.map(String));
   const mutual = [...target.followers].reverse().filter((id) => myFollowing.has(String(id)));
+  if (req.query.limit !== undefined) return res.json({ success: true, data: await pageOfUsers(req, mutual) });
   const top = mutual.slice(0, 3);
   const cards = await User.find({ _id: { $in: top } }).select(USER_CARD_FIELDS).lean();
   const byId = new Map(cards.map((u) => [String(u._id), u]));

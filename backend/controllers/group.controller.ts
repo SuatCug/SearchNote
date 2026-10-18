@@ -290,6 +290,27 @@ const getMembers = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { users } });
 });
 
+// Grup sayfasındaki "Ayşe, Mert and 3 more you follow" satırına dokununca (mobil): takip ettiğim üyelerin hepsi.
+// Grup detayı bu kişilerin ilk 3'ünü özel gruplarda da gösterdiği için üye olmayana da açıktır.
+const getFollowedMembers = asyncHandler<AuthedRequest>(async (req, res) => {
+  const [group, viewer] = await Promise.all([
+    Group.findById(req.params.id).select('owner members').lean(),
+    User.findById(req.user.id).select('following').lean(),
+  ]);
+  if (!group) throw new ApiError(404, 'Group not found.');
+  const following = new Set((viewer?.following ?? []).map(String));
+  // Son katılan önce
+  const ids = [...group.members].reverse().filter((id) => following.has(String(id)));
+  const cards = await User.find({ _id: { $in: ids } }).select(USER_CARD_FIELDS).lean();
+  const byId = new Map(cards.map((u) => [String(u._id), u]));
+  const users = ids.flatMap((id) => {
+    const card = byId.get(String(id));
+    return card ? [{ ...card, isFollowing: true, isOwner: group.owner.equals(id) }] : [];
+  });
+
+  res.json({ success: true, data: { users } });
+});
+
 const removeMember = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   assertOwner(group, req.user.id);
@@ -511,6 +532,7 @@ export {
   joinGroup,
   leaveGroup,
   getMembers,
+  getFollowedMembers,
   removeMember,
   transferOwnership,
   getJoinRequests,

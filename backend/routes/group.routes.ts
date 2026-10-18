@@ -28,6 +28,7 @@ router.post('/:id/favorite', idParamRules, validate, authenticate, groupControll
 router.delete('/:id/favorite', idParamRules, validate, authenticate, groupController.removeFavorite);
 router.get('/:id', idParamRules, validate, optionalAuth, groupController.getGroup);
 router.get('/:id/members', idParamRules, validate, optionalAuth, groupController.getMembers);
+router.get('/:id/followed-members', idParamRules, validate, authenticate, groupController.getFollowedMembers);
 router.get('/:id/notes', idParamRules, validate, optionalAuth, groupController.getGroupNotes);
 
 // Grup kurma / düzenleme / silme (düzenleme ve silme sadece kurucu)
