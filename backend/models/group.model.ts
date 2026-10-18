@@ -1,6 +1,10 @@
 import { Schema, model, type HydratedDocument, type Model, type Types } from 'mongoose';
 import type { IdLike } from '../types/common.ts';
 
+// Mobil uygulamanın grup renkleri (kurucu seçer). Eski gruplarda alan yoksa lacivert sayılır.
+export const GROUP_COLORS = ['navy', 'purple', 'teal', 'orange', 'blue', 'green'] as const;
+export type GroupColor = (typeof GROUP_COLORS)[number];
+
 export interface IGroup {
   name: string;
   description: string;
@@ -8,6 +12,9 @@ export interface IGroup {
   members: Types.ObjectId[];
   isPrivate: boolean;
   joinRequests: Types.ObjectId[];
+  requestInfo: Map<string, { message: string; createdAt: Date }>;
+  color: GroupColor;
+  courseCode?: string;
   lastReadAt: Map<string, Date>;
   lastActivityAt?: Date;
   createdAt: Date;
@@ -39,6 +46,15 @@ const groupSchema = new Schema<IGroup, GroupModel, IGroupMethods>(
     isPrivate: { type: Boolean, default: false },
     // Özel gruba gönderilmiş, kurucunun onayını bekleyen katılma istekleri.
     joinRequests: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    // userId -> katılma isteğiyle yazılan kısa mesaj ve isteğin zamanı (istek kalkınca silinir).
+    requestInfo: {
+      type: Map,
+      of: new Schema({ message: { type: String, default: '' }, createdAt: Date }, { _id: false }),
+      default: {},
+    },
+    color: { type: String, enum: GROUP_COLORS, default: 'navy' },
+    // Grubun dersi (örn. CENG213); mobilde ders filtresi ve grup ikonundaki kısa kod için.
+    courseCode: { type: String, trim: true, uppercase: true, maxlength: 12 },
     // userId -> grup sohbetini en son açtığı an; bundan sonraki başkalarının mesajları "okunmamış" sayılır.
     lastReadAt: { type: Map, of: Date, default: {} },
     // Son mesaj ya da paylaşılan not zamanı: "Gruplarım" listesi buna göre sıralanır.

@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose, { type PipelineStage } from 'mongoose';
 import { Group, GroupMessage, Note, User } from '../models/index.ts';
 import { emitToUsers } from './realtime.service.ts';
 import ApiError from '../utils/apiError.ts';
@@ -8,26 +8,73 @@ import type { IdLike, MatchFilter, SortSpec } from '../types/common.ts';
 const GROUP_SORT_OPTIONS: Record<string, SortSpec> = {
   newest: { createdAt: -1 },
   popular: { membersCount: -1, createdAt: -1 },
+  notes: { notesCount: -1, membersCount: -1, createdAt: -1 },
+};
+
+// Kullanıcının favori grupları (alan yoksa boş).
+const favoriteGroupIds = async (userId: string | undefined) => {
+  if (!userId) return [];
+  const user = await User.findById(userId).select('+favoriteGroups').lean();
+  return user?.favoriteGroups ?? [];
+};
+
+// Grubun not sayısı ve en son paylaşılan not (kartlarda "Latest: ..." satırı).
+const notesLookup: PipelineStage.Lookup = {
+  $lookup: {
+    from: 'notes',
+    localField: '_id',
+    foreignField: 'group',
+    pipeline: [
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          title: { $first: '$title' },
+          fileType: { $first: '$fileType' },
+          createdAt: { $first: '$createdAt' },
+        },
+      },
+    ],
+    as: 'notes',
+  },
 };
 
 // Grup listelerinde (keşfet, gruplarım) ortak kullanılan kart görünümü.
 // Üye dizisinin tamamı yerine sayı + "üye miyim" bilgisi döndürülür.
 // Eski kayıtlarda bazı dizi alanları (örn. joinRequests) olmayabilir; $ifNull ile boş dizi sayılır.
-const cardProjection = (viewerId: string | undefined) => ({
-  name: 1,
-  description: 1,
-  isPrivate: 1,
-  createdAt: 1,
-  membersCount: 1,
-  notesCount: { $ifNull: [{ $arrayElemAt: ['$notes.count', 0] }, 0] },
-  isMember: viewerId ? { $in: [new mongoose.Types.ObjectId(viewerId), { $ifNull: ['$members', []] }] } : { $literal: false },
-  isPending: viewerId ? { $in: [new mongoose.Types.ObjectId(viewerId), { $ifNull: ['$joinRequests', []] }] } : { $literal: false },
-  owner: {
-    _id: '$owner._id',
-    fullName: '$owner.fullName',
-    avatarUrl: '$owner.avatarUrl',
-  },
-});
+const cardProjection = (viewerId: string | undefined, favorites: unknown[]) => {
+  const isMember = viewerId
+    ? { $in: [new mongoose.Types.ObjectId(viewerId), { $ifNull: ['$members', []] }] }
+    : { $literal: false };
+  const latest = { $arrayElemAt: ['$notes', 0] };
+  return {
+    name: 1,
+    description: 1,
+    isPrivate: 1,
+    createdAt: 1,
+    courseCode: 1,
+    color: { $ifNull: ['$color', 'navy'] },
+    membersCount: 1,
+    notesCount: { $ifNull: [{ $arrayElemAt: ['$notes.count', 0] }, 0] },
+    // Özel grubun son notunun adı sadece üyelere görünür
+    lastNote: {
+      $cond: [
+        { $and: [{ $gt: [{ $size: '$notes' }, 0] }, { $or: [{ $not: ['$isPrivate'] }, isMember] }] },
+        { $let: { vars: { n: latest }, in: { title: '$$n.title', fileType: '$$n.fileType', createdAt: '$$n.createdAt' } } },
+        null,
+      ],
+    },
+    isMember,
+    isPending: viewerId ? { $in: [new mongoose.Types.ObjectId(viewerId), { $ifNull: ['$joinRequests', []] }] } : { $literal: false },
+    isFavorite: { $in: ['$_id', favorites] },
+    owner: {
+      _id: '$owner._id',
+      fullName: '$owner.fullName',
+      avatarUrl: '$owner.avatarUrl',
+    },
+  };
+};
 
 // Filtre + sıralama + sayfalama ile grup kartlarını ve toplam sayıyı döndürür.
 interface ListGroupsOptions extends PaginationParams {
@@ -37,9 +84,13 @@ interface ListGroupsOptions extends PaginationParams {
 }
 
 const listGroups = async ({ match = {}, sort = 'newest', page, limit, skip, viewerId }: ListGroupsOptions) => {
+  const favorites = await favoriteGroupIds(viewerId);
+  // "En çok not" sıralamasında not sayısı sıralamadan önce gerekir; diğerlerinde sadece sayfadaki gruplar için bakılır
+  const byNotes = sort === 'notes';
   const [result] = await Group.aggregate([
     { $match: match },
     { $addFields: { membersCount: { $size: { $ifNull: ['$members', []] } } } },
+    ...(byNotes ? [notesLookup, { $addFields: { notesCount: { $ifNull: [{ $arrayElemAt: ['$notes.count', 0] }, 0] } } }] : []),
     { $sort: GROUP_SORT_OPTIONS[String(sort)] || GROUP_SORT_OPTIONS.newest },
     {
       $facet: {
@@ -48,16 +99,8 @@ const listGroups = async ({ match = {}, sort = 'newest', page, limit, skip, view
           { $limit: limit },
           { $lookup: { from: 'users', localField: 'owner', foreignField: '_id', as: 'owner' } },
           { $unwind: '$owner' },
-          {
-            $lookup: {
-              from: 'notes',
-              localField: '_id',
-              foreignField: 'group',
-              pipeline: [{ $count: 'count' }],
-              as: 'notes',
-            },
-          },
-          { $project: cardProjection(viewerId) },
+          ...(byNotes ? [] : [notesLookup]),
+          { $project: cardProjection(viewerId, favorites) },
         ],
         total: [{ $count: 'count' }],
       },
@@ -96,9 +139,10 @@ const UNREAD_CAP = 99;
 const listMyGroupActivity = async (userId: string) => {
   const me = new mongoose.Types.ObjectId(userId);
   const groups = await Group.find({ members: me })
-    .select('name isPrivate owner members lastReadAt lastActivityAt createdAt')
+    .select('name isPrivate owner members lastReadAt lastActivityAt createdAt color courseCode')
     .lean();
   if (!groups.length) return [];
+  const favorites = new Set((await favoriteGroupIds(userId)).map(String));
   const ids = groups.map((g) => g._id);
   const readAtOf = (g: (typeof groups)[number]) => {
     const map = g.lastReadAt as unknown as Record<string, Date> | Map<string, Date> | undefined;
@@ -157,6 +201,9 @@ const listMyGroupActivity = async (userId: string) => {
       _id: g._id,
       name: g.name,
       isPrivate: g.isPrivate,
+      color: g.color ?? 'navy',
+      courseCode: g.courseCode,
+      isFavorite: favorites.has(id),
       isOwner: String(g.owner) === userId,
       membersCount: g.members?.length ?? 0,
       notesCount: note?.count ?? 0,
@@ -187,7 +234,52 @@ const followedMembersFor = async (viewerId: string | undefined, groupIds: unknow
   return result;
 };
 
+const REQUEST_USER_FIELDS = 'fullName avatarUrl university department';
+
+type RequestInfo = { message?: string; createdAt?: Date };
+
+const requestInfoOf = (g: { requestInfo?: unknown }, userId: string) => {
+  const map = g.requestInfo as Record<string, RequestInfo> | Map<string, RequestInfo> | undefined;
+  const info = map instanceof Map ? map.get(userId) : map?.[userId];
+  return { message: info?.message ?? '', createdAt: info?.createdAt ?? null };
+};
+
+const groupSummary = (g: { _id: unknown; name: string; color?: string; courseCode?: string; isPrivate: boolean }) => ({
+  _id: g._id,
+  name: g.name,
+  color: g.color ?? 'navy',
+  courseCode: g.courseCode,
+  isPrivate: g.isPrivate,
+});
+
+const newestFirst = (a: { createdAt: Date | null }, b: { createdAt: Date | null }) =>
+  (b.createdAt ? new Date(b.createdAt).getTime() : 0) - (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+
+// Kurucusu olduğum gruplara gelen bekleyen katılma istekleri, en yenisi üstte.
+const listIncomingRequests = async (userId: string) => {
+  const groups = await Group.find({ owner: userId, 'joinRequests.0': { $exists: true } })
+    .select('name color courseCode isPrivate joinRequests requestInfo')
+    .populate<{ joinRequests: { _id: unknown; fullName: string }[] }>('joinRequests', REQUEST_USER_FIELDS)
+    .lean();
+  return groups
+    .flatMap((g) => g.joinRequests.map((user) => ({ group: groupSummary(g), user, ...requestInfoOf(g, String(user._id)) })))
+    .sort(newestFirst);
+};
+
+// Benim gönderdiğim, hâlâ bekleyen katılma istekleri.
+const listSentRequests = async (userId: string) => {
+  const groups = await Group.find({ joinRequests: new mongoose.Types.ObjectId(userId) })
+    .select('name color courseCode isPrivate members requestInfo')
+    .lean();
+  return groups
+    .map((g) => ({ group: { ...groupSummary(g), membersCount: g.members?.length ?? 0 }, ...requestInfoOf(g, userId) }))
+    .sort(newestFirst);
+};
+
 export {
+  favoriteGroupIds,
+  listIncomingRequests,
+  listSentRequests,
   listGroups,
   assertMember,
   recordGroupActivity,

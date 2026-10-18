@@ -1,4 +1,5 @@
 import { body, param, type ValidationChain } from 'express-validator';
+import { GROUP_COLORS } from '../models/group.model.ts';
 
 // Grup oluşturma ve güncellemede ortak alanlar. Güncellemede tüm alanlar opsiyoneldir.
 const groupFieldRules = (isUpdate: boolean) => {
@@ -12,6 +13,14 @@ const groupFieldRules = (isUpdate: boolean) => {
       .withMessage('Group name can be at most 80 characters.'),
     body('description').optional().trim().isLength({ max: 1000 }).withMessage('Description can be at most 1000 characters.'),
     body('isPrivate').optional().isBoolean().withMessage('isPrivate must be true or false.').toBoolean(),
+    body('color').optional().isIn([...GROUP_COLORS]).withMessage('Invalid group color.'),
+    body('courseCode')
+      .optional()
+      .trim()
+      .isLength({ max: 12 })
+      .withMessage('Course code can be at most 12 characters.')
+      .matches(/^[\p{L}\d ]*$/u)
+      .withMessage('Course code can only contain letters and numbers.'),
   ];
 };
 

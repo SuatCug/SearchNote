@@ -58,7 +58,10 @@ const deleteAccount = async (userId: string) => {
     ),
     Group.updateMany(
       { $or: [{ members: id }, { joinRequests: id }] },
-      { $pull: { members: id, joinRequests: id }, $unset: { [`lastReadAt.${userId}`]: 1 } }
+      {
+        $pull: { members: id, joinRequests: id },
+        $unset: { [`lastReadAt.${userId}`]: 1, [`requestInfo.${userId}`]: 1 },
+      }
     ),
     GroupMessage.deleteMany({ user: id }),
     DirectMessage.deleteMany({ conversation: { $in: conversationIds } }),

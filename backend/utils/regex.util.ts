@@ -62,4 +62,4 @@ const wordSearchMatch = (
   return clauses.length === 1 ? clauses[0] : { $and: clauses };
 };
 
-export { escapeRegex, containsRegex, exactRegex, splitSearchWords, wordSearchMatch };
+export { escapeRegex, containsRegex, exactRegex, splitSearchWords, toTurkishInsensitive, wordSearchMatch };

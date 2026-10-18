@@ -21,6 +21,7 @@ export interface IUser {
   following: Types.ObjectId[];
   blockedUsers: Types.ObjectId[];
   savedNotes: Types.ObjectId[];
+  favoriteGroups?: Types.ObjectId[];
   lastActiveAt?: Date;
   isVerified: boolean;
   verificationTokenHash?: string;
@@ -104,6 +105,8 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     blockedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     // Kaydedilen (yer imi) notlar: sadece kullanıcının kendisi görür.
     savedNotes: [{ type: Schema.Types.ObjectId, ref: 'Note' }],
+    // Favori gruplar (mobil "Favorite groups"): sadece kullanıcının kendisi görür.
+    favoriteGroups: { type: [{ type: Schema.Types.ObjectId, ref: 'Group' }], default: undefined, select: false },
     // Son istek zamanı ("Active now" listesi için; auth middleware'de en fazla dakikada bir güncellenir).
     lastActiveAt: { type: Date, index: true },
     // Kurumsal e-posta doğrulaması: doğrulanmamış kullanıcı giriş yapabilir ama

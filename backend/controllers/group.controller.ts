@@ -3,7 +3,10 @@ import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
 import { Group, GroupMessage, Note, User } from '../models/index.ts';
 import {
+  favoriteGroupIds,
   followedMembersFor,
+  listIncomingRequests,
+  listSentRequests,
   listGroups,
   listMyGroupActivity,
   markGroupRead,
@@ -14,7 +17,7 @@ import { notify } from '../services/notification.service.ts';
 import { emitToGroup } from '../services/realtime.service.ts';
 import { pushGroupMessage } from '../services/push.service.ts';
 import { buildPagination, parsePagination } from '../utils/pagination.util.ts';
-import { exactRegex, wordSearchMatch } from '../utils/regex.util.ts';
+import { exactRegex, toTurkishInsensitive, wordSearchMatch } from '../utils/regex.util.ts';
 import type { GroupDocument } from '../models/group.model.ts';
 import type { UserDocument } from '../models/user.model.ts';
 import type { IdLike } from '../types/common.ts';
@@ -43,16 +46,20 @@ const assertCanView = (group: GroupDocument, userId: string | undefined) => {
 // Grup detay görünümü: üye / istek dizileri yerine sayılar + izleyiciye göre durum bilgisi.
 const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined) => {
   await group.populate('owner', USER_CARD_FIELDS);
-  const [notesCount, followed] = await Promise.all([
+  const viewer = viewerId ? String(viewerId) : undefined;
+  const [notesCount, followed, favorites] = await Promise.all([
     Note.countDocuments({ group: group._id }),
-    followedMembersFor(viewerId ? String(viewerId) : undefined, [group._id]),
+    followedMembersFor(viewer, [group._id]),
+    favoriteGroupIds(viewer),
   ]);
-  // lastReadAt üyelerin okuma zamanlarıdır; kimseye gösterilmez.
-  const { members, joinRequests, lastReadAt: _lastReadAt, __v, ...rest } = group.toObject();
+  // lastReadAt üyelerin okuma zamanları, requestInfo istek mesajlarıdır; kimseye gösterilmez.
+  const { members, joinRequests, lastReadAt: _lastReadAt, requestInfo: _requestInfo, __v, ...rest } = group.toObject();
   const isOwner = viewerId ? group.owner._id.equals(viewerId) : false;
   const mine = followed.get(String(group._id));
   return {
     ...rest,
+    color: rest.color ?? 'navy',
+    isFavorite: favorites.some((id) => id.equals(group._id)),
     membersCount: members.length,
     notesCount,
     // İzleyicinin takip ettiği üyeler ("Ayşe ve Mert üye")
@@ -70,10 +77,23 @@ const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined)
 // Mobil için ek (isteğe bağlı) parametreler:
 // - scope=university: kurucusu benimle aynı üniversitede olan gruplar
 // - exclude=mine: zaten üyesi olduğum gruplar listelenmez
+// - privacy=public|private: herkese açık / onay gerekli gruplar
+// - course=CENG: ders kodu (yoksa grup adı) bu harflerle başlayan gruplar
+// - sort=notes: en çok not paylaşılan gruplar önce
 // Giriş yapmış kullanıcıya her kartta takip ettiği üyeler de döner (followedMembers).
 const searchGroups = asyncHandler(async (req, res) => {
   const viewerId = req.user?.id;
-  const match: Record<string, unknown> = { ...(wordSearchMatch(req.query.q, ['name', 'description']) || {}) };
+  const clauses: Record<string, unknown>[] = [];
+  const search = wordSearchMatch(req.query.q, ['name', 'description', 'courseCode']);
+  if (search) clauses.push(search);
+  if (typeof req.query.course === 'string' && req.query.course.trim()) {
+    const prefix = new RegExp(`^${toTurkishInsensitive(req.query.course.slice(0, 12))}`, 'i');
+    clauses.push({ $or: [{ courseCode: prefix }, { courseCode: { $in: [null, ''] }, name: prefix }] });
+  }
+  const match: Record<string, unknown> = clauses.length ? { $and: clauses } : {};
+  if (req.query.privacy === 'public' || req.query.privacy === 'private') {
+    match.isPrivate = req.query.privacy === 'private' ? true : { $ne: true };
+  }
 
   if (viewerId && req.query.exclude === 'mine') {
     match.members = { $ne: new mongoose.Types.ObjectId(viewerId) };
@@ -133,6 +153,8 @@ const createGroup = asyncHandler<AuthedRequest>(async (req, res) => {
     name: req.body.name,
     description: req.body.description,
     isPrivate: req.body.isPrivate,
+    color: req.body.color,
+    courseCode: req.body.courseCode || undefined,
     owner: req.user.id,
     members: [req.user.id],
   });
@@ -148,13 +170,14 @@ const updateGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   assertOwner(group, req.user.id);
 
-  ['name', 'description', 'isPrivate'].forEach((field) => {
-    if (req.body[field] !== undefined) group.set(field, req.body[field]);
+  ['name', 'description', 'isPrivate', 'color', 'courseCode'].forEach((field) => {
+    if (req.body[field] !== undefined) group.set(field, req.body[field] === '' ? undefined : req.body[field]);
   });
   // Grup herkese açık hale getirilirse bekleyen istekler otomatik onaylanır.
   if (!group.isPrivate && group.joinRequests.length) {
     group.members.addToSet(...group.joinRequests);
     group.set('joinRequests', []);
+    group.set('requestInfo', {});
   }
   await group.save();
 
@@ -170,19 +193,26 @@ const deleteGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   await Promise.all([
     Note.updateMany({ group: group._id }, { $unset: { group: 1 } }),
     GroupMessage.deleteMany({ group: group._id }),
+    User.updateMany({ favoriteGroups: group._id }, { $pull: { favoriteGroups: group._id } }),
   ]);
 
   res.json({ success: true, message: 'Group deleted.' });
 });
 
 // Herkese açık gruba doğrudan katılınır; özel gruba katılma isteği gönderilir.
+// İsteğe bağlı body.message: özel gruba istekle birlikte kurucuya kısa not (mobil).
 const joinGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   const userId = req.user.id;
 
   if (!group.hasMember(userId)) {
-    if (group.isPrivate) group.joinRequests.addToSet(userId);
-    else group.members.addToSet(userId);
+    if (group.isPrivate) {
+      if (!group.hasPendingRequest(userId)) {
+        const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 300) : '';
+        group.requestInfo.set(userId, { message, createdAt: new Date() });
+      }
+      group.joinRequests.addToSet(userId);
+    } else group.members.addToSet(userId);
     await group.save();
     // Kurucuya: açık grupta yeni üye, özel grupta onay bekleyen istek bildirimi.
     await notify({
@@ -209,6 +239,7 @@ const leaveGroup = asyncHandler<AuthedRequest>(async (req, res) => {
 
   if (group.hasPendingRequest(userId)) {
     group.joinRequests.pull(userId);
+    group.requestInfo.delete(userId);
     await group.save();
     return res.json({
       success: true,
@@ -285,6 +316,7 @@ const approveJoinRequest = asyncHandler<AuthedRequest>(async (req, res) => {
   if (!group.hasPendingRequest(req.params.userId)) throw new ApiError(404, 'Join request not found.');
 
   group.joinRequests.pull(req.params.userId);
+  group.requestInfo.delete(req.params.userId);
   group.members.addToSet(req.params.userId);
   await group.save();
   await notify({ recipient: req.params.userId, actor: req.user.id, type: 'group_approved', group: group._id });
@@ -298,6 +330,7 @@ const rejectJoinRequest = asyncHandler<AuthedRequest>(async (req, res) => {
   if (!group.hasPendingRequest(req.params.userId)) throw new ApiError(404, 'Join request not found.');
 
   group.joinRequests.pull(req.params.userId);
+  group.requestInfo.delete(req.params.userId);
   await group.save();
 
   res.json({ success: true, message: 'Join request rejected.' });
@@ -308,8 +341,10 @@ const getGroupNotes = asyncHandler(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   if (!group.hasMember(req.user?.id)) throw new ApiError(403, 'Only group members can see the notes shared in this group.');
 
+  // İsteğe bağlı dosya türü filtresi (mobil "PDF / Docs / Images" çipleri)
+  const fileType = ['pdf', 'docx', 'image', 'archive'].includes(String(req.query.fileType)) ? String(req.query.fileType) : undefined;
   const data = await listNotes({
-    match: { group: group._id },
+    match: { group: group._id, ...(fileType && { fileType }) },
     sort: req.query.sort,
     ...parsePagination(req.query),
     viewerId: req.user?.id,
@@ -364,7 +399,45 @@ const deleteMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, message: 'Message deleted.' });
 });
 
+// Favori gruplar (mobil): en son eklenen önce değil, grup kartı sırası (yeni grup önce).
+const getFavoriteGroups = asyncHandler<AuthedRequest>(async (req, res) => {
+  const favorites = await favoriteGroupIds(req.user.id);
+  const data = await listGroups({
+    match: { _id: { $in: favorites } },
+    sort: req.query.sort,
+    ...parsePagination(req.query),
+    viewerId: req.user.id,
+  });
+  res.json({ success: true, data });
+});
+
+const addFavorite = asyncHandler<AuthedRequest>(async (req, res) => {
+  await findGroupOrFail(req.params.id);
+  await User.updateOne({ _id: req.user.id }, { $addToSet: { favoriteGroups: req.params.id } });
+  res.json({ success: true, data: { isFavorite: true } });
+});
+
+const removeFavorite = asyncHandler<AuthedRequest>(async (req, res) => {
+  await User.updateOne({ _id: req.user.id }, { $pull: { favoriteGroups: req.params.id } });
+  res.json({ success: true, data: { isFavorite: false } });
+});
+
+// Tüm gruplarıma gelen bekleyen istekler (kurucusu olduğum gruplar).
+const getIncomingRequests = asyncHandler<AuthedRequest>(async (req, res) => {
+  res.json({ success: true, data: { requests: await listIncomingRequests(req.user.id) } });
+});
+
+// Benim gönderdiğim bekleyen istekler.
+const getSentRequests = asyncHandler<AuthedRequest>(async (req, res) => {
+  res.json({ success: true, data: { requests: await listSentRequests(req.user.id) } });
+});
+
 export {
+  getFavoriteGroups,
+  addFavorite,
+  removeFavorite,
+  getIncomingRequests,
+  getSentRequests,
   searchGroups,
   getMyGroups,
   getMyGroupActivity,
