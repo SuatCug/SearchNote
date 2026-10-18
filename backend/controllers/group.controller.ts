@@ -12,7 +12,7 @@ import {
   markGroupRead,
   recordGroupActivity,
 } from '../services/group.service.ts';
-import { listNotes } from '../services/note.service.ts';
+import { assertNoteVisible, listNotes } from '../services/note.service.ts';
 import { notify } from '../services/notification.service.ts';
 import { emitToGroup } from '../services/realtime.service.ts';
 import { pushGroupMessage } from '../services/push.service.ts';
@@ -379,18 +379,47 @@ const getMessages = asyncHandler<AuthedRequest>(async (req, res) => {
   const messages = await GroupMessage.find({ group: group._id })
     .sort({ createdAt: -1 })
     .limit(MESSAGE_LIMIT)
-    .populate('user', 'fullName avatarUrl');
+    .populate('user', 'fullName avatarUrl')
+    .populate('note', MESSAGE_NOTE_FIELDS);
   await markGroupRead(group._id, req.user.id);
 
   res.json({ success: true, data: { messages: messages.reverse() } });
 });
 
+const MESSAGE_NOTE_FIELDS = 'title courseCode courseName fileType';
+
+// İsteğe bağlı: noteId (sohbete not ekleme) ve replyTo (bir mesajı yanıtlama), mobil için.
+// Eklenen not grubun bütün üyelerine görünür olmalı: herkese açık bir not ya da bu grupta paylaşılmış not.
 const sendMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   if (!group.hasMember(req.user.id)) throw new ApiError(403, 'Only group members can write in the chat.');
 
-  const message = await GroupMessage.create({ group: group._id, user: req.user.id, text: req.body.text });
-  await message.populate('user', 'fullName avatarUrl');
+  const { noteId, replyTo } = req.body as { noteId?: string; replyTo?: string };
+  const [note, original] = await Promise.all([
+    noteId ? Note.findById(noteId).select('group author visibility') : null,
+    replyTo ? GroupMessage.findOne({ _id: replyTo, group: group._id }).select('user text').lean() : null,
+  ]);
+  if (noteId) {
+    if (!note) throw new ApiError(404, 'Note not found.');
+    await assertNoteVisible(note, req.user.id);
+    const visibleToGroup = note.group ? note.group.equals(group._id) : note.visibility !== 'followers';
+    if (!visibleToGroup) {
+      throw new ApiError(403, "Group members can't see this note (it's shared with another group or only with followers).");
+    }
+  }
+  if (replyTo && !original) throw new ApiError(404, 'The message you are replying to no longer exists.');
+
+  const message = await GroupMessage.create({
+    group: group._id,
+    user: req.user.id,
+    text: req.body.text,
+    note: note?._id,
+    ...(original && { reply: { message: original._id, user: original.user, text: original.text } }),
+  });
+  await message.populate([
+    { path: 'user', select: 'fullName avatarUrl' },
+    { path: 'note', select: MESSAGE_NOTE_FIELDS },
+  ]);
   emitToGroup(group._id, 'group:message', { groupId: String(group._id) });
   await recordGroupActivity(group._id, req.user.id, message.createdAt);
   // Uygulaması kapalı üyelere telefon bildirimi (beklenmez)
@@ -412,6 +441,25 @@ const deleteMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   await message.deleteOne();
   emitToGroup(group._id, 'group:message', { groupId: String(group._id) });
   res.json({ success: true, message: 'Message deleted.' });
+});
+
+// Mesajı sadece yazan kişi düzenleyebilir (mobil).
+const editMessage = asyncHandler<AuthedRequest>(async (req, res) => {
+  const group = await findGroupOrFail(req.params.id);
+  const message = await GroupMessage.findOne({ _id: req.params.messageId, group: group._id });
+  if (!message) throw new ApiError(404, 'Message not found.');
+  if (!message.user.equals(req.user.id)) throw new ApiError(403, 'You can only edit your own messages.');
+  if (!group.hasMember(req.user.id)) throw new ApiError(403, 'Only group members can write in the chat.');
+
+  message.text = req.body.text;
+  message.editedAt = new Date();
+  await message.save();
+  await message.populate([
+    { path: 'user', select: 'fullName avatarUrl' },
+    { path: 'note', select: MESSAGE_NOTE_FIELDS },
+  ]);
+  emitToGroup(group._id, 'group:message', { groupId: String(group._id) });
+  res.json({ success: true, data: { message } });
 });
 
 // Favori gruplar (mobil): en son eklenen önce değil, grup kartı sırası (yeni grup önce).
@@ -472,4 +520,5 @@ export {
   getMessages,
   sendMessage,
   deleteMessage,
+  editMessage,
 };

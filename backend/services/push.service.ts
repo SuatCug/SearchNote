@@ -207,7 +207,8 @@ const pushActivity = async ({
     group_join: { body: `${name} joined ${groupName}`, url: `/groups/${group}`, tag: `group-join:${group}` },
     group_request: {
       body: `${name} wants to join ${groupName}`,
-      url: `/groups/${group}`,
+      // Mobilde kabul / reddet ekranı
+      url: '/groups/requests',
       tag: `group-request:${group}`,
     },
     group_approved: {

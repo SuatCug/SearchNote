@@ -30,15 +30,23 @@ const updateGroupRules = groupFieldRules(true);
 
 const memberParamRules = [param('userId').isMongoId().withMessage('Invalid user id.')];
 
-const messageRules = [
+const messageTextRule = () =>
   body('text')
     .trim()
     .notEmpty()
     .withMessage('Message cannot be empty.')
     .isLength({ max: 2000 })
-    .withMessage('Message can be at most 2000 characters.'),
+    .withMessage('Message can be at most 2000 characters.');
+
+// noteId / replyTo: mobil grup sohbetinde not paylaşma ve yanıtlama (isteğe bağlı)
+const messageRules = [
+  messageTextRule(),
+  body('noteId').optional({ values: 'falsy' }).isMongoId().withMessage('Invalid note id.'),
+  body('replyTo').optional({ values: 'falsy' }).isMongoId().withMessage('Invalid message id.'),
 ];
+
+const editMessageRules = [messageTextRule()];
 
 const messageParamRules = [param('messageId').isMongoId().withMessage('Invalid message id.')];
 
-export { createGroupRules, updateGroupRules, memberParamRules, messageRules, messageParamRules };
+export { createGroupRules, updateGroupRules, memberParamRules, messageRules, editMessageRules, messageParamRules };

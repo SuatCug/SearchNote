@@ -9,6 +9,7 @@ import {
   updateGroupRules,
   memberParamRules,
   messageRules,
+  editMessageRules,
   messageParamRules,
 } from '../validations/group.validation.ts';
 
@@ -50,6 +51,15 @@ router.delete('/:id/requests/:userId', idParamRules, memberParamRules, validate,
 // Grup sohbeti (sadece üyeler)
 router.get('/:id/messages', idParamRules, validate, authenticate, groupController.getMessages);
 router.post('/:id/messages', idParamRules, messageRules, validate, verifiedOnly, groupController.sendMessage);
+router.patch(
+  '/:id/messages/:messageId',
+  idParamRules,
+  messageParamRules,
+  editMessageRules,
+  validate,
+  verifiedOnly,
+  groupController.editMessage
+);
 router.delete(
   '/:id/messages/:messageId',
   idParamRules,

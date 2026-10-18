@@ -55,6 +55,8 @@ const cardProjection = (viewerId: string | undefined, favorites: unknown[]) => {
     createdAt: 1,
     courseCode: 1,
     university: 1,
+    // Son hareket zamanı (içerik değil): kartlarda 'Active 2 h ago'
+    lastActivityAt: 1,
     color: { $ifNull: ['$color', 'navy'] },
     membersCount: 1,
     notesCount: { $ifNull: [{ $arrayElemAt: ['$notes.count', 0] }, 0] },
