@@ -84,7 +84,7 @@ function ChipList({ items, extra }: { items: string[]; extra: string[] }) {
 function HeroSection() {
   const [googleError, setGoogleError] = useState('');
   return (
-    <section id="top" className="scroll-mt-16">
+    <section id="top" className="scroll-mt-[72px]">
       <Container className="pt-8 pb-14 sm:pt-10 sm:pb-16 flex flex-wrap items-center gap-8">
         <div className="flex-[1_1_420px] max-w-[540px] flex flex-col gap-8">
           <h1 className="m-0 font-light leading-[1.15] text-navy-900 text-balance text-[36px] sm:text-[46px] lg:text-[56px]">
@@ -153,8 +153,8 @@ function BrowseSection() {
   }
 
   return (
-    <section id="features" className="relative scroll-mt-16 bg-[#f4f2ee]">
-      <span id="departments" className="absolute top-0 scroll-mt-16" aria-hidden="true" />
+    <section id="features" className="relative scroll-mt-[72px] bg-[#f4f2ee]">
+      <span id="departments" className="absolute top-0 scroll-mt-[72px]" aria-hidden="true" />
       <Container className="py-12 sm:py-14 flex flex-wrap gap-8">
         <div className="flex-[1_1_300px] flex flex-col gap-2">
           <Heading>Find notes for your courses</Heading>
@@ -204,7 +204,7 @@ const SAMPLE_NOTES = [
 
 function ProfileSection() {
   return (
-    <section id="how-it-works" className="scroll-mt-16">
+    <section id="how-it-works" className="scroll-mt-[72px]">
       <Container className="py-14 sm:py-[72px] flex flex-wrap items-center gap-10 lg:gap-16">
         <div className="flex-[1_1_360px] max-w-[460px] flex flex-col gap-5">
           <Heading>Build your profile and let your notes speak for you</Heading>
@@ -237,12 +237,7 @@ function SampleProfile() {
           />
         </span>
         <div className="flex-[1_1_200px] flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="text-[26px] font-semibold">Ayşe Yılmaz</span>
-            <span className="rounded-full border border-[#c4c4c4] px-2.5 py-0.5 text-xs font-semibold text-[#5e6670]">
-              Sample profile
-            </span>
-          </div>
+          <span className="text-[26px] font-semibold">Ayşe Yılmaz</span>
           <div className="flex flex-wrap gap-5">
             {[
               ['24', 'notes'],
@@ -308,13 +303,15 @@ function SampleProfile() {
 // İkonlu özellik listesi yerine uygulamadaki gerçek bir grup sohbetinin örneği gösterilir.
 function GroupsSection() {
   return (
-    <section id="community" className="scroll-mt-16 bg-[#f4f2ee]">
-      <Container className="py-14 sm:py-[72px] flex flex-wrap-reverse items-center gap-10 lg:gap-14">
+    <section id="community" className="scroll-mt-[72px] bg-[#f4f2ee]">
+      {/* Başlık sohbet kartının üstüyle aynı hizada: navbar'dan "Groups"a basınca başlık ekranın üstünde görünsün
+          (ortalanınca uzun kartın yanında ekranın ortasına düşüyordu). flex-wrap-reverse dikey ekseni de ters çevirdiği için "üst" = items-end. */}
+      <Container className="py-14 sm:py-[72px] flex flex-wrap-reverse items-end gap-10 lg:gap-14">
         <div className="flex-[1_1_440px] min-w-0">
           <GroupChatSample />
         </div>
 
-        <div className="flex-[1_1_360px] flex flex-col gap-6">
+        <div className="flex-[1_1_360px] flex flex-col gap-6 lg:pt-6">
           <Heading>Learn together in study groups</Heading>
           <p className="m-0 max-w-[470px] text-lg text-[#5e6670]">
             Start a group for a course or an exam. Members share notes in the group, ask each other questions in the
@@ -358,7 +355,7 @@ function AudienceSection() {
 // Footer'dan önceki son bölüm: sade bir davet ve uygulamadaki not sayfasının örneği (sahte arama yok).
 function ClosingSection() {
   return (
-    <section className="scroll-mt-16 bg-[#f4f2ee]">
+    <section className="scroll-mt-[72px] bg-[#f4f2ee]">
       <Container className="py-12 sm:py-20 flex flex-wrap items-center gap-10">
         <div className="flex-[1_1_320px] max-w-[460px] flex flex-col gap-5">
           <Heading>Someone in your class already wrote it down</Heading>

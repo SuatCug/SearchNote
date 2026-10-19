@@ -85,7 +85,6 @@ export default function NotePageSample() {
           </div>
         </div>
       </div>
-      <figcaption className="mt-3 text-center text-sm text-[#5e6670]">A note page on SearchNote (sample)</figcaption>
     </figure>
   );
 }

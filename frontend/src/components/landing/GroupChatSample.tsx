@@ -113,7 +113,6 @@ export default function GroupChatSample() {
           </span>
         </div>
       </div>
-      <figcaption className="mt-3 text-center text-sm text-[#5e6670]">A study group chat on SearchNote (sample)</figcaption>
     </figure>
   );
 }
