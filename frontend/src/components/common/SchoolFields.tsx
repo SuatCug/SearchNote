@@ -9,6 +9,8 @@ interface SchoolFieldsProps {
   onUniversityChange: (university: string) => void;
   onDepartmentChange: (department: string) => void;
   idPrefix?: string;
+  universityError?: string;
+  departmentError?: string;
 }
 
 // Üniversite → bölüm seçici (Türkiye; veri YÖK'ten, mobil uygulamayla aynı liste).
@@ -19,6 +21,8 @@ export default function SchoolFields({
   onUniversityChange,
   onDepartmentChange,
   idPrefix = '',
+  universityError,
+  departmentError,
 }: SchoolFieldsProps) {
   const universityId = useUniversityId(university);
   const getUniversityOptions = useUniversityOptions();
@@ -57,6 +61,7 @@ export default function SchoolFields({
         getOptions={getUniversityOptions}
         placeholder="Search your university"
         maxLength={120}
+        error={universityError}
       />
       <Combobox
         id={`${idPrefix}department`}
@@ -69,6 +74,7 @@ export default function SchoolFields({
         disabled={!university.trim()}
         placeholder={university.trim() ? 'Search your department' : 'Select a university first'}
         maxLength={120}
+        error={departmentError}
       />
     </>
   );

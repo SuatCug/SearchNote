@@ -6,6 +6,7 @@ import CodeForm, { CODE_LENGTH } from '@/components/auth/CodeForm';
 import PasswordField from '@/components/auth/PasswordField';
 import useFinishAuth from '@/components/auth/useFinishAuth';
 import Alert from '@/components/common/Alert';
+import TextField from '@/components/common/TextField';
 import UserAvatar from '@/components/users/UserAvatar';
 import {
   useFindResetAccountMutation,
@@ -16,6 +17,7 @@ import {
 } from '@/services/authApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { EMAIL_PLACEHOLDER } from '@/lib/constants';
+import { validateEmail, validateNewPassword } from '@/lib/validation';
 
 // "Forgot password?" (mobil uygulamayla aynı akış): e-postayla hesabı bul → hesabı onayla ve kod gönder →
 // kodu doğrula → yeni şifre. Sonunda kullanıcı doğrudan giriş yapmış olur.
@@ -35,16 +37,22 @@ export default function ForgotPasswordPage() {
   const [resendIn, setResendIn] = useState(60);
   const [resetToken, setResetToken] = useState('');
   const [password, setPassword] = useState('');
+  // Mobildeki gibi: e-posta ve yeni şifre adımlarında hata alanın altında (doğrulama ya da "hesap bulunamadı")
+  const [fieldError, setFieldError] = useState('');
   const [error, setError] = useState('');
 
   const goTo = (next: Step) => {
     setError('');
+    setFieldError('');
     setStep(next);
   };
 
   const handleFind = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
+    const invalid = validateEmail(email);
+    setFieldError(invalid ?? '');
+    if (invalid) return;
     const clean = email.trim().toLowerCase();
     try {
       const { data } = await findAccount(clean).unwrap();
@@ -52,7 +60,7 @@ export default function ForgotPasswordPage() {
       setAccount(data.account);
       goTo('confirm');
     } catch (err) {
-      setError(getErrorMessage(err));
+      setFieldError(getErrorMessage(err));
     }
   };
 
@@ -70,6 +78,9 @@ export default function ForgotPasswordPage() {
   const handleReset = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
+    const invalid = validateNewPassword(password);
+    setFieldError(invalid ?? '');
+    if (invalid) return;
     try {
       const { data } = await resetPassword({ resetToken, password }).unwrap();
       finishAuth(data, '/');
@@ -88,23 +99,21 @@ export default function ForgotPasswordPage() {
         <>
           <h1 className="text-3xl font-bold text-gray-900 text-center">Find your account</h1>
           <p className="text-sm text-gray-500 mt-2 text-center">Enter the email address you signed up with.</p>
-          <form onSubmit={handleFind} className="mt-6 space-y-4">
-            <div>
-              <label htmlFor="email" className="form-label">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                autoFocus
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={EMAIL_PLACEHOLDER}
-                className="form-input"
-              />
-            </div>
+          <form onSubmit={handleFind} noValidate className="mt-6 space-y-4">
+            <TextField
+              id="email"
+              label="Email"
+              type="email"
+              autoFocus
+              autoComplete="email"
+              value={email}
+              onChange={(v) => {
+                setEmail(v);
+                setFieldError('');
+              }}
+              placeholder={EMAIL_PLACEHOLDER}
+              error={fieldError}
+            />
             <Alert>{error}</Alert>
             <button type="submit" disabled={finding} className="btn-primary w-full py-2.5 text-[15px]">
               {finding ? 'Searching...' : 'Find account'}
@@ -160,15 +169,19 @@ export default function ForgotPasswordPage() {
           <p className="text-sm text-gray-500 mt-2 text-center">
             Use at least 8 characters. You'll be logged in right after.
           </p>
-          <form onSubmit={handleReset} className="mt-6 space-y-4">
+          <form onSubmit={handleReset} noValidate className="mt-6 space-y-4">
             <PasswordField
               id="newPassword"
               label="New password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setFieldError('');
+              }}
               autoComplete="new-password"
               minLength={8}
               placeholder="At least 8 characters"
+              error={fieldError}
             />
             <Alert>{error}</Alert>
             <button type="submit" disabled={resetting} className="btn-primary w-full py-2.5 text-[15px]">

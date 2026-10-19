@@ -1,5 +1,6 @@
 import { useState, type ChangeEventHandler, type ReactNode } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import FieldError from '@/components/common/FieldError';
 
 interface PasswordFieldProps {
   id: string;
@@ -10,6 +11,8 @@ interface PasswordFieldProps {
   autoComplete?: string;
   minLength?: number;
   hint?: ReactNode;
+  // Doğrulama hatası (alanın altında kırmızı; varken hint gizlenir — mobildeki gibi)
+  error?: string;
 }
 
 export default function PasswordField({
@@ -21,8 +24,10 @@ export default function PasswordField({
   autoComplete,
   minLength,
   hint,
+  error,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
+  const errorId = `${id}-error`;
 
   return (
     <div>
@@ -39,6 +44,8 @@ export default function PasswordField({
           value={value}
           onChange={onChange}
           placeholder={placeholder}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           className="form-input pr-11"
         />
         <button
@@ -50,7 +57,7 @@ export default function PasswordField({
           {visible ? <EyeOff size={18} /> : <Eye size={18} />}
         </button>
       </div>
-      {hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
+      {error ? <FieldError id={errorId}>{error}</FieldError> : hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
     </div>
   );
 }

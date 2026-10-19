@@ -5,10 +5,17 @@ import { CheckCircle2, Clock, LifeBuoy, Mail, ShieldAlert } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import PageHeader from '@/components/layout/PageHeader';
 import Alert from '@/components/common/Alert';
+import FieldError from '@/components/common/FieldError';
+import TextField from '@/components/common/TextField';
 import { DiscordIcon, InstagramIcon, TelegramIcon } from '@/components/common/BrandIcons';
 import { useSendContactMessageMutation, type ContactPayload, type ContactTopic } from '@/services/contactApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { SOCIAL_LINKS } from '@/lib/constants';
+import { compactErrors, serverFieldErrors, validateEmail, validateRequired } from '@/lib/validation';
+
+// Backend contact.validation ve mobil uygulamayla aynı sınırlar
+const MESSAGE_MIN = 10;
+const MESSAGE_MAX = 3000;
 
 const TOPICS: { value: ContactTopic; label: string }[] = [
   { value: 'general', label: 'General question' },
@@ -37,18 +44,39 @@ export default function ContactPage() {
     message: '',
   }));
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'name' | 'email' | 'message', string>>>({});
   const [sent, setSent] = useState(false);
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setValues((v) => ({ ...v, [e.target.name]: e.target.value }));
+  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setValues((v) => ({ ...v, [name]: value }));
+    setFieldErrors((prev) => ({ ...prev, [name]: undefined }));
+  };
 
+  // Mobildeki Ayarlar > Report a problem ve backend contact.validation ile aynı kurallar
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
+    const message = values.message.trim();
+    const errors = compactErrors({
+      name: validateRequired(values.name, 'Name'),
+      email: validateEmail(values.email),
+      message:
+        message.length < MESSAGE_MIN
+          ? `Message must be at least ${MESSAGE_MIN} characters.`
+          : message.length > MESSAGE_MAX
+            ? `Message can be at most ${MESSAGE_MAX} characters.`
+            : undefined,
+    });
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
     try {
-      await sendMessage({ ...values, name: values.name.trim(), message: values.message.trim() }).unwrap();
+      await sendMessage({ ...values, name: values.name.trim(), email: values.email.trim(), message }).unwrap();
       setSent(true);
     } catch (err) {
-      setError(getErrorMessage(err));
+      const fields = serverFieldErrors(err);
+      if (Object.keys(fields).length) setFieldErrors(fields);
+      else setError(getErrorMessage(err));
     }
   };
 
@@ -86,31 +114,35 @@ export default function ContactPage() {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} noValidate className="space-y-5">
               <h2 id="contact-form-title" className="text-lg font-bold text-gray-900">
                 Send us a message
               </h2>
               <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="name" className="form-label">
-                    Your name
-                  </label>
-                  <input id="name" name="name" required maxLength={80} value={values.name} onChange={handleChange} className="form-input" />
-                </div>
-                <div>
-                  <label htmlFor="email" className="form-label">
-                    Email address
-                  </label>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    required
-                    value={values.email}
-                    onChange={handleChange}
-                    className="form-input"
-                  />
-                </div>
+                <TextField
+                  id="name"
+                  name="name"
+                  label="Your name"
+                  maxLength={80}
+                  value={values.name}
+                  onChange={(name) => {
+                    setValues((v) => ({ ...v, name }));
+                    setFieldErrors((prev) => ({ ...prev, name: undefined }));
+                  }}
+                  error={fieldErrors.name}
+                />
+                <TextField
+                  id="email"
+                  name="email"
+                  type="email"
+                  label="Email address"
+                  value={values.email}
+                  onChange={(email) => {
+                    setValues((v) => ({ ...v, email }));
+                    setFieldErrors((prev) => ({ ...prev, email: undefined }));
+                  }}
+                  error={fieldErrors.email}
+                />
               </div>
               <div>
                 <label htmlFor="topic" className="form-label">
@@ -131,9 +163,7 @@ export default function ContactPage() {
                 <textarea
                   id="message"
                   name="message"
-                  required
-                  minLength={10}
-                  maxLength={3000}
+                  maxLength={MESSAGE_MAX}
                   rows={6}
                   value={values.message}
                   onChange={handleChange}
@@ -142,8 +172,16 @@ export default function ContactPage() {
                       ? 'Please include the link to the note and describe the original work.'
                       : 'How can we help?'
                   }
+                  aria-invalid={fieldErrors.message ? true : undefined}
                   className="form-input resize-y"
                 />
+                {fieldErrors.message ? (
+                  <FieldError>{fieldErrors.message}</FieldError>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-400">
+                    {values.message ? `${values.message.length}/${MESSAGE_MAX}` : `At least ${MESSAGE_MIN} characters.`}
+                  </p>
+                )}
               </div>
               <Alert>{error}</Alert>
               <button type="submit" disabled={isLoading} className="btn-primary w-full sm:w-auto">

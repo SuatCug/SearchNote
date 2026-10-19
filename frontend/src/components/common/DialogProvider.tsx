@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, CircleAlert, HelpCircle, type LucideIcon } from 'lucide-react';
 
 // Tarayıcının window.confirm / window.alert pencereleri yerine uygulamaya uygun, ekranın ortasında açılan pencere.
 // Kullanım: const dialog = useDialog();
@@ -15,7 +14,6 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: Tone;
-  icon?: LucideIcon;
 }
 
 interface AlertOptions {
@@ -36,7 +34,6 @@ interface OpenDialog {
   confirmLabel: string;
   cancelLabel: string;
   tone: Tone;
-  icon: LucideIcon;
   resolve: (value: boolean) => void;
 }
 
@@ -70,7 +67,6 @@ export default function DialogProvider({ children }: { children: ReactNode }) {
             confirmLabel: o.confirmLabel ?? 'Confirm',
             cancelLabel: o.cancelLabel ?? 'Cancel',
             tone: o.tone ?? 'default',
-            icon: o.icon ?? (o.tone === 'danger' ? AlertTriangle : HelpCircle),
             resolve,
           })
         ),
@@ -83,7 +79,6 @@ export default function DialogProvider({ children }: { children: ReactNode }) {
             confirmLabel: o.buttonLabel ?? 'OK',
             cancelLabel: '',
             tone: 'danger',
-            icon: CircleAlert,
             resolve: () => resolve(),
           })
         ),
@@ -131,63 +126,48 @@ function DialogWindow({ dialog, onClose }: { dialog: OpenDialog; onClose: (resul
     };
   }, []);
 
-  const { kind, tone, icon: Icon } = dialog;
-  const danger = tone === 'danger';
+  const { kind, tone } = dialog;
+  // Uyarı (alert) penceresinin tek butonu mavi; onayda yıkıcı işlem kırmızı, diğerleri mavi (mobildeki gibi).
+  const danger = kind === 'confirm' && tone === 'danger';
+  const buttonClass =
+    'block w-full min-h-12 border-t border-[#dbdbdb] px-4 py-3 text-center text-[15px] transition-colors hover:bg-gray-50 active:bg-[#f2f2f2] focus:outline-none focus-visible:bg-gray-100';
 
+  // Instagram tarzı pencere (mobil uygulamadaki DialogHost ile aynı): ortada beyaz kart, başlık + kısa metin,
+  // altında ince çizgiyle ayrılmış, alt alta yazı butonları (önce onay, sonra Cancel).
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" role="presentation">
-      <div
-        className="dialog-backdrop absolute inset-0 bg-gray-900/50 backdrop-blur-[2px]"
-        onClick={() => onClose(false)}
-        aria-hidden="true"
-      />
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-12" role="presentation">
+      <div className="dialog-backdrop absolute inset-0 bg-black/60" onClick={() => onClose(false)} aria-hidden="true" />
       <div
         role={kind === 'alert' ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-labelledby="dialog-title"
         aria-describedby={dialog.message ? 'dialog-message' : undefined}
-        className="dialog-in relative w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-2xl bg-white p-6 text-center shadow-2xl ring-1 ring-black/5"
+        className="dialog-in relative w-full max-w-[400px] max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-[14px] bg-white text-center shadow-2xl"
       >
-        <span
-          className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ring-8 ${
-            danger ? 'bg-rose-100 text-rose-600 ring-rose-50' : 'bg-navy-100 text-navy-600 ring-navy-50'
-          }`}
-        >
-          <Icon size={26} />
-        </span>
-        <h2 id="dialog-title" className="mt-5 text-lg font-bold text-gray-900 break-words">
-          {dialog.title}
-        </h2>
-        {dialog.message && (
-          <p id="dialog-message" className="mt-2 text-sm leading-relaxed text-gray-600 break-words">
-            {dialog.message}
-          </p>
-        )}
-
-        {/* Çok dar telefonlarda butonlar alt alta (onay üstte), 380px ve üstünde yan yana. Dokunmatikte buton yüksekliği 44px. */}
-        <div
-          className={`mt-6 flex flex-col-reverse gap-2.5 ${
-            kind === 'confirm' ? 'min-[380px]:grid min-[380px]:grid-cols-2' : ''
-          }`}
-        >
-          {kind === 'confirm' && (
-            <button ref={firstButtonRef} type="button" onClick={() => onClose(false)} className="btn-secondary min-h-11">
-              {dialog.cancelLabel}
-            </button>
+        <div className="px-6 pt-7 pb-6">
+          <h2 id="dialog-title" className="text-lg font-semibold text-gray-900 break-words">
+            {dialog.title}
+          </h2>
+          {dialog.message && (
+            <p id="dialog-message" className="mt-2 text-sm leading-[19px] text-gray-500 break-words">
+              {dialog.message}
+            </p>
           )}
-          <button
-            ref={kind === 'alert' ? firstButtonRef : undefined}
-            type="button"
-            onClick={() => onClose(true)}
-            className={`min-h-11 ${
-              danger && kind === 'confirm'
-                ? 'btn-primary bg-rose-600 hover:bg-rose-700 focus-visible:outline-rose-600'
-                : 'btn-primary'
-            }`}
-          >
-            {dialog.confirmLabel}
-          </button>
         </div>
+        <button
+          ref={kind === 'alert' ? firstButtonRef : undefined}
+          type="button"
+          onClick={() => onClose(true)}
+          className={`${buttonClass} font-bold ${danger ? 'text-[#ed4956]' : 'text-[#0095f6]'}`}
+        >
+          {dialog.confirmLabel}
+        </button>
+        {kind === 'confirm' && (
+          // Yıkıcı işlemlerde odak "Cancel"da başlar: yanlışlıkla Enter'a basılınca bir şey silinmesin.
+          <button ref={firstButtonRef} type="button" onClick={() => onClose(false)} className={`${buttonClass} text-gray-900`}>
+            {dialog.cancelLabel}
+          </button>
+        )}
       </div>
     </div>,
     document.body

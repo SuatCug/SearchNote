@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
+import FieldError from './FieldError';
 
 export interface ComboOption {
   value: string;
@@ -22,6 +23,8 @@ interface ComboboxProps {
   loading?: boolean;
   // Eşleşme yokken gösterilen yazı (listede olmayan değer olduğu gibi kaydedilir)
   emptyText?: string;
+  // Doğrulama hatası (alanın altında kırmızı; varken hint gizlenir)
+  error?: string;
 }
 
 const MAX_VISIBLE = 60;
@@ -41,6 +44,7 @@ export default function Combobox({
   maxLength = 120,
   loading,
   emptyText = 'No matches. You can keep what you typed.',
+  error,
 }: ComboboxProps) {
   const listId = useId();
   const [open, setOpen] = useState(false);
@@ -112,11 +116,13 @@ export default function Combobox({
           // Listedeki bir satıra tıklanırken önce blur gelir; seçim mousedown'da yapıldığı için sorun olmaz.
           onBlur={() => setOpen(false)}
           onKeyDown={handleKeyDown}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
           className="form-input pr-9 disabled:bg-gray-50 disabled:text-gray-400"
         />
         <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
       </div>
-      {hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
+      {error ? <FieldError id={`${id}-error`}>{error}</FieldError> : hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
 
       {open && (
         <ul

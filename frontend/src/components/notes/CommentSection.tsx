@@ -35,7 +35,6 @@ export default function CommentSection({ note }: { note: NoteDetail }) {
       message: "The comment will be removed for everyone. This can't be undone.",
       confirmLabel: 'Delete',
       tone: 'danger',
-      icon: Trash2,
     });
     if (!ok) return;
     try {

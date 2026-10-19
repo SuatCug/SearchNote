@@ -128,6 +128,10 @@ html {
   .form-input {
     @apply w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-[15px] text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-navy-500;
   }
+  /* Hatalı alan (aria-invalid): mobildeki gibi kırmızı çerçeve */
+  .form-input[aria-invalid='true'] {
+    @apply border-rose-400 focus:ring-rose-400 focus:border-rose-400;
+  }
   .form-label {
     @apply block text-sm font-medium text-gray-700 mb-1.5;
   }

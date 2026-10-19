@@ -17,6 +17,11 @@ type UsersResponse = ApiResponse<{ users: UserCard[] }>;
 type UserResponse = ApiResponse<{ user: AuthUser }>;
 type UserPageResponse = ApiResponse<{ users: UserCard[]; pagination: Pagination }>;
 
+// Telefon bildirimi ayarları (mobil uygulamayla aynı uç nokta). Uygulama içi bildirim listesi etkilenmez.
+export type PushCategory = 'likes' | 'comments' | 'follows' | 'messages' | 'groups';
+export type NotificationSettings = Record<PushCategory, boolean> & { pausedUntil: string | null };
+type NotificationSettingsResponse = ApiResponse<{ settings: NotificationSettings }>;
+
 // Sayfalı kişi listesi: takipçiler, takip edilenler ya da ortak takipçiler.
 export type ConnectionType = 'followers' | 'following' | 'mutual';
 
@@ -100,6 +105,35 @@ export const usersApi = baseApi.injectEndpoints({
       query: ({ id, blocked }) => ({ url: `/users/${id}/block`, method: blocked ? 'DELETE' : 'POST' }),
       invalidatesTags: ['User', 'FollowList', 'Conversation', 'Conversations'],
     }),
+    getNotificationSettings: builder.query<NotificationSettingsResponse, void>({
+      query: () => '/users/me/notification-settings',
+      providesTags: ['NotificationSettings'],
+    }),
+    // Anahtar anında değişir (iyimser); hata olursa sunucudaki hal geri yüklenir.
+    // pauseMinutes: "Pause all" süresi (0 = devam et).
+    updateNotificationSettings: builder.mutation<
+      NotificationSettingsResponse,
+      Partial<Record<PushCategory, boolean>> & { pauseMinutes?: number }
+    >({
+      query: (body) => ({ url: '/users/me/notification-settings', method: 'PATCH', body }),
+      async onQueryStarted({ pauseMinutes, ...toggles }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          usersApi.util.updateQueryData('getNotificationSettings', undefined, (draft) => {
+            Object.assign(draft.data.settings, toggles);
+            if (pauseMinutes !== undefined) {
+              draft.data.settings.pausedUntil =
+                pauseMinutes > 0 ? new Date(Date.now() + pauseMinutes * 60_000).toISOString() : null;
+            }
+          })
+        );
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(usersApi.util.updateQueryData('getNotificationSettings', undefined, () => data));
+        } catch {
+          patch.undo();
+        }
+      },
+    }),
     // Aynı kişiyi tekrar şikâyet etmek önceki kaydı günceller.
     reportUser: builder.mutation<ApiResponse, { id: string; reason: ReportReason; details?: string }>({
       query: ({ id, ...body }) => ({ url: `/users/${id}/report`, method: 'POST', body }),
@@ -157,4 +191,6 @@ export const {
   useChangePasswordMutation,
   useSendDeleteCodeMutation,
   useDeleteAccountMutation,
+  useGetNotificationSettingsQuery,
+  useUpdateNotificationSettingsMutation,
 } = usersApi;

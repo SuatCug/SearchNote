@@ -1,43 +1,96 @@
-import { useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useState, type ReactNode } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
-import { ArrowRight, Ban, Check, Flag, Link as LinkIcon, MoreHorizontal, Pencil, Upload } from 'lucide-react';
+import {
+  Award,
+  Calendar,
+  Camera,
+  Check,
+  Download,
+  FileText,
+  Flag,
+  Heart,
+  Link as LinkIcon,
+  Monitor,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Share2,
+  Upload,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import Spinner from '@/components/common/Spinner';
 import EmptyState from '@/components/common/EmptyState';
-import NoteGrid from '@/components/notes/NoteGrid';
+import Pagination from '@/components/common/Pagination';
+import Modal from '@/components/common/Modal';
+import NoteGridCard from '@/components/notes/NoteGridCard';
 import UserAvatar from '@/components/users/UserAvatar';
 import FollowButton from '@/components/users/FollowButton';
 import BlockButton from '@/components/users/BlockButton';
 import MessageButton from '@/components/messages/MessageButton';
-import UserList from '@/components/users/UserList';
 import MutualFollowers from '@/components/users/MutualFollowers';
-import CoursesShared from '@/components/users/CoursesShared';
 import ReportModal from '@/components/users/ReportModal';
+import ConnectionsModal from '@/components/users/ConnectionsModal';
+import GroupActivityRow from '@/components/groups/GroupActivityRow';
+import GroupIcon from '@/components/groups/GroupIcon';
 import {
-  useGetFollowersQuery,
-  useGetFollowingQuery,
   useGetProfileQuery,
+  useGetUserCoursesQuery,
   useGetUserNotesQuery,
+  type ConnectionType,
 } from '@/services/usersApi';
-import { formatCount, formatDate } from '@/lib/format';
+import { useGetSavedNotesQuery } from '@/services/notesApi';
+import { useGetMyGroupActivityQuery, useGetMyGroupsQuery } from '@/services/groupsApi';
+import { FILE_TYPES } from '@/lib/constants';
+import { DESKTOP_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
+import logo from '@/assets/logo.png';
+import { formatCount, formatDate, pluralize } from '@/lib/format';
+import type { NoteCard, ProfileData, UserCourse } from '@/types/api';
 
-// Notlar sekmesinde bu kadar not gösterilir; fazlası "See all" ile kullanıcının not sayfasında (/users/:id/notes) listelenir.
-const NOTES_PREVIEW = 3;
-// Takipçi / takip edilen listelerinde gösterilen kişi sayısı; fazlası /users/:id/followers|following sayfasında.
-const USERS_PREVIEW = 5;
+// Profil sayfası, mobil uygulamadaki profil ekranının aynısı: lacivert bant, bandın üzerine taşan ortalanmış avatar,
+// sayaçlar, ad / okul / biyografi, ortak takipçiler, eşit genişlikte aksiyon butonları, ortalanmış sekme çipleri
+// (All / Notes, kendi profilimde Saved / Groups) ve not kartı ızgarası. "All" = "At a glance" kartı + son notlar.
+// Sekme, sıralama, ders filtresi ve sayfa adreste tutulur. /users/:id/followers | following | mutual adresinde
+// profilin üstünde Instagram'daki gibi kişi listesi penceresi açılır (list).
+type ProfileTab = 'all' | 'notes' | 'saved' | 'groups';
 
-export default function ProfilePage() {
+const SORTS = [
+  { key: 'newest', label: 'Newest' },
+  { key: 'popular', label: 'Most liked' },
+  { key: 'downloads', label: 'Most downloaded' },
+];
+
+// 3 sütunlu (telefonda 2) ızgarada satırlar dolsun diye 6'nın katı.
+const PAGE_SIZE = 12;
+// "All" sekmesinde son notlar: 2 satır (telefonda 4, geniş ekranda 6).
+const PREVIEW_COUNT = 6;
+
+const GRID = 'grid grid-cols-2 sm:grid-cols-3 gap-3';
+// Mobildeki ikincil buton (navy-100 zemin).
+const SOFT_BUTTON =
+  'inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-lg bg-navy-100 px-3 text-[13px] font-bold text-gray-900 hover:bg-navy-200 transition-colors disabled:opacity-60';
+const SQUARE_BUTTON = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-100 text-gray-900 hover:bg-navy-200 transition-colors';
+
+export default function ProfilePage({ list }: { list?: ConnectionType }) {
   const { id = '' } = useParams();
-  const token = useAppSelector((state) => state.auth.token);
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get('tab') || 'notes';
-
   const { data, isLoading, error } = useGetProfileQuery(id);
-  const notes = useGetUserNotesQuery({ id, limit: NOTES_PREVIEW }, { skip: tab !== 'notes' });
-  const notesTotal = notes.data?.data?.pagination?.total ?? 0;
-  const followers = useGetFollowersQuery(id, { skip: tab !== 'followers' });
-  const following = useGetFollowingQuery(id, { skip: tab !== 'following' });
+  const [aboutOpen, setAboutOpen] = useState(false);
+  // Geniş ekranda "All" sekmesi yok (özet bilgiler soldaki sütunda): profil doğrudan Notes ile açılır.
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
+
+  const isMe = data?.data?.isMe ?? false;
+  const requested = searchParams.get('tab');
+  const tab: ProfileTab =
+    requested === 'notes' || (isMe && (requested === 'saved' || requested === 'groups'))
+      ? requested
+      : isDesktop
+        ? 'notes'
+        : 'all';
 
   if (isLoading) return <PageLayout><Spinner /></PageLayout>;
   if (error || !data) {
@@ -48,142 +101,498 @@ export default function ProfilePage() {
     );
   }
 
-  const { user, stats, isFollowing, isBlocked, isMe } = data.data;
-
-  const tabs = [
-    { key: 'notes', label: 'Notes', count: stats.notesCount },
-    { key: 'followers', label: 'Followers', count: user.followersCount },
-    { key: 'following', label: 'Following', count: user.followingCount },
+  const { user } = data.data;
+  const tabs: { key: ProfileTab; label: string }[] = [
+    ...(isDesktop ? [] : [{ key: 'all' as const, label: 'All' }]),
+    { key: 'notes', label: 'Notes' },
+    ...(isMe
+      ? [
+          { key: 'saved' as const, label: 'Saved' },
+          { key: 'groups' as const, label: 'Groups' },
+        ]
+      : []),
   ];
+  // Varsayılan sekme (telefonda All, geniş ekranda Notes) adreste yazılmaz.
+  const changeTab = (next: ProfileTab) =>
+    setSearchParams(next === 'all' || (isDesktop && next === 'notes') ? {} : { tab: next });
+  // Soldaki "Courses shared" kartından: Notes sekmesi o dersle filtrelenmiş açılır.
+  const openCourse = (code: string) => setSearchParams(isDesktop ? { course: code } : { tab: 'notes', course: code });
+
+  const tabChips = (
+    <div className="flex w-max min-w-full justify-center lg:justify-start gap-2 py-5 lg:py-3" role="tablist">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          role="tab"
+          aria-selected={tab === t.key}
+          onClick={() => changeTab(t.key)}
+          className={`h-[38px] rounded-full border bg-navy-100 px-4 text-sm transition-colors hover:bg-navy-200 ${
+            tab === t.key ? 'border-gray-300 font-extrabold text-gray-900' : 'border-transparent font-semibold text-gray-600'
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <PageLayout>
-      <section className="card p-6 sm:p-8">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-          <UserAvatar user={user} size="xl" />
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold text-gray-900 break-words">{user.fullName}</h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {user.university} · {user.department}
-            </p>
-            {user.bio && <p className="mt-3 text-[15px] text-gray-700 whitespace-pre-line break-words">{user.bio}</p>}
-            <p className="mt-2 text-xs text-gray-400">Member since {formatDate(user.createdAt)}</p>
-            {token && !isMe && <MutualFollowers userId={user.id} />}
-          </div>
-          <div className="shrink-0">
-            {isMe ? (
-              <Link to="/profile/edit" className="btn-secondary">
-                <Pencil size={15} /> Edit Profile
-              </Link>
-            ) : (
-              // Telefonda Follow / Message satırı tam genişlik kaplar, "⋯" sağda sabit kalır.
-              <div className="flex items-center justify-end gap-2">
-                {!isBlocked && (
-                  <div className="grid flex-1 grid-cols-2 gap-2 sm:flex sm:flex-none">
-                    <FollowButton userId={user.id} isFollowing={isFollowing} name={user.fullName} />
-                    <MessageButton userId={user.id} />
-                  </div>
-                )}
-                {token && <ProfileMenu userId={user.id} name={user.fullName} isBlocked={isBlocked} />}
-              </div>
-            )}
+      {/* Telefon / tablet: mobil uygulamadaki düzen. Geniş ekran (lg): Facebook tarzı geniş başlık + solda "Intro" sütunu. */}
+      <div className="mx-auto max-w-[720px] lg:max-w-none">
+        <div className="lg:hidden">
+          <ProfileHeader profile={data.data} onNotes={() => changeTab('notes')} />
+          <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">{tabChips}</div>
+          <div className="-mx-4 mb-5 border-t border-gray-200 sm:mx-0" />
+        </div>
+        {/* Başkasının profilinde geniş ekranda tek sekme (Notes) kalır: sekme satırı gösterilmez. */}
+        <DesktopHeader profile={data.data} onNotes={() => changeTab('notes')} tabs={tabs.length > 1 ? tabChips : null} />
+
+        <div className="lg:mt-6 lg:grid lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start lg:gap-6">
+          <aside className="hidden lg:block space-y-4">
+            <IntroCard profile={data.data} />
+            <CoursesCard userId={user.id} onCourse={openCourse} />
+            {isMe ? <GroupsCard onSeeAll={() => changeTab('groups')} /> : <PopularNotesCard userId={user.id} />}
+          </aside>
+
+          <div className="min-w-0">
+            {tab === 'all' && <AllTab profile={data.data} onSeeAbout={() => setAboutOpen(true)} onNotes={() => changeTab('notes')} />}
+            {tab === 'notes' && <NotesTab userId={user.id} isMe={isMe} total={data.data.stats.notesCount} />}
+            {tab === 'saved' && <SavedTab />}
+            {tab === 'groups' && <GroupsTab />}
           </div>
         </div>
-
-        {isBlocked && !isMe && (
-          // Telefonda ikon + yazı üstte, "Unblock" altta tam genişlik; geniş ekranda hepsi tek satır.
-          <div className="mt-5 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/70 px-4 py-3.5">
-            <div className="flex min-w-0 flex-1 items-start sm:items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
-                <Ban size={17} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-900 break-words">You blocked {user.fullName}</p>
-                <p className="text-[13px] text-gray-600">
-                  You can't follow or message each other. Unblock to interact again.
-                </p>
-              </div>
-            </div>
-            <BlockButton userId={user.id} isBlocked name={user.fullName} variant="button" className="w-full sm:w-auto shrink-0" />
-          </div>
-        )}
-
-        <dl className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <ProfileStat label="Notes" value={stats.notesCount} />
-          <ProfileStat label="Total likes" value={stats.totalLikes} />
-          <ProfileStat label="Total downloads" value={stats.totalDownloads} wideOnMobile />
-          <ProfileStat label="Followers" value={user.followersCount} to={`/users/${user.id}/followers`} />
-          <ProfileStat label="Following" value={user.followingCount} to={`/users/${user.id}/following`} />
-        </dl>
-
-        <CoursesShared userId={user.id} />
-      </section>
-
-      <div className="mt-8 border-b border-gray-200 flex gap-6 overflow-x-auto" role="tablist">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.key}
-            onClick={() => setSearchParams(t.key === 'notes' ? {} : { tab: t.key })}
-            className={`pb-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors ${
-              tab === t.key ? 'border-navy-600 text-navy-700' : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            {t.label} <span className="font-normal text-gray-400">{t.count}</span>
-          </button>
-        ))}
       </div>
 
-      <div className="mt-6">
-        {tab === 'notes' && (
-          <>
-            <NoteGrid
-              notes={notes.data?.data?.items}
-              isLoading={notes.isLoading}
-              emptyTitle={isMe ? "You haven't shared any notes yet" : 'No notes shared yet'}
-              emptyAction={
-                isMe && (
-                  <Link to="/upload" className="btn-primary">
-                    <Upload size={16} /> Upload your first note
-                  </Link>
-                )
-              }
-            />
-            {notesTotal > NOTES_PREVIEW && (
-              <div className="mt-6 flex justify-center">
-                <Link to={`/users/${id}/notes`} className="btn-secondary">
-                  See all {notesTotal} notes <ArrowRight size={16} />
-                </Link>
-              </div>
-            )}
-          </>
-        )}
-        {tab === 'followers' && (
-          <UserList
-            users={followers.data?.data?.users}
-            isLoading={followers.isLoading}
-            emptyTitle="No followers yet"
-            previewCount={USERS_PREVIEW}
-            seeAll={{ to: `/users/${id}/followers`, label: `See all ${user.followersCount} followers` }}
-          />
-        )}
-        {tab === 'following' && (
-          <UserList
-            users={following.data?.data?.users}
-            isLoading={following.isLoading}
-            emptyTitle="Not following anyone yet"
-            previewCount={USERS_PREVIEW}
-            seeAll={{ to: `/users/${id}/following`, label: `See all ${user.followingCount} following` }}
-          />
-        )}
-      </div>
+      {aboutOpen && <AboutModal profile={data.data} onClose={() => setAboutOpen(false)} />}
+      {list && (
+        <ConnectionsModal
+          key={list}
+          userId={user.id}
+          type={list}
+          isMe={isMe}
+          // Profilden açıldıysa geri dön (adres ve sekme eski haline gelir); doğrudan bağlantıyla gelindiyse profile git.
+          onClose={() => (location.state?.fromProfile ? navigate(-1) : navigate(`/users/${user.id}`, { replace: true }))}
+        />
+      )}
     </PageLayout>
   );
 }
 
-// Başka birinin profilindeki "⋯" menüsü: profil bağlantısını kopyala, engelle / engeli kaldır.
+/* ----------------------------------------------------------------- Başlık */
+
+function ProfileHeader({ profile, onNotes }: { profile: ProfileData; onNotes: () => void }) {
+  const token = useAppSelector((state) => state.auth.token);
+  const { user, stats, isFollowing, isBlocked, isMe } = profile;
+
+  return (
+    <header>
+      {/* Sade lacivert bant; avatarın üst yarısı bandın üzerine taşar. Telefonda kenardan kenara. */}
+      <div className="-mx-4 -mt-6 h-[86px] bg-navy-800 sm:mx-0 sm:mt-0 sm:h-[100px] sm:rounded-2xl" />
+
+      <div className="flex flex-col items-center text-center">
+        <div className="relative -mt-[58px] sm:-mt-[66px]">
+          <UserAvatar user={user} size="profile" className="ring-4 ring-gray-100" />
+          {isMe && (
+            <Link
+              to="/settings/profile"
+              aria-label="Change profile photo"
+              className="absolute bottom-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-full border-2 border-gray-100 bg-white text-gray-900 shadow hover:bg-gray-50"
+            >
+              <Camera size={15} />
+            </Link>
+          )}
+        </div>
+
+        <div className="mt-3 flex justify-center gap-8">
+          <Stat value={stats.notesCount} label="Notes" onClick={onNotes} />
+          <Stat value={user.followersCount} label="Followers" to={`/users/${user.id}/followers`} />
+          <Stat value={user.followingCount} label="Following" to={`/users/${user.id}/following`} />
+        </div>
+
+        <h1 className="mt-4 line-clamp-2 break-words text-[22px] min-[360px]:text-[26px] font-extrabold leading-tight text-gray-900">
+          {user.fullName}
+        </h1>
+        {(user.university || user.department) && (
+          <p className="mt-1 text-sm text-gray-500">{[user.university, user.department].filter(Boolean).join(' · ')}</p>
+        )}
+        {user.bio ? (
+          <p className="mt-2 whitespace-pre-line break-words text-sm leading-5 text-gray-700">{user.bio}</p>
+        ) : (
+          isMe && (
+            <Link to="/settings/profile" className="mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-navy-700 hover:text-navy-800">
+              <Plus size={16} /> Add a short bio
+            </Link>
+          )
+        )}
+      </div>
+
+      {token && !isMe && !isBlocked && user.followersCount > 0 && (
+        <div className="mt-4">
+          <MutualFollowers userId={user.id} />
+        </div>
+      )}
+
+      {isBlocked && !isMe ? (
+        <div className="mt-4 space-y-2">
+          <p className="text-center text-sm text-gray-500">You blocked this user.</p>
+          {/* ⋯ menüsü engelliyken de açılır (şikâyet edebilmek için) */}
+          <div className="flex items-center gap-2">
+            <BlockButton userId={user.id} isBlocked name={user.fullName} variant="button" className="flex-1 h-9 text-[13px]" />
+            <ProfileMenu userId={user.id} name={user.fullName} isBlocked={isBlocked} />
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 flex items-center gap-2">
+          {isMe ? (
+            <>
+              <Link to="/settings/profile" className={SOFT_BUTTON}>
+                <Pencil size={14} /> Edit profile
+              </Link>
+              <ShareProfileButton userId={user.id} name={user.fullName} />
+            </>
+          ) : (
+            <>
+              <FollowButton userId={user.id} isFollowing={isFollowing} name={user.fullName} variant="profile" />
+              <MessageButton userId={user.id} className={SOFT_BUTTON} />
+              {token && <ProfileMenu userId={user.id} name={user.fullName} isBlocked={isBlocked} />}
+            </>
+          )}
+        </div>
+      )}
+    </header>
+  );
+}
+
+// Geniş ekran başlığı (Facebook gibi): geniş lacivert bant, solda bandın alt kenarına taşan avatar,
+// yanında ad / okul / satır içi sayaçlar, sağda butonlar; altta ince çizgiyle ayrılmış sekme çipleri.
+function DesktopHeader({ profile, onNotes, tabs }: { profile: ProfileData; onNotes: () => void; tabs: ReactNode }) {
+  const token = useAppSelector((state) => state.auth.token);
+  const { user, stats, isFollowing, isBlocked, isMe } = profile;
+  const button = 'flex-none px-5';
+
+  return (
+    <header className="hidden lg:block overflow-hidden rounded-2xl border border-gray-200 bg-white">
+      {/* Kapak fotoğrafı yok: soluk nokta deseni ve sağ altta soluk logo, bant boş görünmesin. */}
+      <div className="relative h-[140px] overflow-hidden bg-gradient-to-br from-navy-800 via-navy-700 to-navy-900">
+        <div
+          className="absolute inset-0 opacity-[0.12]"
+          style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1.5px)', backgroundSize: '18px 18px' }}
+          aria-hidden="true"
+        />
+        <img src={logo} alt="" className="absolute -bottom-10 -right-6 h-48 w-48 rotate-[-12deg] opacity-[0.08] grayscale invert" aria-hidden="true" />
+      </div>
+      <div className="flex items-end gap-6 px-8">
+        <div className="relative -mt-[60px] shrink-0">
+          <UserAvatar user={user} className="!h-[168px] !w-[168px] !text-5xl ring-4 ring-white" />
+          {isMe && (
+            <Link
+              to="/settings/profile"
+              aria-label="Change profile photo"
+              className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-gray-100 text-gray-900 shadow hover:bg-gray-200"
+            >
+              <Camera size={17} />
+            </Link>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1 pb-5 pt-4">
+          <h1 className="break-words text-[32px] font-extrabold leading-tight text-gray-900">{user.fullName}</h1>
+          {(user.university || user.department) && (
+            <p className="mt-0.5 text-[15px] text-gray-500">{[user.university, user.department].filter(Boolean).join(' · ')}</p>
+          )}
+          <p className="mt-1.5 flex flex-wrap gap-x-1.5 text-[15px] text-gray-500">
+            <InlineStat value={user.followersCount} label="followers" to={`/users/${user.id}/followers`} />
+            <span aria-hidden="true">·</span>
+            <InlineStat value={user.followingCount} label="following" to={`/users/${user.id}/following`} />
+            <span aria-hidden="true">·</span>
+            <InlineStat value={stats.notesCount} label={stats.notesCount === 1 ? 'note' : 'notes'} onClick={onNotes} />
+          </p>
+          {token && !isMe && !isBlocked && user.followersCount > 0 && (
+            <div className="mt-2">
+              <MutualFollowers userId={user.id} />
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2 pb-6">
+          {isMe ? (
+            <>
+              <Link to="/settings/profile" className={`${SOFT_BUTTON} ${button}`}>
+                <Pencil size={14} /> Edit profile
+              </Link>
+              <ShareProfileButton userId={user.id} name={user.fullName} className={button} />
+            </>
+          ) : isBlocked ? (
+            <>
+              <BlockButton userId={user.id} isBlocked name={user.fullName} variant="button" className="h-9 text-[13px]" />
+              <ProfileMenu userId={user.id} name={user.fullName} isBlocked={isBlocked} />
+            </>
+          ) : (
+            <>
+              <span className="flex w-36">
+                <FollowButton userId={user.id} isFollowing={isFollowing} name={user.fullName} variant="profile" />
+              </span>
+              <MessageButton userId={user.id} className={`${SOFT_BUTTON} ${button}`} />
+              {token && <ProfileMenu userId={user.id} name={user.fullName} isBlocked={isBlocked} />}
+            </>
+          )}
+        </div>
+      </div>
+      {tabs ? <div className="mx-8 border-t border-gray-200">{tabs}</div> : <div className="h-2" />}
+    </header>
+  );
+}
+
+function InlineStat({ value, label, to, onClick }: { value: number; label: string; to?: string; onClick?: () => void }) {
+  const { search } = useLocation();
+  const content = (
+    <>
+      <b className="font-bold text-gray-900">{formatCount(value)}</b> {label}
+    </>
+  );
+  return to ? (
+    <Link to={`${to}${search}`} state={{ fromProfile: true }} className="hover:underline">
+      {content}
+    </Link>
+  ) : (
+    <button type="button" onClick={onClick} className="hover:underline">
+      {content}
+    </button>
+  );
+}
+
+/* ----------------------------------------------------------------- Geniş ekran sol sütun */
+
+function SideCard({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h2 className="text-[17px] font-extrabold text-gray-900">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// "Intro": biyografi, okul, bölüm, katılma tarihi, toplam beğeni / indirme.
+function IntroCard({ profile }: { profile: ProfileData }) {
+  const { user, stats, isMe } = profile;
+  return (
+    <SideCard title="Intro">
+      {user.bio ? (
+        <p className="mb-2 whitespace-pre-line break-words border-b border-gray-200 pb-3 text-center text-sm leading-5 text-gray-700">
+          {user.bio}
+        </p>
+      ) : (
+        isMe && (
+          <Link
+            to="/settings/profile"
+            className="mb-2 flex h-9 items-center justify-center gap-1.5 rounded-lg bg-navy-100 text-[13px] font-bold text-gray-900 hover:bg-navy-200"
+          >
+            <Plus size={15} /> Add a short bio
+          </Link>
+        )
+      )}
+      <IntroRow icon={Award} label="Studies at" value={user.university} />
+      <IntroRow icon={Monitor} label="Department" value={user.department} />
+      <IntroRow icon={Calendar} label="Joined" value={formatDate(user.createdAt)} />
+      <IntroRow icon={Heart} label="Likes received" value={formatCount(stats.totalLikes)} />
+      <IntroRow icon={Download} label="Downloads" value={formatCount(stats.totalDownloads)} />
+    </SideCard>
+  );
+}
+
+function IntroRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value?: string }) {
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <Icon size={18} className="shrink-0 text-gray-400" />
+      <p className="min-w-0 text-sm text-gray-600 break-words">
+        {label} {value ? <b className="font-bold text-gray-900">{value}</b> : <span className="text-gray-400">—</span>}
+      </p>
+    </div>
+  );
+}
+
+const SIDE_COURSES = 6;
+
+// Paylaşılan dersler; satıra basınca Notes sekmesi o dersle açılır.
+function CoursesCard({ userId, onCourse }: { userId: string; onCourse: (code: string) => void }) {
+  const courses = useGetUserCoursesQuery(userId).data?.data?.courses ?? [];
+  const [expanded, setExpanded] = useState(false);
+  if (!courses.length) return null;
+  const visible = expanded ? courses : courses.slice(0, SIDE_COURSES);
+  return (
+    <SideCard
+      title="Courses shared"
+      action={
+        courses.length > SIDE_COURSES && (
+          <button type="button" onClick={() => setExpanded((e) => !e)} className="text-sm font-bold text-navy-700 hover:text-navy-800">
+            {expanded ? 'Show less' : 'See all'}
+          </button>
+        )
+      }
+    >
+      <ul className="-mx-2">
+        {visible.map((c) => (
+          <li key={c.code}>
+            <button
+              type="button"
+              onClick={() => onCourse(c.code)}
+              className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-gray-50"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-600">
+                <FileText size={17} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-gray-900">{c.code}</span>
+                {c.name && c.name !== c.code && <span className="block truncate text-xs text-gray-500">{c.name}</span>}
+              </span>
+              <span className="shrink-0 text-xs text-gray-500">
+                {c.count} {c.count === 1 ? 'note' : 'notes'}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </SideCard>
+  );
+}
+
+const SIDE_GROUPS = 5;
+
+// Kendi profilimde üyesi olduğum gruplar (ilk 5); "See all" Groups sekmesini açar.
+// Başkasının grupları için sunucuda uç nokta yok, bu yüzden kart sadece kendi profilimde görünür.
+function GroupsCard({ onSeeAll }: { onSeeAll: () => void }) {
+  const { data } = useGetMyGroupsQuery({ limit: SIDE_GROUPS });
+  const groups = data?.data?.items ?? [];
+  const total = data?.data?.pagination?.total ?? groups.length;
+  if (!groups.length) return null;
+  return (
+    <SideCard
+      title="Groups"
+      action={
+        total > SIDE_GROUPS && (
+          <button type="button" onClick={onSeeAll} className="text-sm font-bold text-navy-700 hover:text-navy-800">
+            See all
+          </button>
+        )
+      }
+    >
+      <p className="-mt-2 mb-2 text-sm text-gray-500">{pluralize(total, 'group')}</p>
+      <ul className="-mx-2">
+        {groups.map((g) => (
+          <li key={g._id}>
+            <Link to={`/groups/${g._id}`} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-gray-50">
+              <GroupIcon name={g.name} color={g.color} courseCode={g.courseCode} size="sm" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-gray-900">{g.name}</span>
+                <span className="block truncate text-xs text-gray-500">
+                  {pluralize(g.membersCount, 'member')} · {pluralize(g.notesCount, 'note')}
+                </span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </SideCard>
+  );
+}
+
+const SIDE_POPULAR = 3;
+
+// Başkasının profilinde: en çok beğenilen notları (sağ sütun en yeniden sıralı; burada "en iyileri").
+// Hiç beğeni almış notu yoksa kart görünmez.
+function PopularNotesCard({ userId }: { userId: string }) {
+  const { data } = useGetUserNotesQuery({ id: userId, sort: 'popular', page: 1, limit: SIDE_POPULAR });
+  const notes = (data?.data?.items ?? []).filter((n) => n.likesCount > 0);
+  if (!notes.length) return null;
+  return (
+    <SideCard title="Popular notes">
+      <ul className="-mx-2">
+        {notes.map((n) => {
+          const { icon: Icon, badge } = FILE_TYPES[n.fileType] ?? FILE_TYPES.pdf;
+          return (
+            <li key={n._id}>
+              <Link to={`/notes/${n._id}`} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-gray-50">
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${badge}`}>
+                  <Icon size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold text-gray-900">{n.title}</span>
+                  <span className="flex items-center gap-2.5 text-xs text-gray-500">
+                    {n.courseCode && <span className="truncate font-semibold">{n.courseCode}</span>}
+                    <span className="inline-flex shrink-0 items-center gap-1">
+                      <Heart size={12} /> {formatCount(n.likesCount)}
+                    </span>
+                    <span className="inline-flex shrink-0 items-center gap-1">
+                      <Download size={12} /> {formatCount(n.downloadsCount)}
+                    </span>
+                  </span>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </SideCard>
+  );
+}
+
+// Sayı üstte kalın, etiket altta gri. to: takipçi / takip edilen listesi; onClick: Notes sekmesi.
+function Stat({ value, label, to, onClick }: { value: number; label: string; to?: string; onClick?: () => void }) {
+  // Açık sekme (?tab=...) korunur: pencere kapanınca profil aynı yerde kalır.
+  const { search } = useLocation();
+  const className = 'flex min-w-[60px] flex-col items-center hover:opacity-70 transition-opacity';
+  const content = (
+    <>
+      <span className="text-[19px] font-extrabold leading-tight text-gray-900">{formatCount(value)}</span>
+      <span className="text-[13px] text-gray-500">{label}</span>
+    </>
+  );
+  return to ? (
+    <Link to={`${to}${search}`} state={{ fromProfile: true }} className={className}>
+      {content}
+    </Link>
+  ) : (
+    <button type="button" onClick={onClick} className={className}>
+      {content}
+    </button>
+  );
+}
+
+// Kendi profilimde: telefonda paylaşım penceresi, masaüstünde bağlantıyı kopyalar.
+function ShareProfileButton({ userId, name, className = '' }: { userId: string; name: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const share = async () => {
+    const url = `${window.location.origin}/users/${userId}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `${name} on SearchNote`, url });
+      } catch {
+        // Kullanıcı paylaşım penceresini kapattı.
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      window.prompt('Copy this link:', url);
+    }
+  };
+  return (
+    <button type="button" onClick={share} className={`${SOFT_BUTTON} ${className}`}>
+      {copied ? <Check size={14} className="text-emerald-600" /> : <Share2 size={14} />}
+      {copied ? 'Link copied' : 'Share profile'}
+    </button>
+  );
+}
+
+// Başka birinin profilindeki "⋯" menüsü: profil bağlantısını kopyala, şikâyet et, engelle / engeli kaldır.
 function ProfileMenu({ userId, name, isBlocked }: { userId: string; name: string; isBlocked: boolean }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -204,14 +613,8 @@ function ProfileMenu({ userId, name, isBlocked }: { userId: string; name: string
 
   return (
     <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-label="More options"
-        className="btn-secondary px-2.5"
-      >
-        <MoreHorizontal size={18} />
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="More options" className={SQUARE_BUTTON}>
+        <MoreHorizontal size={16} />
       </button>
       {open && (
         <>
@@ -248,29 +651,267 @@ function ProfileMenu({ userId, name, isBlocked }: { userId: string; name: string
   );
 }
 
-// to verilirse kutu ilgili listeye (takipçiler / takip edilenler) bağlantı olur.
-// wideOnMobile: 2 sütunlu mobil ızgarada tam satır kaplar (5 kutu tek kalan olmadan dizilsin diye).
-interface ProfileStatProps {
-  label: string;
-  value: number;
-  to?: string;
-  wideOnMobile?: boolean;
+/* ----------------------------------------------------------------- "About" penceresi */
+
+// "At a glance" → "See all": istatistikler, okul bilgileri ve paylaşılan derslerin tam listesi.
+function AboutModal({ profile, onClose }: { profile: ProfileData; onClose: () => void }) {
+  const { user, stats } = profile;
+  const courses = useGetUserCoursesQuery(user.id).data?.data?.courses ?? [];
+  return (
+    <Modal title={`About ${user.fullName}`} onClose={onClose}>
+      <div className="space-y-5 p-5">
+        <div className="grid grid-cols-3 gap-2.5">
+          <StatTile icon={FileText} value={stats.notesCount} label="Notes" />
+          <StatTile icon={Heart} value={stats.totalLikes} label="Likes" />
+          <StatTile icon={Download} value={stats.totalDownloads} label="Downloads" />
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white px-4">
+          <InfoRow icon={Award} label="Studies at" value={user.university} />
+          <InfoRow icon={Monitor} label="Department" value={user.department} />
+          <InfoRow icon={Calendar} label="Joined" value={formatDate(user.createdAt)} last />
+        </div>
+        <div>
+          <h3 className="text-[15px] font-extrabold text-gray-900">Courses shared</h3>
+          <p className="mt-0.5 text-xs text-gray-500">Courses with at least one note shared. Updated automatically.</p>
+          {courses.length ? (
+            <ul className="mt-3 rounded-xl border border-gray-200 bg-white px-4">
+              {courses.map((c, i) => (
+                <CourseRow key={c.code} course={c} last={i === courses.length - 1} />
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-gray-500">No notes shared yet.</p>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
-function ProfileStat({ label, value, to, wideOnMobile = false }: ProfileStatProps) {
-  const className = `rounded-xl bg-gray-50 px-4 py-3 flex flex-col-reverse ${wideOnMobile ? 'col-span-2 sm:col-span-1' : ''}`;
-  const content = (
+function StatTile({ icon: Icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
+  return (
+    <div className="flex flex-col items-center rounded-xl border border-gray-200 bg-white py-3">
+      <Icon size={17} className="text-navy-600" />
+      <span className="mt-1 text-lg font-extrabold text-gray-900">{formatCount(value)}</span>
+      <span className="text-xs text-gray-500">{label}</span>
+    </div>
+  );
+}
+
+function InfoRow({ icon: Icon, label, value, last }: { icon: LucideIcon; label: string; value?: string; last?: boolean }) {
+  return (
+    <div className={`flex items-center gap-3 py-3 ${last ? '' : 'border-b border-gray-200'}`}>
+      <Icon size={17} className="shrink-0 text-gray-500" />
+      <span className="text-sm text-gray-600">{label}</span>
+      <span className={`ml-auto min-w-0 text-right text-sm break-words ${value ? 'font-bold text-gray-900' : 'text-gray-400'}`}>
+        {value || '—'}
+      </span>
+    </div>
+  );
+}
+
+function CourseRow({ course, last }: { course: UserCourse; last: boolean }) {
+  return (
+    <li className={`flex items-center gap-3 py-3 ${last ? '' : 'border-b border-gray-200'}`}>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold text-gray-900">{course.code}</p>
+        {course.name && course.name !== course.code && <p className="truncate text-xs text-gray-500">{course.name}</p>}
+      </div>
+      <span className="shrink-0 rounded-full bg-navy-50 px-2.5 py-0.5 text-xs font-semibold text-navy-700">
+        {course.count} {course.count === 1 ? 'note' : 'notes'}
+      </span>
+    </li>
+  );
+}
+
+/* ----------------------------------------------------------------- Sekmeler */
+
+function NoteCards({ notes, isLoading, empty, preview = false }: { notes?: NoteCard[]; isLoading: boolean; empty: ReactNode; preview?: boolean }) {
+  if (isLoading) return <Spinner />;
+  if (!notes?.length) return <>{empty}</>;
+  return (
+    <div className={GRID}>
+      {notes.map((n, i) => (
+        // "All" önizlemesinde telefonda 2 satır = 4 kart
+        <div key={n._id} className={`flex ${preview && i >= 4 ? 'max-sm:hidden' : ''}`}>
+          <NoteGridCard note={n} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// "All": "At a glance" kartı (okul, bölüm, ilk 4 ders) + son notlar.
+function AllTab({ profile, onSeeAbout, onNotes }: { profile: ProfileData; onSeeAbout: () => void; onNotes: () => void }) {
+  const { user, stats, isMe } = profile;
+  const courses = useGetUserCoursesQuery(user.id).data?.data?.courses ?? [];
+  const notes = useGetUserNotesQuery({ id: user.id, sort: 'newest', page: 1, limit: PREVIEW_COUNT });
+
+  return (
     <>
-      <dt className="text-xs text-gray-500">{label}</dt>
-      <dd className="text-xl font-bold text-gray-900">{formatCount(value)}</dd>
+      {/* Geniş ekranda bu bilgiler soldaki "Intro" kartında. */}
+      <section className="rounded-2xl border border-gray-200 bg-white px-4 pt-4 pb-1 lg:hidden">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[17px] font-extrabold text-gray-900">At a glance</h2>
+          <button type="button" onClick={onSeeAbout} className="text-sm font-bold text-navy-700 hover:text-navy-800">
+            See all
+          </button>
+        </div>
+        <GlanceRow icon={Award} label="Studies at" value={user.university} />
+        <GlanceRow icon={Monitor} label="Department" value={user.department} />
+        <GlanceRow icon={FileText} label="Courses shared" value={courses.slice(0, 4).map((c) => c.code).join(', ')} last />
+      </section>
+
+      <div className="mt-6 mb-3 flex items-center justify-between lg:mt-0">
+        <h2 className="text-[17px] font-extrabold text-gray-900">Notes</h2>
+        {stats.notesCount > 0 && (
+          <button type="button" onClick={onNotes} className="text-sm font-bold text-navy-700 hover:text-navy-800">
+            See all
+          </button>
+        )}
+      </div>
+      <NoteCards notes={notes.data?.data?.items} isLoading={notes.isLoading} empty={<NotesEmpty isMe={isMe} />} preview />
     </>
   );
+}
 
-  return to ? (
-    <Link to={to} className={`${className} hover:bg-navy-50 transition-colors`}>
-      {content}
-    </Link>
-  ) : (
-    <div className={className}>{content}</div>
+function GlanceRow({ icon: Icon, label, value, last }: { icon: LucideIcon; label: string; value?: string; last?: boolean }) {
+  return (
+    <div className={`flex items-center gap-3 py-3 ${last ? '' : 'border-b border-gray-200'}`}>
+      <Icon size={17} className="shrink-0 text-gray-500" />
+      <p className="min-w-0 text-sm text-gray-600 break-words">
+        {label}: {value ? <b className="font-bold text-gray-900">{value}</b> : <span className="text-gray-400">—</span>}
+      </p>
+    </div>
+  );
+}
+
+function NotesEmpty({ isMe, course }: { isMe: boolean; course?: string }) {
+  if (course) return <EmptyState icon={FileText} title="No notes for this course" />;
+  return (
+    <EmptyState
+      icon={FileText}
+      title="No notes yet"
+      text={isMe ? 'Notes you upload will show up here.' : "This user hasn't shared any notes yet."}
+      action={
+        isMe && (
+          <Link to="/upload" className="btn-primary">
+            <Upload size={16} /> Upload a note
+          </Link>
+        )
+      }
+    />
+  );
+}
+
+// Notes: sıralama + (birden fazla ders varsa) ders filtresi + sayfalı not kartları.
+function NotesTab({ userId, isMe, total }: { userId: string; isMe: boolean; total: number }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sort = searchParams.get('sort') || 'newest';
+  const course = searchParams.get('course') ?? '';
+  const page = Number(searchParams.get('page')) || 1;
+  const notes = useGetUserNotesQuery({ id: userId, sort, page, limit: PAGE_SIZE, q: course || undefined });
+  const courseCodes = useGetUserCoursesQuery(userId).data?.data?.courses.map((c) => c.code) ?? [];
+
+  const update = (changes: Record<string, string>) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'notes');
+    Object.entries(changes).forEach(([k, v]) => (v ? next.set(k, v) : next.delete(k)));
+    if (!('page' in changes)) next.delete('page');
+    setSearchParams(next);
+  };
+
+  return (
+    <>
+      {total > 1 && (
+        <div className="-mt-2 mb-4 space-y-2">
+          <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0" role="group" aria-label="Sort notes">
+            {SORTS.map((s) => (
+              <FilterPill key={s.key} active={sort === s.key} onClick={() => update({ sort: s.key === 'newest' ? '' : s.key })}>
+                {s.label}
+              </FilterPill>
+            ))}
+          </div>
+          {courseCodes.length > 1 && (
+            <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0" role="group" aria-label="Filter by course">
+              <FilterPill active={!course} onClick={() => update({ course: '' })}>
+                All courses
+              </FilterPill>
+              {courseCodes.map((c) => (
+                <FilterPill key={c} active={course === c} onClick={() => update({ course: course === c ? '' : c })}>
+                  {c}
+                </FilterPill>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <NoteCards notes={notes.data?.data?.items} isLoading={notes.isLoading} empty={<NotesEmpty isMe={isMe} course={course} />} />
+      <Pagination
+        pagination={notes.data?.data?.pagination}
+        onPageChange={(p) => {
+          update({ page: p > 1 ? String(p) : '' });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
+    </>
+  );
+}
+
+function SavedTab() {
+  const [page, setPage] = useState(1);
+  const saved = useGetSavedNotesQuery({ page, limit: PAGE_SIZE });
+  return (
+    <>
+      <NoteCards
+        notes={saved.data?.data?.items}
+        isLoading={saved.isLoading}
+        empty={<EmptyState icon={FileText} title="No saved notes" text="Tap the bookmark icon on any note to keep it here for later." />}
+      />
+      <Pagination pagination={saved.data?.data?.pagination} onPageChange={setPage} />
+    </>
+  );
+}
+
+function GroupsTab() {
+  const activity = useGetMyGroupActivityQuery();
+  const groups = activity.data?.data?.groups;
+  if (activity.isLoading) return <Spinner />;
+  if (!groups?.length) {
+    return (
+      <EmptyState
+        icon={Users}
+        title="No groups yet"
+        text="Groups you join or create will show up here."
+        action={
+          <Link to="/groups?tab=explore" className="btn-primary">
+            Discover groups
+          </Link>
+        }
+      />
+    );
+  }
+  return (
+    <div className="card divide-y divide-gray-100 overflow-hidden">
+      {groups.map((g) => (
+        <GroupActivityRow key={g._id} group={g} />
+      ))}
+    </div>
+  );
+}
+
+// Küçük filtre hapı: seçili olan lacivert yazı + ince lacivert çerçeve (mobildeki gibi).
+function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`h-[30px] shrink-0 whitespace-nowrap rounded-full border bg-white px-3 text-[13px] transition-colors ${
+        active ? 'border-navy-700 font-bold text-navy-700' : 'border-gray-200 font-semibold text-gray-600 hover:bg-gray-50'
+      }`}
+    >
+      {children}
+    </button>
   );
 }

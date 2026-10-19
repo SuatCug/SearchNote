@@ -47,7 +47,7 @@ export default function AboutPage() {
         title="By students, for students."
         text="SearchNote started with a simple idea: the best study materials are often sitting in a classmate's notebook. We built a place where university students can share class notes, slides and past exams — and find exactly what they need, for free."
       >
-        <Link to={token ? '/?all=1' : '/#how-it-works'} className="btn-primary bg-white text-navy-700 hover:bg-navy-50">
+        <Link to={token ? '/?all=1' : '/how-it-works'} className="btn-primary bg-white text-navy-700 hover:bg-navy-50">
           {token ? 'Browse notes' : 'How it works'}
         </Link>
         <Link

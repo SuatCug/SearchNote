@@ -6,10 +6,10 @@ import ConversationList from '@/components/messages/ConversationList';
 import ChatPanel from '@/components/messages/ChatPanel';
 import { useGetConversationsQuery } from '@/services/messagesApi';
 import { useFallbackPolling } from '@/lib/socket';
+import { DESKTOP_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 
 // Konuşma listesi Socket.io olaylarıyla anında yenilenir; bağlantı yoksa bu aralıkla yoklanır.
 const LIST_POLL_INTERVAL_MS = 10000;
-const DESKTOP_QUERY = '(min-width: 1024px)';
 
 // Telefonda sohbet ekranın görünen kısmına (klavye açıkken klavyenin üstüne) oturur.
 // Klavye açılınca bazı tarayıcılar sayfayı değil sadece görünen alanı küçültür; visualViewport bunu verir.
@@ -32,22 +32,11 @@ function useVisualViewport(active: boolean) {
   return active ? box : null;
 }
 
-function useIsDesktop() {
-  const [desktop, setDesktop] = useState(() => window.matchMedia(DESKTOP_QUERY).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(DESKTOP_QUERY);
-    const onChange = () => setDesktop(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-  return desktop;
-}
-
 // /messages: büyük ekranda solda konuşmalar, sağda sohbet (tek kart).
 // Telefonda liste sayfanın kendisidir; konuşma açılınca sohbet tam ekran açılır (üst bar ve alt sekmeler gizlenir).
 export default function MessagesPage() {
   const { id } = useParams();
-  const isDesktop = useIsDesktop();
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const mobileChat = Boolean(id) && !isDesktop;
   const viewport = useVisualViewport(mobileChat);
   const { data, isLoading, error } = useGetConversationsQuery(undefined, {

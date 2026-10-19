@@ -39,7 +39,6 @@ export default function JoinGroupButton({
           : 'You can join again anytime.',
         confirmLabel: 'Leave group',
         tone: 'danger',
-        icon: LogOut,
       }))
     ) {
       return;
@@ -51,7 +50,6 @@ export default function JoinGroupButton({
         message: 'You can send a new request later.',
         confirmLabel: 'Cancel request',
         cancelLabel: 'Keep it',
-        icon: Clock,
       }))
     ) {
       return;

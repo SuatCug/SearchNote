@@ -8,13 +8,16 @@ import GoogleButton, { OrDivider } from '@/components/auth/GoogleButton';
 import useFinishAuth from '@/components/auth/useFinishAuth';
 import Alert from '@/components/common/Alert';
 import SchoolFields from '@/components/common/SchoolFields';
+import TextField from '@/components/common/TextField';
 import { useCompleteSignupMutation, useSendSignupCodeMutation, useVerifySignupCodeMutation } from '@/services/authApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { EDU_EMAIL_REGEX, EMAIL_PLACEHOLDER, REQUIRE_EDU_EMAIL } from '@/lib/constants';
+import { compactErrors, serverFieldErrors, validateEmail, validateNewPassword, validateRequired } from '@/lib/validation';
 
 // Mobil uygulamayla aynı kayıt akışı: önce e-posta kodla doğrulanır, hesap en son adımda oluşturulur
 // (böylece doğrulanmamış hesap hiç açılmaz). Adımlar: e-posta → kod → ad, şifre ve okul.
 type Step = 'email' | 'code' | 'details';
+type Field = 'email' | 'fullName' | 'password' | 'university' | 'department';
 
 export default function RegisterPage() {
   const finishAuth = useFinishAuth();
@@ -28,23 +31,31 @@ export default function RegisterPage() {
   const [resendIn, setResendIn] = useState(60);
   const [signupToken, setSignupToken] = useState('');
   const [form, setForm] = useState({ fullName: '', password: '', university: '', department: '' });
+  // Alan hataları alanın altında, diğer sunucu hataları formun altında (mobil uygulamayla aynı kurallar ve mesajlar)
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({});
   const [error, setError] = useState('');
 
   const goTo = (next: Step) => {
     setError('');
+    setFieldErrors({});
     setStep(next);
   };
 
-  const emailInvalid = REQUIRE_EDU_EMAIL && email.includes('@') && !EDU_EMAIL_REGEX.test(email.trim());
+  const clearField = (field: Field) => setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+  const setField = (field: Exclude<Field, 'email'>, value: string) => {
+    setForm((f) => ({ ...f, [field]: value }));
+    clearField(field);
+  };
 
   const handleEmail = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     const clean = email.trim().toLowerCase();
-    if (REQUIRE_EDU_EMAIL && !EDU_EMAIL_REGEX.test(clean)) {
-      setError('You can only sign up with a .edu.tr school email address.');
-      return;
-    }
+    const invalid =
+      validateEmail(email) ??
+      (REQUIRE_EDU_EMAIL && !EDU_EMAIL_REGEX.test(clean) ? 'Only institutional .edu.tr email addresses can register.' : undefined);
+    setFieldErrors({ email: invalid });
+    if (invalid) return;
     try {
       const { data } = await sendCode(clean).unwrap();
       setEmail(clean);
@@ -52,13 +63,24 @@ export default function RegisterPage() {
       setResendIn(data.resendIn);
       goTo('code');
     } catch (err) {
-      setError(getErrorMessage(err));
+      // Kayıtlı e-posta, .edu.tr şartı gibi hatalar kutunun altında görünsün (mobildeki gibi 409 / 422)
+      const status = (err as { status?: unknown }).status;
+      if (status === 409 || status === 422) setFieldErrors({ email: getErrorMessage(err) });
+      else setError(getErrorMessage(err));
     }
   };
 
   const handleDetails = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
+    const errors = compactErrors({
+      fullName: validateRequired(form.fullName, 'Full name'),
+      password: validateNewPassword(form.password),
+      university: validateRequired(form.university, 'University'),
+      department: validateRequired(form.department, 'Department'),
+    });
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
     try {
       const { data } = await completeSignup({
         signupToken,
@@ -69,7 +91,9 @@ export default function RegisterPage() {
       }).unwrap();
       finishAuth(data, '/');
     } catch (err) {
-      setError(getErrorMessage(err));
+      const fields = serverFieldErrors(err);
+      if (Object.keys(fields).length) setFieldErrors(fields);
+      else setError(getErrorMessage(err));
     }
   };
 
@@ -120,41 +144,39 @@ export default function RegisterPage() {
           <span className="font-semibold text-gray-800">{email}</span> is confirmed. Tell classmates who you are.
         </p>
 
-        <form onSubmit={handleDetails} className="mt-6 space-y-4">
-          <div>
-            <label htmlFor="fullName" className="form-label">
-              Full Name
-            </label>
-            <input
-              id="fullName"
-              required
-              maxLength={80}
-              autoFocus
-              autoComplete="name"
-              value={form.fullName}
-              onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))}
-              placeholder="Jane Doe"
-              className="form-input"
-            />
-            <p className="mt-1 text-xs text-gray-400">This is how classmates will see you on SearchNote.</p>
-          </div>
+        <form onSubmit={handleDetails} noValidate className="mt-6 space-y-4">
+          <TextField
+            id="fullName"
+            label="Full Name"
+            maxLength={80}
+            autoFocus
+            autoComplete="name"
+            value={form.fullName}
+            onChange={(v) => setField('fullName', v)}
+            placeholder="Jane Doe"
+            hint="This is how classmates will see you on SearchNote."
+            error={fieldErrors.fullName}
+          />
 
           <PasswordField
             id="password"
             label="Password"
             value={form.password}
-            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+            onChange={(e) => setField('password', e.target.value)}
             placeholder="At least 8 characters"
             autoComplete="new-password"
             minLength={8}
             hint="Use a mix of letters and numbers that would be hard to guess."
+            error={fieldErrors.password}
           />
 
           <SchoolFields
             university={form.university}
             department={form.department}
-            onUniversityChange={(university) => setForm((f) => ({ ...f, university }))}
-            onDepartmentChange={(department) => setForm((f) => ({ ...f, department }))}
+            onUniversityChange={(university) => setField('university', university)}
+            onDepartmentChange={(department) => setField('department', department)}
+            universityError={fieldErrors.university}
+            departmentError={fieldErrors.department}
           />
 
           <Alert>{error}</Alert>
@@ -175,28 +197,22 @@ export default function RegisterPage() {
         {REQUIRE_EDU_EMAIL ? 'Create a free account with your school email.' : 'Create a free account.'}
       </p>
 
-      <form onSubmit={handleEmail} className="mt-6 space-y-4">
-        <div>
-          <label htmlFor="email" className="form-label">
-            {REQUIRE_EDU_EMAIL ? 'School Email' : 'Email'}
-          </label>
-          <input
-            id="email"
-            type="email"
-            required
-            autoFocus
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={EMAIL_PLACEHOLDER}
-            aria-invalid={emailInvalid}
-            className={`form-input ${emailInvalid ? 'border-rose-300 focus:ring-rose-400' : ''}`}
-          />
-          <p className={`mt-1 text-xs ${emailInvalid ? 'text-rose-500' : 'text-gray-400'}`}>
-            {REQUIRE_EDU_EMAIL && 'Only .edu.tr addresses are accepted. '}
-            We'll send you a code to confirm it. No one will see it on your profile.
-          </p>
-        </div>
+      <form onSubmit={handleEmail} noValidate className="mt-6 space-y-4">
+        <TextField
+          id="email"
+          label={REQUIRE_EDU_EMAIL ? 'School Email' : 'Email'}
+          type="email"
+          autoFocus
+          autoComplete="email"
+          value={email}
+          onChange={(v) => {
+            setEmail(v);
+            clearField('email');
+          }}
+          placeholder={EMAIL_PLACEHOLDER}
+          hint={`${REQUIRE_EDU_EMAIL ? 'Only .edu.tr addresses are accepted. ' : ''}We'll send you a code to confirm it. No one will see it on your profile.`}
+          error={fieldErrors.email}
+        />
 
         <Alert>{error}</Alert>
 

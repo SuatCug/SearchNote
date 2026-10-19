@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Check, Clock, Inbox, Send, X } from 'lucide-react';
+import { Check, Inbox, Send, X } from 'lucide-react';
 import UserAvatar from '@/components/users/UserAvatar';
 import EmptyState from '@/components/common/EmptyState';
 import Spinner from '@/components/common/Spinner';
@@ -42,7 +42,6 @@ export default function JoinRequestsPanel() {
       message: `Your request to join ${name} will be withdrawn. You can send a new one later.`,
       confirmLabel: 'Cancel request',
       cancelLabel: 'Keep it',
-      icon: Clock,
     });
     if (!ok) return;
     try {

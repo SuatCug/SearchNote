@@ -8,6 +8,8 @@ const SIZES = {
   lg: 'w-16 h-16 text-xl',
   xl: 'w-24 h-24 text-3xl',
   card: 'w-[88px] h-[88px] text-2xl',
+  // Profil başlığı: telefonda 108px, geniş ekranda 124px (mobil uygulamayla aynı).
+  profile: 'w-[108px] h-[108px] text-3xl sm:w-[124px] sm:h-[124px] sm:text-4xl',
 };
 
 interface UserAvatarProps {

@@ -42,14 +42,12 @@ export default function BlockButton({ userId, isBlocked, name, variant = 'link',
             title: `Unblock ${name}?`,
             message: 'You will be able to follow and message each other again.',
             confirmLabel: 'Unblock',
-            icon: ShieldCheck,
           }
         : {
             title: `Block ${name}?`,
             message: "You won't be able to message each other, and any follows between you will be removed.",
             confirmLabel: 'Block',
             tone: 'danger',
-            icon: Ban,
           }
     );
     if (!ok) return;

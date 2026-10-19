@@ -5,9 +5,13 @@ import PasswordField from '@/components/auth/PasswordField';
 import GoogleButton, { OrDivider } from '@/components/auth/GoogleButton';
 import useFinishAuth from '@/components/auth/useFinishAuth';
 import Alert from '@/components/common/Alert';
+import TextField from '@/components/common/TextField';
 import { useLoginMutation } from '@/services/authApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
+import { compactErrors, validateEmail, validateRequired } from '@/lib/validation';
 import { EMAIL_PLACEHOLDER } from '@/lib/constants';
+
+type Field = 'email' | 'password';
 
 export default function LoginPage() {
   const finishAuth = useFinishAuth();
@@ -15,13 +19,20 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  // Alan hataları alanın altında, sunucu hatası (yanlış şifre vb.) formun altında (mobil uygulamayla aynı)
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({});
   const [error, setError] = useState('');
+
+  const clearField = (field: Field) => setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const errors = compactErrors({ email: validateEmail(email), password: validateRequired(password, 'Password') });
+    setFieldErrors(errors);
     setError('');
+    if (Object.keys(errors).length) return;
     try {
-      const data = await login({ email, password }).unwrap();
+      const data = await login({ email: email.trim(), password }).unwrap();
       finishAuth(data.data);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -33,30 +44,32 @@ export default function LoginPage() {
       <h1 className="text-3xl font-bold text-gray-900 text-center">Log In</h1>
       <p className="text-sm text-gray-500 mt-2 text-center">Log in with your email and password.</p>
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-        <div>
-          <label htmlFor="email" className="form-label">
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={EMAIL_PLACEHOLDER}
-            className="form-input"
-          />
-        </div>
+      <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-4">
+        <TextField
+          id="email"
+          label="Email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(v) => {
+            setEmail(v);
+            clearField('email');
+          }}
+          placeholder={EMAIL_PLACEHOLDER}
+          error={fieldErrors.email}
+        />
 
         <PasswordField
           id="password"
           label="Password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            clearField('password');
+          }}
           placeholder="Your password"
           autoComplete="current-password"
+          error={fieldErrors.password}
         />
         <p className="-mt-2 text-right text-sm">
           <Link to="/forgot-password" className="font-semibold text-navy-600 hover:text-navy-700">

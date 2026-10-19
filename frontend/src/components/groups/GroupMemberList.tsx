@@ -67,7 +67,6 @@ export default function GroupMemberList({ groupId, users, isLoading, canManage }
                       title: `Make ${u.fullName} the founder?`,
                       message: 'They will manage the group. You will stay in it as a regular member.',
                       confirmLabel: 'Make founder',
-                      icon: Crown,
                     }
                   )
                 }
@@ -86,7 +85,6 @@ export default function GroupMemberList({ groupId, users, isLoading, canManage }
                     message: 'They will no longer be a member of this group.',
                     confirmLabel: 'Remove',
                     tone: 'danger',
-                    icon: UserMinus,
                   })
                 }
                 className="p-2 rounded-md text-gray-400 hover:text-rose-600 hover:bg-rose-50"

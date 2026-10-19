@@ -15,8 +15,7 @@ import UploadNotePage from '@/pages/UploadNotePage';
 import EditNotePage from '@/pages/EditNotePage';
 import ProfilePage from '@/pages/ProfilePage';
 import UserNotesPage from '@/pages/UserNotesPage';
-import UserConnectionsPage from '@/pages/UserConnectionsPage';
-import EditProfilePage from '@/pages/EditProfilePage';
+import SettingsPage from '@/pages/SettingsPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import LegalPage from '@/pages/LegalPage';
 import GroupsPage from '@/pages/GroupsPage';
@@ -70,9 +69,9 @@ export default function App() {
         <Route path="/notes/:id" element={<NoteDetailPage />} />
         <Route path="/users/:id" element={<ProfilePage />} />
         <Route path="/users/:id/notes" element={<UserNotesPage />} />
-        <Route path="/users/:id/followers" element={<UserConnectionsPage key="followers" type="followers" />} />
-        <Route path="/users/:id/following" element={<UserConnectionsPage key="following" type="following" />} />
-        <Route path="/users/:id/mutual" element={<UserConnectionsPage key="mutual" type="mutual" />} />
+        <Route path="/users/:id/followers" element={<ProfilePage list="followers" />} />
+        <Route path="/users/:id/following" element={<ProfilePage list="following" />} />
+        <Route path="/users/:id/mutual" element={<ProfilePage list="mutual" />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/legal/:slug" element={<LegalPage />} />
         <Route path="/about" element={<AboutPage />} />
@@ -91,7 +90,10 @@ export default function App() {
         {/* Giriş gerekli */}
         <Route path="/upload" element={<RequireAuth><UploadNotePage /></RequireAuth>} />
         <Route path="/notes/:id/edit" element={<RequireAuth><EditNotePage /></RequireAuth>} />
-        <Route path="/profile/edit" element={<RequireAuth><EditProfilePage /></RequireAuth>} />
+        <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
+        <Route path="/settings/:section" element={<RequireAuth><SettingsPage /></RequireAuth>} />
+        {/* Eski ayar adresi */}
+        <Route path="/profile/edit" element={<Navigate to="/settings/profile" replace />} />
         <Route path="/groups/new" element={<RequireAuth><CreateGroupPage /></RequireAuth>} />
         <Route path="/groups/:id/edit" element={<RequireAuth><EditGroupPage /></RequireAuth>} />
         <Route path="/messages" element={<RequireAuth><MessagesPage /></RequireAuth>} />

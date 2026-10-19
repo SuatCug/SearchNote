@@ -74,7 +74,7 @@ export default function NotificationBell() {
         title="Notifications"
         className="relative inline-flex h-10 w-10 items-center justify-center rounded-lg text-white/90 hover:bg-white/10 hover:text-white transition-colors"
       >
-        <Bell size={20} />
+        <Bell size={22} />
         {unread > 0 && (
           <span className="absolute top-1 left-5 min-w-[18px] rounded-full bg-rose-500 px-1 text-center text-[10px] font-bold leading-[18px] text-white ring-2 ring-navy-800">
             {unread > 99 ? '99+' : unread}

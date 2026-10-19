@@ -39,12 +39,12 @@ export default function CreateGroupPage() {
 
   return (
     <PageLayout narrow>
-      <h1 className="text-2xl font-bold text-gray-900">Create Group</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Create group</h1>
       <p className="text-sm text-gray-500 mt-1">
         You'll be the founder: you can edit the group, approve join requests, remove members and hand over the founder role.
       </p>
       <div className="card p-5 sm:p-7 mt-6">
-        <GroupForm initialValues={{ university: user.university }} onSubmit={handleSubmit} isLoading={isLoading} submitLabel="Create Group" error={error} />
+        <GroupForm initialValues={{ university: user.university }} onSubmit={handleSubmit} isLoading={isLoading} submitLabel="Create group" error={error} />
       </div>
     </PageLayout>
   );

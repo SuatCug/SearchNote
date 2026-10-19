@@ -1,7 +1,7 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
-import { Compass, Inbox, Plus, Search, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { Compass, Inbox, MapPin, Plus, Search, SlidersHorizontal, UserRound, Users, type LucideIcon } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import GroupGrid from '@/components/groups/GroupGrid';
 import GroupActivityRow from '@/components/groups/GroupActivityRow';
@@ -10,6 +10,9 @@ import Pagination from '@/components/common/Pagination';
 import Alert from '@/components/common/Alert';
 import EmptyState from '@/components/common/EmptyState';
 import Spinner from '@/components/common/Spinner';
+import GroupFilterModal from '@/components/groups/GroupFilterModal';
+import { activeFilterCount, DEFAULT_GROUP_FILTERS, type GroupFilters } from '@/components/groups/groupFilters';
+import { useDebounce } from '@/hooks/useDebounce';
 import {
   useGetFavoriteGroupsQuery,
   useGetGroupsQuery,
@@ -24,40 +27,8 @@ import { groupCode } from '@/lib/groupStyle';
 
 type Tab = 'mine' | 'explore' | 'requests';
 
-const GROUP_SORTS = [
-  { value: 'popular', label: 'Most popular' },
-  { value: 'newest', label: 'Newest' },
-  { value: 'notes', label: 'Most notes' },
-];
-
-// Keşfet filtreleri URL'de tutulur (paylaşılabilir, geri tuşuyla korunur). Değer '' ise varsayılan.
-const FILTERS: { key: 'scope' | 'privacy' | 'show'; label: string; options: { value: string; label: string }[] }[] = [
-  {
-    key: 'scope',
-    label: 'University',
-    options: [
-      { value: '', label: 'Everywhere' },
-      { value: 'university', label: 'My university' },
-    ],
-  },
-  {
-    key: 'privacy',
-    label: 'Who can join',
-    options: [
-      { value: '', label: 'All' },
-      { value: 'public', label: 'Open to everyone' },
-      { value: 'private', label: 'Approval needed' },
-    ],
-  },
-  {
-    key: 'show',
-    label: 'Show',
-    options: [
-      { value: '', label: 'All groups' },
-      { value: 'notJoined', label: 'Not joined yet' },
-    ],
-  },
-];
+// Filter penceresinde gösterilen en fazla ders kodu.
+const MAX_FILTER_COURSES = 12;
 
 export default function GroupsPage() {
   const token = useAppSelector((state) => state.auth.token);
@@ -204,31 +175,25 @@ function MyGroupsTab({ onExplore }: { onExplore: () => void }) {
   );
 }
 
+// Keşfet (mobildeki Discover ile aynı): yazdıkça arayan kutu + rozetli "Filters" butonu, altında tek dokunuşla
+// Everywhere / My university. Ders, katılım türü, göster ve sıralama Filter penceresinde.
+// Filtreler adreste tutulur (paylaşılabilir, geri tuşuyla korunur); varsayılan değerler yazılmaz.
 function ExploreTab() {
   const token = useAppSelector((state) => state.auth.token);
+  const university = useAppSelector((state) => state.auth.user?.university);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [filterOpen, setFilterOpen] = useState(false);
   const page = Number(searchParams.get('page')) || 1;
   const q = searchParams.get('q') ?? '';
-  const sort = searchParams.get('sort') || 'popular';
-  const course = searchParams.get('course') ?? '';
-  const scope = token && searchParams.get('scope') === 'university' ? 'university' : undefined;
+  const sortParam = searchParams.get('sort');
   const privacyParam = searchParams.get('privacy');
-  const privacy = privacyParam === 'public' || privacyParam === 'private' ? privacyParam : undefined;
-  const notJoined = Boolean(token && searchParams.get('show') === 'notJoined');
-
-  const [search, setSearch] = useState(q);
-  const [courseInput, setCourseInput] = useState(course);
-  // URL'deki arama değişirse (örn. geri tuşu) kutuları senkronla.
-  const [prev, setPrev] = useState({ q, course });
-  if (prev.q !== q || prev.course !== course) {
-    setPrev({ q, course });
-    setSearch(q);
-    setCourseInput(course);
-  }
-
-  const params: GroupListParams = { q, sort, page, course, scope, privacy, exclude: notJoined ? 'mine' : undefined };
-  const { data, isLoading, isFetching, error } = useGetGroupsQuery(params);
-  const filterCount = [scope, privacy, notJoined, course].filter(Boolean).length;
+  const filters: GroupFilters = {
+    course: searchParams.get('course') ?? '',
+    scope: token && searchParams.get('scope') === 'university' ? 'university' : 'all',
+    privacy: privacyParam === 'public' || privacyParam === 'private' ? privacyParam : 'all',
+    show: token && searchParams.get('show') === 'notJoined' ? 'notJoined' : 'all',
+    sort: sortParam === 'newest' || sortParam === 'notes' ? sortParam : 'popular',
+  };
 
   const updateParams = (changes: Record<string, string>, { keepPage = false } = {}) => {
     const next = new URLSearchParams(searchParams);
@@ -238,96 +203,120 @@ function ExploreTab() {
     setSearchParams(next);
   };
 
+  // Yazdıkça arar (kısa gecikmeyle). Adresteki arama değişirse (örn. geri tuşu) kutu senkronlanır.
+  const [search, setSearch] = useState(q);
+  const [prevQ, setPrevQ] = useState(q);
+  if (q !== prevQ) {
+    setPrevQ(q);
+    setSearch(q);
+  }
+  const term = useDebounce(search.trim(), 350);
+  const updateRef = useRef(updateParams);
+  useEffect(() => {
+    updateRef.current = updateParams;
+  });
+  useEffect(() => {
+    if (term !== (new URLSearchParams(window.location.search).get('q') ?? '')) updateRef.current({ q: term });
+  }, [term]);
+
+  const applyFilters = (f: GroupFilters) =>
+    updateParams({
+      course: f.course,
+      scope: f.scope === 'university' ? 'university' : '',
+      privacy: f.privacy === 'all' ? '' : f.privacy,
+      show: f.show === 'notJoined' ? 'notJoined' : '',
+      sort: f.sort === 'popular' ? '' : f.sort,
+    });
+  const clearFilters = () => applyFilters({ ...DEFAULT_GROUP_FILTERS, scope: filters.scope });
+
+  const params: GroupListParams = {
+    q,
+    page,
+    sort: filters.sort,
+    course: filters.course || undefined,
+    scope: filters.scope === 'university' ? 'university' : undefined,
+    privacy: filters.privacy === 'all' ? undefined : filters.privacy,
+    exclude: filters.show === 'notJoined' ? 'mine' : undefined,
+  };
+  const { data, isLoading, isFetching, error } = useGetGroupsQuery(params);
+  const filterCount = activeFilterCount(filters);
+
+  // Filtredeki ders seçenekleri (mobildeki gibi): gruplarımın ve popüler grupların kodları.
+  const mine = useGetMyGroupActivityQuery(undefined, { skip: !token });
+  const popular = useGetGroupsQuery({ sort: 'popular', limit: 40 });
+  const courses = useMemo(() => {
+    const all = [...(mine.data?.data?.groups ?? []), ...(popular.data?.data?.items ?? [])];
+    return [...new Set(all.map((g) => groupCode(g.name, g.courseCode)))].slice(0, MAX_FILTER_COURSES);
+  }, [mine.data, popular.data]);
+
   const setPage = (p: number) => {
     updateParams({ page: p > 1 ? String(p) : '' }, { keepPage: true });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSearch = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    updateParams({ q: search.trim(), course: courseInput.trim().toLocaleUpperCase('tr') });
-  };
-
-  const clearFilters = () => updateParams({ scope: '', privacy: '', show: '', course: '' });
-  const current: Record<string, string> = { scope: scope ?? '', privacy: privacy ?? '', show: notJoined ? 'notJoined' : '' };
-
   return (
     <>
-      <div className="card p-4 mb-6 space-y-4">
-        <form onSubmit={handleSearch} className="flex flex-wrap items-center gap-3" role="search">
-          <label className="relative block flex-1 min-w-[200px]">
+      <div className="mb-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <label className="relative block min-w-0 flex-1">
             <span className="sr-only">Search groups</span>
-            <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search groups..."
+              placeholder="Search groups or courses"
               className="form-input pl-10"
             />
           </label>
-          <label className="w-36">
-            <span className="sr-only">Course code</span>
-            <input
-              value={courseInput}
-              onChange={(e) => setCourseInput(e.target.value.replace(/[^\p{L}\d]/gu, '').toLocaleUpperCase('tr'))}
-              maxLength={12}
-              placeholder="Course (CENG)"
-              className="form-input"
-            />
-          </label>
-          <select
-            value={sort}
-            onChange={(e) => updateParams({ sort: e.target.value === 'popular' ? '' : e.target.value })}
-            className="form-input w-auto"
-            aria-label="Sort groups"
+          <button
+            type="button"
+            onClick={() => setFilterOpen(true)}
+            aria-label={filterCount ? `Filters, ${filterCount} active` : 'Filters'}
+            className={`relative inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg border px-3.5 text-sm font-semibold transition-colors ${
+              filterCount ? 'border-navy-800 bg-navy-800 text-white' : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
+            }`}
           >
-            {GROUP_SORTS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <button type="submit" className="btn-primary">
-            Search
-          </button>
-        </form>
-
-        {token && (
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            {FILTERS.map((f) => (
-              <div key={f.key} className="flex flex-wrap items-center gap-1.5" role="group" aria-label={f.label}>
-                <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{f.label}</span>
-                {f.options.map((o) => (
-                  <Chip key={o.value} selected={current[f.key] === o.value} onClick={() => updateParams({ [f.key]: o.value })}>
-                    {o.label}
-                  </Chip>
-                ))}
-              </div>
-            ))}
+            <SlidersHorizontal size={17} />
+            <span className="hidden sm:inline">Filters</span>
             {filterCount > 0 && (
-              <button type="button" onClick={clearFilters} className="text-sm font-semibold text-navy-600 hover:text-navy-700">
-                Clear filters
-              </button>
+              <span className="min-w-5 rounded-full bg-white px-1.5 text-center text-xs font-bold leading-5 text-navy-800">{filterCount}</span>
             )}
-          </div>
-        )}
+          </button>
+        </div>
+
+        {/* En sık kullanılan filtre: pencereye girmeden tek dokunuşla (mobildeki gibi). */}
+        <div className="flex flex-wrap items-center gap-2">
+          {token && university && (
+            <>
+              <Chip selected={filters.scope === 'all'} onClick={() => updateParams({ scope: '' })}>
+                Everywhere
+              </Chip>
+              <Chip selected={filters.scope === 'university'} onClick={() => updateParams({ scope: 'university' })}>
+                <MapPin size={13} /> My university
+              </Chip>
+            </>
+          )}
+          {filterCount > 0 && (
+            <button type="button" onClick={clearFilters} className="px-1 text-sm font-semibold text-navy-600 hover:text-navy-700">
+              Clear filters
+            </button>
+          )}
+          {data?.data?.pagination && (
+            <span className="ml-auto text-sm text-gray-500">{pluralize(data.data.pagination.total, 'group')}</span>
+          )}
+        </div>
       </div>
 
       {error ? (
         <Alert>{getErrorMessage(error)}</Alert>
       ) : (
         <div className={isFetching && !isLoading ? 'opacity-60 transition-opacity' : ''}>
-          {data?.data?.pagination && (
-            <p className="mb-3 text-sm text-gray-500">{pluralize(data.data.pagination.total, 'group')} found</p>
-          )}
           <GroupGrid
             groups={data?.data?.items}
             isLoading={isLoading}
             emptyTitle={q || filterCount ? 'No groups found' : 'No groups yet'}
-            emptyText={
-              q || filterCount ? 'Try another course code or clear the filters.' : 'Start one for your course and invite your classmates.'
-            }
+            emptyText={q || filterCount ? 'Try another search or clear the filters.' : 'Start one for your course and invite your classmates.'}
             emptyAction={
               filterCount ? (
                 <button type="button" onClick={clearFilters} className="btn-secondary">
@@ -345,6 +334,17 @@ function ExploreTab() {
           <Pagination pagination={data?.data?.pagination} onPageChange={setPage} />
         </div>
       )}
+
+      {filterOpen && (
+        <GroupFilterModal
+          value={filters}
+          courses={courses}
+          university={university}
+          signedIn={!!token}
+          onApply={applyFilters}
+          onClose={() => setFilterOpen(false)}
+        />
+      )}
     </>
   );
 }
@@ -355,7 +355,7 @@ function Chip({ selected, onClick, children }: { selected: boolean; onClick: () 
       type="button"
       aria-pressed={selected}
       onClick={onClick}
-      className={`shrink-0 rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-sm font-medium transition-colors ${
         selected ? 'bg-navy-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
       }`}
     >

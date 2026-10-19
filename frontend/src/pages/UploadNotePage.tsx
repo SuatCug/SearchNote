@@ -8,14 +8,14 @@ import EmptyState from '@/components/common/EmptyState';
 import Spinner from '@/components/common/Spinner';
 import { useCreateNoteMutation } from '@/services/notesApi';
 import { useGetMyGroupsQuery } from '@/services/groupsApi';
-import { getErrorMessage } from '@/lib/getErrorMessage';
 import type { NoteInput } from '@/types/api';
 
 export default function UploadNotePage() {
   const navigate = useNavigate();
   const user = useAppSelector((state) => state.auth.user);
   const [createNote, { isLoading }] = useCreateNoteMutation();
-  const [error, setError] = useState('');
+  // Sunucu hatası olduğu gibi forma verilir: alan hataları alanların altında, diğerleri formun altında görünür.
+  const [error, setError] = useState<unknown>(null);
   const [searchParams] = useSearchParams();
   // Grup sayfasındaki "Share a Note" butonundan gelindiyse o grup önceden seçili olur.
   const { data: myGroups, isLoading: groupsLoading } = useGetMyGroupsQuery({ limit: 50 }, { skip: !user?.isVerified });
@@ -36,7 +36,7 @@ export default function UploadNotePage() {
   }
 
   const handleSubmit = async (values: NoteInput, file: File | null) => {
-    setError('');
+    setError(null);
     const formData = new FormData();
     Object.entries(values).forEach(([k, v]) => v && formData.append(k, v));
     if (file) formData.append('file', file);
@@ -44,7 +44,7 @@ export default function UploadNotePage() {
       const res = await createNote(formData).unwrap();
       navigate(`/notes/${res.data.note._id}`);
     } catch (err) {
-      setError(getErrorMessage(err));
+      setError(err);
     }
   };
 
@@ -53,9 +53,9 @@ export default function UploadNotePage() {
 
   return (
     <PageLayout narrow>
-      <h1 className="text-2xl font-bold text-gray-900">Upload Note</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Upload a note</h1>
       <p className="text-sm text-gray-500 mt-1">
-        Share your class notes, slides or past exams. Other students can download them for free.
+        Share your notes with students taking the same courses.
       </p>
       <div className="card p-5 sm:p-7 mt-6">
         <NoteForm
@@ -64,8 +64,8 @@ export default function UploadNotePage() {
           groups={groups}
           onSubmit={handleSubmit}
           isLoading={isLoading}
-          submitLabel="Share Note"
-          error={error}
+          submitLabel="Upload note"
+          serverError={error}
         />
       </div>
     </PageLayout>

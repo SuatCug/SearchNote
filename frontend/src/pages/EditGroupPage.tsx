@@ -52,7 +52,6 @@ export default function EditGroupPage() {
       message: "This group will be deleted permanently. Notes shared in it will stay on their authors' profiles.",
       confirmLabel: 'Delete group',
       tone: 'danger',
-      icon: Trash2,
     });
     if (!ok) return;
     setDeleteError('');
@@ -66,7 +65,7 @@ export default function EditGroupPage() {
 
   return (
     <PageLayout narrow>
-      <h1 className="text-2xl font-bold text-gray-900">Edit Group</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Edit group</h1>
       <div className="card p-5 sm:p-7 mt-6">
         <GroupForm
           initialValues={{
@@ -79,7 +78,7 @@ export default function EditGroupPage() {
           }}
           onSubmit={handleSubmit}
           isLoading={saving}
-          submitLabel="Save Changes"
+          submitLabel="Save changes"
           error={error}
         />
       </div>

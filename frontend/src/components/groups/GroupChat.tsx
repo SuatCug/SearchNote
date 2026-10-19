@@ -119,7 +119,6 @@ export default function GroupChat({ groupId, isOwner }: { groupId: string; isOwn
       message: 'It will be removed from the group chat for everyone.',
       confirmLabel: 'Delete',
       tone: 'danger',
-      icon: Trash2,
     });
     if (!ok) return;
     try {

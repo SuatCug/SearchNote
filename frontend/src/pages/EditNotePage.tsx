@@ -5,7 +5,6 @@ import NoteForm from '@/components/notes/NoteForm';
 import Spinner from '@/components/common/Spinner';
 import EmptyState from '@/components/common/EmptyState';
 import { useGetNoteQuery, useUpdateNoteMutation } from '@/services/notesApi';
-import { getErrorMessage } from '@/lib/getErrorMessage';
 import type { NoteInput } from '@/types/api';
 
 const EDITABLE = ['title', 'description', 'courseName', 'courseCode', 'instructorName', 'semester', 'university', 'department', 'visibility'] as const satisfies readonly (keyof NoteInput)[];
@@ -15,7 +14,8 @@ export default function EditNotePage() {
   const navigate = useNavigate();
   const { data, isLoading, error: loadError } = useGetNoteQuery(id);
   const [updateNote, { isLoading: saving }] = useUpdateNoteMutation();
-  const [error, setError] = useState('');
+  // Sunucu hatası olduğu gibi forma verilir: alan hataları alanların altında, diğerleri formun altında görünür.
+  const [error, setError] = useState<unknown>(null);
 
   if (isLoading) return <PageLayout><Spinner /></PageLayout>;
   if (loadError || !data) {
@@ -30,12 +30,12 @@ export default function EditNotePage() {
   if (!note.isOwner) return <Navigate to={`/notes/${id}`} replace />;
 
   const handleSubmit = async (values: NoteInput) => {
-    setError('');
+    setError(null);
     try {
       await updateNote({ id, ...values }).unwrap();
       navigate(`/notes/${id}`);
     } catch (err) {
-      setError(getErrorMessage(err));
+      setError(err);
     }
   };
 
@@ -52,7 +52,7 @@ export default function EditNotePage() {
           onSubmit={handleSubmit}
           isLoading={saving}
           submitLabel="Save Changes"
-          error={error}
+          serverError={error}
         />
       </div>
     </PageLayout>

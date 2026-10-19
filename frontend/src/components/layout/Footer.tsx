@@ -13,7 +13,7 @@ const YEAR = new Date().getFullYear();
 const PLATFORM_LINKS = {
   guest: [
     { to: '/#features', label: 'Find Notes' },
-    { to: '/#how-it-works', label: 'Your Profile' },
+    { to: '/#profiles', label: 'Your Profile' },
     { to: '/#community', label: 'Study Groups' },
   ],
   member: [

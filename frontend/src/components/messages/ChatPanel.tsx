@@ -278,7 +278,6 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
         message: 'It will be removed for both of you.',
         confirmLabel: 'Delete',
         tone: 'danger',
-        icon: Trash2,
       });
       if (!ok) return;
       try {
@@ -309,7 +308,6 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
       message: 'It will only be removed for you. The other person will still see it.',
       confirmLabel: 'Delete',
       tone: 'danger',
-      icon: Trash2,
     });
     if (!ok) return;
     try {

@@ -118,7 +118,6 @@ export default function NoteDetailPage() {
       message: `"${note.title}" will be permanently deleted along with its likes and comments. This can't be undone.`,
       confirmLabel: 'Delete note',
       tone: 'danger',
-      icon: Trash2,
     });
     if (!ok) return;
     try {

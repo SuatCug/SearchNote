@@ -73,11 +73,11 @@ export default function AvatarMenu() {
               <Users size={16} className="text-gray-400" /> My Groups
             </Link>
             <Link
-              to="/profile/edit"
+              to="/settings"
               onClick={() => setMenuOpen(false)}
               className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
             >
-              <Settings size={16} className="text-gray-400" /> Account Settings
+              <Settings size={16} className="text-gray-400" /> Settings
             </Link>
 
             <div className="my-1 border-t border-gray-100" />

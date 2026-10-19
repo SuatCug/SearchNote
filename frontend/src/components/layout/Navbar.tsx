@@ -113,7 +113,7 @@ function MessagesLink({ hideOnLarge = false }) {
       title="Messages"
       aria-label={count ? `Messages, ${count} unread` : 'Messages'}
     >
-      <MessageCircle size={20} />
+      <MessageCircle size={22} />
       {count > 0 && (
         <span className="absolute top-1 left-5 min-w-[18px] rounded-full bg-rose-500 px-1 text-center text-[10px] font-bold leading-[18px] text-white ring-2 ring-navy-800">
           {count > 99 ? '99+' : count}

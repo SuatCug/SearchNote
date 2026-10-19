@@ -36,7 +36,7 @@ export default function ProfileSidebar({ profile }: { profile: ProfileData }) {
             <Link to="/upload" className="btn-primary">
               <Upload size={16} /> Upload a note
             </Link>
-            <Link to="/profile/edit" className="btn-secondary">
+            <Link to="/settings/profile" className="btn-secondary">
               <Pencil size={15} /> Edit Profile
             </Link>
           </>

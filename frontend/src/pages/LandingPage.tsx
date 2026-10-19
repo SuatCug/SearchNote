@@ -12,7 +12,7 @@ import { GOOGLE_CLIENT_ID } from '@/lib/constants';
 import sampleProfilePhoto from '@/assets/landing/sample-profile.jpg';
 
 // Giriş yapmamış ziyaretçilere ana sayfada gösterilen tanıtım sayfası.
-// Bölüm id'leri (top, features, departments, how-it-works, community) GuestNavbar ve Footer bağlantılarıyla eşleşir.
+// Bölüm id'leri (top, features, departments, profiles, community) GuestNavbar ve Footer bağlantılarıyla eşleşir.
 // Ziyaretçi notlara göz atamadığı için ders/bölüm çipleri giriş sayfasına gider; girişten sonra o aramaya dönülür.
 
 export default function LandingPage() {
@@ -204,7 +204,7 @@ const SAMPLE_NOTES = [
 
 function ProfileSection() {
   return (
-    <section id="how-it-works" className="scroll-mt-[72px]">
+    <section id="profiles" className="scroll-mt-[72px]">
       <Container className="py-14 sm:py-[72px] flex flex-wrap items-center gap-10 lg:gap-16">
         <div className="flex-[1_1_360px] max-w-[460px] flex flex-col gap-5">
           <Heading>Build your profile and let your notes speak for you</Heading>

@@ -1,15 +1,17 @@
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Info, Lightbulb, Users, type LucideIcon } from 'lucide-react';
+import { BookOpen, Info, Lightbulb, UserRound, Users, type LucideIcon } from 'lucide-react';
 import Logo from './Logo';
 
 type NavItem = { label: string; icon: LucideIcon } & ({ section: string } | { to: string });
 
+// Sıra karşılama sayfasındaki bölüm sırasını izler (Courses → Profiles → Groups), sonra ayrı sayfalar.
 // Dersler ve bölümler karşılama sayfasında tek bölüm (sekmeli) olduğu için tek bağlantı: "Courses".
 // "How it works" footer'daki gibi ayrı How It Works sayfasına gider (aynı ad iki farklı yere gitmesin).
 const NAV_ITEMS: NavItem[] = [
   { section: 'features', label: 'Courses', icon: BookOpen },
-  { to: '/how-it-works', label: 'How it works', icon: Lightbulb },
+  { section: 'profiles', label: 'Profiles', icon: UserRound },
   { section: 'community', label: 'Groups', icon: Users },
+  { to: '/how-it-works', label: 'How it works', icon: Lightbulb },
   { to: '/about', label: 'About', icon: Info },
 ];
 
@@ -44,7 +46,7 @@ export default function GuestNavbar() {
               }`;
               const content = (
                 <>
-                  <Icon size={22} strokeWidth={1.7} aria-hidden="true" />
+                  <Icon size={24} strokeWidth={1.7} aria-hidden="true" />
                   {label}
                 </>
               );
