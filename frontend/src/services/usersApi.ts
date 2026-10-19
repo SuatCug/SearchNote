@@ -8,11 +8,17 @@ import type {
   Pagination,
   ProfileData,
   ProfileInput,
+  ReportReason,
   UserCard,
+  UserCourse,
 } from '@/types/api';
 
 type UsersResponse = ApiResponse<{ users: UserCard[] }>;
 type UserResponse = ApiResponse<{ user: AuthUser }>;
+type UserPageResponse = ApiResponse<{ users: UserCard[]; pagination: Pagination }>;
+
+// Sayfalı kişi listesi: takipçiler, takip edilenler ya da ortak takipçiler.
+export type ConnectionType = 'followers' | 'following' | 'mutual';
 
 export const usersApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -23,8 +29,9 @@ export const usersApi = baseApi.injectEndpoints({
       query: (params) => ({ url: '/users/search', params }),
       providesTags: ['User'],
     }),
-    getActiveUsers: builder.query<ApiResponse<{ users: UserCard[]; total: number }>, void>({
-      query: () => '/users/active',
+    // limit: varsayılan 8 (sağ panel); "See all" penceresi 100'e kadar ister.
+    getActiveUsers: builder.query<ApiResponse<{ users: UserCard[]; total: number }>, { limit?: number } | void>({
+      query: (params) => ({ url: '/users/active', params: params ?? undefined }),
       providesTags: ['User', 'ActiveUsers'],
     }),
     getSuggestions: builder.query<UsersResponse, void>({
@@ -51,6 +58,31 @@ export const usersApi = baseApi.injectEndpoints({
       query: (id) => `/users/${id}/following`,
       providesTags: ['FollowList'],
     }),
+    // Sayfalı liste (en yeni takip önce); q ile sunucuda ad / okul / bölüm araması. Her kişide isFollowing gelir.
+    getConnectionPage: builder.query<
+      UserPageResponse,
+      { id: string; type: ConnectionType; page?: number; limit?: number; q?: string }
+    >({
+      query: ({ id, type, page = 1, limit = 24, q }) => ({
+        url: `/users/${id}/${type === 'mutual' ? 'mutual-followers' : type}`,
+        params: { page, limit, ...(q && { q }) },
+      }),
+      providesTags: ['FollowList'],
+    }),
+    // "Followed by …": bu kişiyi takip edenlerden benim de takip ettiklerim (ilk 3 kişi + toplam).
+    getMutualFollowers: builder.query<ApiResponse<{ users: UserCard[]; total: number }>, string>({
+      query: (id) => `/users/${id}/mutual-followers`,
+      providesTags: ['FollowList'],
+    }),
+    // Kişinin not paylaştığı dersler ve not sayıları (en son not paylaşılan önce).
+    getUserCourses: builder.query<ApiResponse<{ courses: UserCourse[] }>, string>({
+      query: (id) => `/users/${id}/courses`,
+      providesTags: ['NoteList'],
+    }),
+    getBlockedUsers: builder.query<UsersResponse, void>({
+      query: () => '/users/me/blocked',
+      providesTags: ['User'],
+    }),
     toggleFollow: builder.mutation<
       ApiResponse<{ isFollowing: boolean; followersCount: number }>,
       { id: string; following: boolean }
@@ -58,10 +90,19 @@ export const usersApi = baseApi.injectEndpoints({
       query: ({ id, following }) => ({ url: `/users/${id}/follow`, method: following ? 'DELETE' : 'POST' }),
       invalidatesTags: ['User', 'FollowList', 'NoteList'],
     }),
+    // Takipçilerimden birini çıkarır (Instagram'daki "Remove"); karşı tarafa bildirim gitmez.
+    removeFollower: builder.mutation<ApiResponse<{ followersCount: number }>, string>({
+      query: (id) => ({ url: `/users/me/followers/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['User', 'FollowList', 'NoteList'],
+    }),
     // blocked: şu anki durum (true ise engel kaldırılır).
     toggleBlock: builder.mutation<ApiResponse<{ isBlocked: boolean }>, { id: string; blocked: boolean }>({
       query: ({ id, blocked }) => ({ url: `/users/${id}/block`, method: blocked ? 'DELETE' : 'POST' }),
       invalidatesTags: ['User', 'FollowList', 'Conversation', 'Conversations'],
+    }),
+    // Aynı kişiyi tekrar şikâyet etmek önceki kaydı günceller.
+    reportUser: builder.mutation<ApiResponse, { id: string; reason: ReportReason; details?: string }>({
+      query: ({ id, ...body }) => ({ url: `/users/${id}/report`, method: 'POST', body }),
     }),
     updateProfile: builder.mutation<UserResponse, ProfileInput>({
       query: (payload) => ({ url: '/users/me', method: 'PATCH', body: payload }),
@@ -74,8 +115,22 @@ export const usersApi = baseApi.injectEndpoints({
       invalidatesTags: ['User', 'NoteList', 'FollowList'],
       onQueryStarted: syncUser,
     }),
-    changePassword: builder.mutation<ApiResponse, { currentPassword: string; newPassword: string }>({
+    removeAvatar: builder.mutation<UserResponse, void>({
+      query: () => ({ url: '/users/me/avatar', method: 'DELETE' }),
+      invalidatesTags: ['User', 'NoteList', 'FollowList'],
+      onQueryStarted: syncUser,
+    }),
+    // Şifresi olmayan (Google) hesapta currentPassword gönderilmez: ilk şifre belirlenir.
+    changePassword: builder.mutation<UserResponse, { currentPassword?: string; newPassword: string }>({
       query: (payload) => ({ url: '/users/me/password', method: 'PATCH', body: payload }),
+      onQueryStarted: syncUser,
+    }),
+    // Hesap silme: önce e-postaya onay kodu gönderilir, kodla hesap kalıcı olarak silinir.
+    sendDeleteCode: builder.mutation<ApiResponse<{ email: string; resendIn: number }>, void>({
+      query: () => ({ url: '/users/me/delete-code', method: 'POST' }),
+    }),
+    deleteAccount: builder.mutation<ApiResponse, string>({
+      query: (code) => ({ url: '/users/me', method: 'DELETE', body: { code } }),
     }),
   }),
 });
@@ -88,9 +143,18 @@ export const {
   useGetUserNotesQuery,
   useGetFollowersQuery,
   useGetFollowingQuery,
+  useGetConnectionPageQuery,
+  useGetMutualFollowersQuery,
+  useGetUserCoursesQuery,
+  useGetBlockedUsersQuery,
   useToggleFollowMutation,
+  useRemoveFollowerMutation,
   useToggleBlockMutation,
+  useReportUserMutation,
   useUpdateProfileMutation,
   useUpdateAvatarMutation,
+  useRemoveAvatarMutation,
   useChangePasswordMutation,
+  useSendDeleteCodeMutation,
+  useDeleteAccountMutation,
 } = usersApi;

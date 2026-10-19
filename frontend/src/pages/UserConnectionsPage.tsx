@@ -1,30 +1,52 @@
 import { useState } from 'react';
 import { Link, NavLink, useParams } from 'react-router-dom';
-import { Search } from 'lucide-react';
+import { useAppSelector } from '@/app/hooks';
+import { Search, UserMinus, Users } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import Spinner from '@/components/common/Spinner';
 import EmptyState from '@/components/common/EmptyState';
+import Pagination from '@/components/common/Pagination';
 import ProfileSidebar from '@/components/users/ProfileSidebar';
-import UserList from '@/components/users/UserList';
-import { useGetFollowersQuery, useGetFollowingQuery, useGetProfileQuery } from '@/services/usersApi';
+import UserCard from '@/components/users/UserCard';
+import FollowButton from '@/components/users/FollowButton';
+import { useDialog } from '@/components/common/DialogProvider';
+import {
+  useGetConnectionPageQuery,
+  useGetProfileQuery,
+  useRemoveFollowerMutation,
+  type ConnectionType,
+} from '@/services/usersApi';
+import { useDebounce } from '@/hooks/useDebounce';
+import { getErrorMessage } from '@/lib/getErrorMessage';
 import { formatCount, pluralize } from '@/lib/format';
-import type { UserCard } from '@/types/api';
+import type { UserCard as UserCardData } from '@/types/api';
 
-// Arama: ad, üniversite ve bölümde büyük/küçük harf duyarsız (Türkçe) eşleşme.
-const matches = (user: UserCard, term: string) =>
-  [user.fullName, user.university, user.department].some((v) =>
-    v?.toLocaleLowerCase('tr').includes(term.toLocaleLowerCase('tr'))
-  );
+const PAGE_SIZE = 24;
 
-// Bir kullanıcının tüm takipçileri / takip ettikleri: solda kullanıcı paneli, sağda arama + kullanıcı kartları.
-export default function UserConnectionsPage({ type }: { type: 'followers' | 'following' }) {
+// Bir kullanıcının takipçileri / takip ettikleri / ortak takipçiler (izleyicinin de takip ettiği takipçiler):
+// solda kullanıcı paneli, sağda sunucu tarafında arama + sayfalı kullanıcı kartları.
+// Kendi takipçi listemde her kişide "Remove" (takipçilerimden çıkar) vardır.
+export default function UserConnectionsPage({ type }: { type: ConnectionType }) {
   const { id = '' } = useParams();
+  const token = useAppSelector((state) => state.auth.token);
+  const myId = useAppSelector((state) => state.auth.user?.id);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const term = useDebounce(search.trim(), 300);
+  // Arama değişince ilk sayfaya dön.
+  const [prevTerm, setPrevTerm] = useState(term);
+  if (term !== prevTerm) {
+    setPrevTerm(term);
+    setPage(1);
+  }
 
   const profile = useGetProfileQuery(id);
-  const followers = useGetFollowersQuery(id, { skip: type !== 'followers' });
-  const following = useGetFollowingQuery(id, { skip: type !== 'following' });
-  const list = type === 'followers' ? followers : following;
+  const isMe = profile.data?.data?.isMe ?? false;
+  const list = useGetConnectionPageQuery(
+    { id, type, page, limit: PAGE_SIZE, q: term || undefined },
+    // Ortak takipçiler giriş gerektirir ve kendi profilimde anlamsızdır.
+    { skip: type === 'mutual' && (!token || isMe || !profile.data) },
+  );
 
   if (profile.isLoading) return <PageLayout><Spinner /></PageLayout>;
   if (profile.error || !profile.data) {
@@ -35,22 +57,38 @@ export default function UserConnectionsPage({ type }: { type: 'followers' | 'fol
     );
   }
 
-  const { user, isMe } = profile.data.data;
+  const { user } = profile.data.data;
   const firstName = user.fullName.split(' ')[0];
   const users = list.data?.data?.users;
-  const term = search.trim();
-  const filtered = term && users ? users.filter((u) => matches(u, term)) : users;
+  const total = list.data?.data?.pagination?.total ?? 0;
 
   const tabs = [
     { to: `/users/${id}/followers`, label: 'Followers', count: user.followersCount },
     { to: `/users/${id}/following`, label: 'Following', count: user.followingCount },
+    ...(token && !isMe ? [{ to: `/users/${id}/mutual`, label: 'Mutual', count: undefined }] : []),
   ];
 
-  const emptyProps = term
-    ? { emptyTitle: 'No matching people', emptyText: 'Try a different name, university or department.' }
+  const summary = !users
+    ? ' '
+    : term
+      ? `${pluralize(total, 'result')} for "${term}"`
+      : type === 'followers'
+        ? pluralize(total, 'follower')
+        : type === 'following'
+          ? `Following ${formatCount(total)} ${total === 1 ? 'person' : 'people'}`
+          : `${pluralize(total, 'follower')} you also follow`;
+
+  const emptyTitle = term
+    ? 'No matching people'
     : type === 'followers'
-      ? { emptyTitle: isMe ? "You don't have any followers yet" : 'No followers yet' }
-      : { emptyTitle: isMe ? "You aren't following anyone yet" : 'Not following anyone yet' };
+      ? isMe
+        ? "You don't have any followers yet"
+        : 'No followers yet'
+      : type === 'following'
+        ? isMe
+          ? "You aren't following anyone yet"
+          : 'Not following anyone yet'
+        : `None of ${firstName}'s followers are people you follow`;
 
   return (
     <PageLayout>
@@ -61,15 +99,7 @@ export default function UserConnectionsPage({ type }: { type: 'followers' | 'fol
           <h2 id="connections-title" className="text-2xl font-bold text-gray-900">
             {isMe ? 'My Network' : `${firstName}'s Network`}
           </h2>
-          <p className="mt-1 text-sm text-gray-500">
-            {filtered
-              ? term
-                ? `${pluralize(filtered.length, 'result')} for "${term}"`
-                : type === 'followers'
-                  ? `${pluralize(filtered.length, 'follower')}`
-                  : `Following ${formatCount(filtered.length)} ${filtered.length === 1 ? 'person' : 'people'}`
-              : ' '}
-          </p>
+          <p className="mt-1 text-sm text-gray-500">{summary}</p>
 
           <div className="mt-4 border-b border-gray-200 flex gap-6" role="tablist">
             {tabs.map((t) => (
@@ -83,7 +113,7 @@ export default function UserConnectionsPage({ type }: { type: 'followers' | 'fol
                   }`
                 }
               >
-                {t.label} <span className="font-normal text-gray-400">{t.count}</span>
+                {t.label} {t.count !== undefined && <span className="font-normal text-gray-400">{t.count}</span>}
               </NavLink>
             ))}
           </div>
@@ -102,16 +132,71 @@ export default function UserConnectionsPage({ type }: { type: 'followers' | 'fol
             </label>
           </div>
 
-          <div className="mt-5">
-            <UserList
-              users={filtered}
-              isLoading={list.isLoading}
-              gridClassName="grid gap-4 grid-cols-2 sm:grid-cols-3 xl:grid-cols-4"
-              {...emptyProps}
+          <div className={`mt-5 ${list.isFetching && !list.isLoading ? 'opacity-60 transition-opacity' : ''}`}>
+            {list.isLoading ? (
+              <Spinner />
+            ) : !users?.length ? (
+              <EmptyState icon={Users} title={emptyTitle} text={term ? 'Try a different name, university or department.' : undefined} />
+            ) : (
+              <ul className="grid gap-4 grid-cols-2 sm:grid-cols-3 xl:grid-cols-4">
+                {users.map((u) => (
+                  <li key={u._id}>
+                    <UserCard
+                      user={u}
+                      action={
+                        isMe && type === 'followers' ? (
+                          <RemoveFollowerButton user={u} />
+                        ) : (
+                          token &&
+                          u._id !== myId &&
+                          u.isFollowing !== undefined && (
+                            <FollowButton userId={u._id} isFollowing={u.isFollowing} name={u.fullName} compact />
+                          )
+                        )
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Pagination
+              pagination={list.data?.data?.pagination}
+              onPageChange={(p) => {
+                setPage(p);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
             />
           </div>
         </section>
       </div>
     </PageLayout>
+  );
+}
+
+// Instagram'daki "Remove": kişi takipçilerimden çıkar, ona bildirim gitmez.
+function RemoveFollowerButton({ user }: { user: UserCardData }) {
+  const [removeFollower, { isLoading }] = useRemoveFollowerMutation();
+  const dialog = useDialog();
+
+  const handleClick = async () => {
+    const ok = await dialog.confirm({
+      title: `Remove ${user.fullName}?`,
+      message: "They won't be told they were removed from your followers.",
+      confirmLabel: 'Remove',
+      tone: 'danger',
+      icon: UserMinus,
+    });
+    if (!ok) return;
+    try {
+      await removeFollower(user._id).unwrap();
+    } catch (err) {
+      dialog.alert({ message: getErrorMessage(err) });
+    }
+  };
+
+  return (
+    <button type="button" onClick={handleClick} disabled={isLoading} className="btn-secondary px-2.5 py-1.5 text-xs gap-1">
+      <UserMinus size={14} /> Remove
+    </button>
   );
 }

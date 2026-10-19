@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
-import { ArrowRight, Ban, Check, Link as LinkIcon, MoreHorizontal, Pencil, Upload } from 'lucide-react';
+import { ArrowRight, Ban, Check, Flag, Link as LinkIcon, MoreHorizontal, Pencil, Upload } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import Spinner from '@/components/common/Spinner';
 import EmptyState from '@/components/common/EmptyState';
@@ -11,6 +11,9 @@ import FollowButton from '@/components/users/FollowButton';
 import BlockButton from '@/components/users/BlockButton';
 import MessageButton from '@/components/messages/MessageButton';
 import UserList from '@/components/users/UserList';
+import MutualFollowers from '@/components/users/MutualFollowers';
+import CoursesShared from '@/components/users/CoursesShared';
+import ReportModal from '@/components/users/ReportModal';
 import {
   useGetFollowersQuery,
   useGetFollowingQuery,
@@ -65,6 +68,7 @@ export default function ProfilePage() {
             </p>
             {user.bio && <p className="mt-3 text-[15px] text-gray-700 whitespace-pre-line break-words">{user.bio}</p>}
             <p className="mt-2 text-xs text-gray-400">Member since {formatDate(user.createdAt)}</p>
+            {token && !isMe && <MutualFollowers userId={user.id} />}
           </div>
           <div className="shrink-0">
             {isMe ? (
@@ -111,6 +115,8 @@ export default function ProfilePage() {
           <ProfileStat label="Followers" value={user.followersCount} to={`/users/${user.id}/followers`} />
           <ProfileStat label="Following" value={user.followingCount} to={`/users/${user.id}/following`} />
         </dl>
+
+        <CoursesShared userId={user.id} />
       </section>
 
       <div className="mt-8 border-b border-gray-200 flex gap-6 overflow-x-auto" role="tablist">
@@ -181,6 +187,7 @@ export default function ProfilePage() {
 function ProfileMenu({ userId, name, isBlocked }: { userId: string; name: string; isBlocked: boolean }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const copyLink = async () => {
     try {
@@ -219,9 +226,23 @@ function ProfileMenu({ userId, name, isBlocked }: { userId: string; name: string
               {copied ? 'Link copied' : 'Copy profile link'}
             </button>
             <div className="my-1 border-t border-gray-100" />
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setReportOpen(true);
+              }}
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-rose-600 hover:bg-rose-50"
+            >
+              <Flag size={15} className="shrink-0" />
+              <span className="truncate">Report {name}</span>
+            </button>
             <BlockButton userId={userId} isBlocked={isBlocked} name={name} variant="menu" onDone={() => setOpen(false)} />
           </div>
         </>
+      )}
+      {reportOpen && (
+        <ReportModal user={{ id: userId, fullName: name }} isBlocked={isBlocked} onClose={() => setReportOpen(false)} />
       )}
     </div>
   );

@@ -1,19 +1,16 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAppDispatch } from '@/app/hooks';
+import { Link } from 'react-router-dom';
 import AuthLayout from '@/components/auth/AuthLayout';
 import PasswordField from '@/components/auth/PasswordField';
+import GoogleButton, { OrDivider } from '@/components/auth/GoogleButton';
+import useFinishAuth from '@/components/auth/useFinishAuth';
 import Alert from '@/components/common/Alert';
 import { useLoginMutation } from '@/services/authApi';
-import { baseApi, SESSION_TAGS } from '@/services/baseApi';
-import { setCredentials } from '@/app/authSlice';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { EMAIL_PLACEHOLDER } from '@/lib/constants';
 
 export default function LoginPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const dispatch = useAppDispatch();
+  const finishAuth = useFinishAuth();
   const [login, { isLoading }] = useLoginMutation();
 
   const [email, setEmail] = useState('');
@@ -25,10 +22,7 @@ export default function LoginPage() {
     setError('');
     try {
       const data = await login({ email, password }).unwrap();
-      dispatch(setCredentials(data.data));
-      // Anonimken önbelleğe alınan veriler (isLiked, isFollowing) yeni oturumla tekrar çekilsin.
-      dispatch(baseApi.util.invalidateTags(SESSION_TAGS));
-      navigate(location.state?.from || '/', { replace: true });
+      finishAuth(data.data);
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -64,6 +58,11 @@ export default function LoginPage() {
           placeholder="Your password"
           autoComplete="current-password"
         />
+        <p className="-mt-2 text-right text-sm">
+          <Link to="/forgot-password" className="font-semibold text-navy-600 hover:text-navy-700">
+            Forgot password?
+          </Link>
+        </p>
 
         <Alert>{error}</Alert>
 
@@ -71,6 +70,11 @@ export default function LoginPage() {
           {isLoading ? 'Logging in...' : 'Log In'}
         </button>
       </form>
+
+      <div className="mt-5 space-y-5">
+        <OrDivider />
+        <GoogleButton onError={setError} />
+      </div>
 
       <p className="text-center text-sm text-gray-500 mt-6">
         Don't have an account?{' '}

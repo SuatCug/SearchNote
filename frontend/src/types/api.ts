@@ -40,6 +40,7 @@ export interface UserCard {
   department?: string;
   followersCount?: number;
   isOwner?: boolean; // grup üye listesinde
+  isFollowing?: boolean; // sayfalı takipçi listelerinde (izleyici bu kişiyi takip ediyor mu)
 }
 
 // Notu beğenenler listesindeki kişi: izleyicinin onu takip edip etmediği ve kendisi olup olmadığı ile.
@@ -65,7 +66,18 @@ export interface PublicUser {
 export interface AuthUser extends PublicUser {
   email: string;
   isVerified: boolean;
+  // Google ile açılıp henüz şifre belirlenmemiş hesapta false (eski sunucuda gelmeyebilir).
+  hasPassword?: boolean;
 }
+
+// Profildeki "Courses shared" listesi (GET /users/:id/courses).
+export interface UserCourse {
+  code: string;
+  name: string;
+  count: number;
+}
+
+export type ReportReason = 'spam' | 'harassment' | 'inappropriate' | 'impersonation' | 'copyright' | 'other';
 
 export interface ProfileStats {
   notesCount: number;
@@ -158,17 +170,79 @@ export interface NoteSearchParams {
 
 // --- Gruplar ---
 
+export type GroupColor = 'navy' | 'purple' | 'teal' | 'orange' | 'blue' | 'green';
+
 export interface GroupCard {
   _id: ID;
   name: string;
   description: string;
   isPrivate: boolean;
   createdAt: ISODate;
+  // Eski gruplarda gelmeyebilir (lacivert sayılır)
+  color?: GroupColor;
+  courseCode?: string;
+  // Grubun üniversitesi; '' = hiçbir okula bağlı değil, yok = eski grup
+  university?: string;
+  isFavorite?: boolean;
+  // Son mesaj / not zamanı (içerik değil)
+  lastActivityAt?: ISODate;
+  // Grupta en son paylaşılan not (sadece üyelere)
+  lastNote?: { title: string; fileType: FileType; createdAt: ISODate } | null;
   membersCount: number;
   notesCount: number;
   isMember: boolean;
   isPending: boolean;
   owner: UserCard;
+  // Takip ettiğim üyeler (en fazla 3) ve toplam sayıları
+  followedMembers?: UserCard[];
+  followedMembersCount?: number;
+}
+
+// "Gruplarım" listesi satırı (GET /groups/mine/activity): son hareket + okunmamış mesaj sayısı.
+export interface GroupActivity {
+  _id: ID;
+  name: string;
+  isPrivate: boolean;
+  color?: GroupColor;
+  courseCode?: string;
+  isFavorite?: boolean;
+  isOwner: boolean;
+  membersCount: number;
+  notesCount: number;
+  lastActivity: {
+    type: 'message' | 'note';
+    text: string;
+    userName: string | null;
+    isMine: boolean;
+    createdAt: ISODate;
+  } | null;
+  unreadCount: number;
+  activityAt: ISODate;
+}
+
+// Katılma istekleri sayfasında grubun kısa hali.
+export interface GroupSummary {
+  _id: ID;
+  name: string;
+  color?: GroupColor;
+  courseCode?: string;
+  isPrivate: boolean;
+  membersCount?: number;
+}
+
+// Kurucusu olduğum gruplara gelen istek (GET /groups/requests/incoming).
+export interface IncomingJoinRequest {
+  group: GroupSummary;
+  user: UserCard;
+  message: string;
+  createdAt: ISODate | null;
+}
+
+// Benim gönderdiğim istek (GET /groups/requests/sent).
+export interface SentJoinRequest {
+  group: GroupSummary;
+  message: string;
+  createdAt: ISODate | null;
 }
 
 export interface GroupDetail extends GroupCard {
@@ -182,6 +256,10 @@ export interface GroupMessage {
   group: ID;
   user: UserCard | null;
   text: string;
+  // Eklenmiş not, yanıtlanan mesajın özeti ve düzenleme zamanı (eski mesajlarda yok).
+  note?: MessageNote | null;
+  reply?: { message: ID; user: ID; text: string } | null;
+  editedAt?: ISODate | null;
   createdAt: ISODate;
 }
 
@@ -232,6 +310,8 @@ export interface ConversationDetail {
     otherLastReadAt: ISODate | null;
   };
   messages: DirectMessage[];
+  // Daha eski mesaj olabilir: GET .../messages?before= ile istenir.
+  hasMore?: boolean;
   markedRead: boolean;
 }
 
@@ -277,6 +357,9 @@ export interface GroupInput {
   name: string;
   description: string;
   isPrivate: boolean;
+  color: GroupColor;
+  courseCode: string;
+  university: string; // '' = hiçbir okula bağlı değil
 }
 
 export interface ProfileInput {

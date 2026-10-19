@@ -42,7 +42,7 @@ export default function MessageBubble({ message: m, mine, replyAuthor, onQuoteCl
 }
 
 // Mesaja eklenmiş not kartı (tıklayınca not sayfası açılır).
-function NoteAttachment({ note, mine, inert }: { note: MessageNote; mine: boolean; inert: boolean }) {
+export function NoteAttachment({ note, mine, inert }: { note: MessageNote; mine: boolean; inert: boolean }) {
   return (
     <Link
       to={`/notes/${note._id}`}

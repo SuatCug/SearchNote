@@ -24,6 +24,14 @@ export const messagesApi = baseApi.injectEndpoints({
         }
       },
     }),
+    // Daha eski mesajlar (sohbette yukarı kaydırınca): before anından önceki en fazla 50 mesaj, eskiden yeniye.
+    getOlderMessages: builder.query<
+      ApiResponse<{ messages: DirectMessage[]; hasMore: boolean }>,
+      { id: string; before: string }
+    >({
+      query: ({ id, before }) => ({ url: `/messages/conversations/${id}/messages`, params: { before } }),
+      keepUnusedDataFor: 0,
+    }),
     // Bir kullanıcıyla konuşmayı açar (yoksa oluşturur); cevapta conversationId döner.
     startConversation: builder.mutation<ApiResponse<{ conversationId: string }>, string>({
       query: (userId) => ({ url: '/messages/conversations', method: 'POST', body: { userId } }),
@@ -67,6 +75,7 @@ export const {
   useGetUnreadCountQuery,
   useGetConversationsQuery,
   useGetConversationQuery,
+  useLazyGetOlderMessagesQuery,
   useStartConversationMutation,
   useSendDirectMessageMutation,
   useEditDirectMessageMutation,

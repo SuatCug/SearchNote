@@ -3,11 +3,11 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
   type SyntheticEvent,
 } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query/react';
@@ -28,12 +28,12 @@ import {
   Smile,
   Trash2,
   UserRound,
-  X,
 } from 'lucide-react';
 import ChatAvatar from './ChatAvatar';
 import MessageBubble from './MessageBubble';
 import MessageActionMenu, { type MessageAction } from './MessageActionMenu';
 import NotePickerSheet from './NotePickerSheet';
+import ComposerBanner from './ComposerBanner';
 import BlockButton from '@/components/users/BlockButton';
 import { useDialog } from '@/components/common/DialogProvider';
 import Spinner from '@/components/common/Spinner';
@@ -43,6 +43,7 @@ import {
   useDeleteDirectMessageMutation,
   useEditDirectMessageMutation,
   useGetConversationQuery,
+  useLazyGetOlderMessagesQuery,
   useSendDirectMessageMutation,
 } from '@/services/messagesApi';
 import { useGetNoteQuery } from '@/services/notesApi';
@@ -57,6 +58,8 @@ const POLL_INTERVAL_MS = 5000;
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 const LONG_PRESS_MS = 450;
 const EMOJIS = ['😀', '😂', '😊', '😍', '🥲', '😅', '🤔', '😮', '😢', '😡', '👍', '👎', '👏', '🙏', '💪', '🔥', '❤️', '💯', '🎉', '✅', '📚', '📝', '📌', '💡', '⏰', '☕', '🤝', '👀'];
+
+const NO_MESSAGES: DirectMessage[] = [];
 
 const isCoarsePointer = () => window.matchMedia('(pointer: coarse)').matches;
 
@@ -97,8 +100,21 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
   const nearBottomRef = useRef(true);
   const dialog = useDialog();
 
+  // Sunucu ilk açılışta son 100 mesajı verir; daha eskileri "Load earlier messages" ile 50'şer gelir ve önüne eklenir.
+  // Başka konuşmaya geçince eski sayfalar geçersiz sayılır.
+  const [fetchOlder, { isFetching: loadingOlder }] = useLazyGetOlderMessagesQuery();
+  const [older, setOlder] = useState<{ conversationId: string; messages: DirectMessage[]; hasMore: boolean } | null>(null);
+  const olderMessages = older?.conversationId === conversationId ? older.messages : NO_MESSAGES;
+  const pendingScrollRef = useRef<number | null>(null);
+
   const conversation = data?.data?.conversation;
-  const messages = data?.data?.messages;
+  const latest = data?.data?.messages;
+  const messages = useMemo(() => {
+    if (!latest || !olderMessages.length) return latest;
+    const ids = new Set(latest.map((m) => m._id));
+    return [...olderMessages.filter((m) => !ids.has(m._id)), ...latest];
+  }, [latest, olderMessages]);
+  const hasMore = olderMessages.length ? Boolean(older?.hasMore) : Boolean(data?.data?.hasMore);
   const lastId = messages?.at(-1)?._id;
   const other = conversation?.otherUser;
   const otherReadAt = conversation?.otherLastReadAt ? new Date(conversation.otherLastReadAt).getTime() : 0;
@@ -113,6 +129,30 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
   useLayoutEffect(() => {
     if (typingNow && nearBottomRef.current) scrollToBottom();
   }, [typingNow]);
+  // Eski mesajlar üste eklenince okunan yer kaymasın: aradaki yükseklik farkı kadar aşağı kaydırılır.
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (el && pendingScrollRef.current !== null) {
+      el.scrollTop += el.scrollHeight - pendingScrollRef.current;
+      pendingScrollRef.current = null;
+    }
+  }, [olderMessages]);
+
+  const loadOlder = async () => {
+    const oldest = messages?.[0];
+    if (!oldest || loadingOlder || !hasMore) return;
+    try {
+      const res = await fetchOlder({ id: conversationId, before: oldest.createdAt }).unwrap();
+      pendingScrollRef.current = listRef.current?.scrollHeight ?? null;
+      setOlder({ conversationId, messages: [...res.data.messages, ...olderMessages], hasMore: res.data.hasMore });
+    } catch (err) {
+      setSendError(getErrorMessage(err));
+    }
+  };
+
+  // Düzenlenen / silinen mesaj eski sayfalardaysa orada da güncellenir (son mesajlar sunucudan yeniden gelir).
+  const patchOlder = (update: (list: DirectMessage[]) => DirectMessage[]) =>
+    setOlder((o) => (o && o.conversationId === conversationId ? { ...o, messages: update(o.messages) } : o));
 
   // Masaüstünde konuşma açılınca yazma kutusuna odaklan (telefonda klavye kendiliğinden açılmasın).
   useEffect(() => {
@@ -161,7 +201,8 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
     setSendError('');
     try {
       if (editing) {
-        await editMessage({ id: conversationId, messageId: editing._id, text: trimmed }).unwrap();
+        const { data: edited } = await editMessage({ id: conversationId, messageId: editing._id, text: trimmed }).unwrap();
+        patchOlder((list) => list.map((m) => (m._id === edited.message._id ? edited.message : m)));
         setEditing(null);
       } else {
         await sendMessage({ id: conversationId, text: trimmed, noteId: attachedNoteId, replyTo: replyTo?._id }).unwrap();
@@ -242,6 +283,7 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
       if (!ok) return;
       try {
         await deleteMessage({ id: conversationId, messageId: message._id }).unwrap();
+        patchOlder((list) => list.filter((m) => m._id !== message._id));
         if (editing?._id === message._id) cancelEdit();
         if (replyTo?._id === message._id) setReplyTo(null);
       } catch (err) {
@@ -416,6 +458,18 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
           </div>
         ) : (
           <div className="min-h-full flex flex-col justify-end">
+            {hasMore && (
+              <div className="mb-3 flex justify-center">
+                <button
+                  type="button"
+                  onClick={loadOlder}
+                  disabled={loadingOlder}
+                  className="rounded-full bg-gray-100 px-3.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-200 disabled:opacity-60"
+                >
+                  {loadingOlder ? 'Loading...' : 'Load earlier messages'}
+                </button>
+              </div>
+            )}
             {messages.map((m, i) => {
               const prev = messages[i - 1];
               const next = messages[i + 1];
@@ -695,35 +749,6 @@ function MessageRow({ message, mine, className, replyAuthor, onQuoteClick, onOpe
         aria-label="Message actions"
       >
         <MoreHorizontal size={18} />
-      </button>
-    </div>
-  );
-}
-
-interface ComposerBannerProps {
-  icon: ReactNode;
-  title: string;
-  text: string;
-  onCancel: () => void;
-  cancelLabel: string;
-}
-
-// Yazma kutusunun üstündeki şerit: yanıtlanan / düzenlenen mesaj ya da eklenen not.
-function ComposerBanner({ icon, title, text, onCancel, cancelLabel }: ComposerBannerProps) {
-  return (
-    <div className="mb-2 flex items-center gap-3 rounded-2xl bg-navy-50 pl-3.5 pr-1.5 py-2">
-      <span className="shrink-0 text-navy-700">{icon}</span>
-      <span className="min-w-0 flex-1 border-l-2 border-navy-300 pl-3">
-        <span className="block text-xs font-bold text-navy-800">{title}</span>
-        <span className="block truncate text-[13px] text-gray-600">{text}</span>
-      </span>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-navy-500 hover:bg-navy-100 hover:text-navy-800"
-        aria-label={cancelLabel}
-      >
-        <X size={17} />
       </button>
     </div>
   );

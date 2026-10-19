@@ -36,7 +36,10 @@ export default function EditGroupPage() {
   const handleSubmit = async (values: GroupInput) => {
     setError('');
     try {
-      await updateGroup({ id, ...values }).unwrap();
+      // Alanı hiç olmayan eski grupta okul seçilmediyse gönderilmez (boş metin "hiçbir okula bağlı değil" demektir).
+      const { university, ...rest } = values;
+      const keepLegacy = group.university === undefined && !university;
+      await updateGroup({ id, ...rest, ...(!keepLegacy && { university }) }).unwrap();
       navigate(`/groups/${id}`);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -66,7 +69,14 @@ export default function EditGroupPage() {
       <h1 className="text-2xl font-bold text-gray-900">Edit Group</h1>
       <div className="card p-5 sm:p-7 mt-6">
         <GroupForm
-          initialValues={{ name: group.name, description: group.description ?? '', isPrivate: Boolean(group.isPrivate) }}
+          initialValues={{
+            name: group.name,
+            description: group.description ?? '',
+            isPrivate: Boolean(group.isPrivate),
+            color: group.color ?? 'navy',
+            courseCode: group.courseCode ?? '',
+            university: group.university ?? '',
+          }}
           onSubmit={handleSubmit}
           isLoading={saving}
           submitLabel="Save Changes"

@@ -6,6 +6,8 @@ import RealtimeBridge from '@/components/RealtimeBridge';
 import { useGetMeQuery } from '@/services/authApi';
 import LoginPage from '@/pages/LoginPage';
 import RegisterPage from '@/pages/RegisterPage';
+import GoogleSignupPage from '@/pages/GoogleSignupPage';
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import VerifyEmailPage from '@/pages/VerifyEmailPage';
 import HomePage from '@/pages/HomePage';
 import NoteDetailPage from '@/pages/NoteDetailPage';
@@ -70,6 +72,7 @@ export default function App() {
         <Route path="/users/:id/notes" element={<UserNotesPage />} />
         <Route path="/users/:id/followers" element={<UserConnectionsPage key="followers" type="followers" />} />
         <Route path="/users/:id/following" element={<UserConnectionsPage key="following" type="following" />} />
+        <Route path="/users/:id/mutual" element={<UserConnectionsPage key="mutual" type="mutual" />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/legal/:slug" element={<LegalPage />} />
         <Route path="/about" element={<AboutPage />} />
@@ -82,6 +85,8 @@ export default function App() {
 
         <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
         <Route path="/register" element={<GuestOnly><RegisterPage /></GuestOnly>} />
+        <Route path="/register/google" element={<GuestOnly><GoogleSignupPage /></GuestOnly>} />
+        <Route path="/forgot-password" element={<GuestOnly><ForgotPasswordPage /></GuestOnly>} />
 
         {/* Giriş gerekli */}
         <Route path="/upload" element={<RequireAuth><UploadNotePage /></RequireAuth>} />

@@ -36,3 +36,6 @@ export const EMAIL_PLACEHOLDER = REQUIRE_EDU_EMAIL ? 'ad.soyad@universite.edu.tr
 
 // Socket bağlantısı yokken okunmamış rozetleri ve bildirimler bu aralıkla yoklanır (normalde anlık gelir).
 export const UNREAD_POLL_INTERVAL_MS = 30000;
+
+// "Continue with Google" için OAuth Client ID (frontend/.env: VITE_GOOGLE_CLIENT_ID). Boşsa Google butonu gizlenir.
+export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';

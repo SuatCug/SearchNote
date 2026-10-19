@@ -5,7 +5,7 @@ import { clearTyping, connectSocket, disconnectSocket, markTyping } from '@/lib/
 
 // Socket olayları sadece "bu veri değişti" sinyalidir; ilgili RTK Query önbelleği geçersiz kılınır ve
 // açık bileşenler veriyi REST API'den yeniden çeker (yetki kontrolü tek yerde kalır).
-const REALTIME_TAGS: TagType[] = ['Notifications', 'Conversations', 'Unread', 'ActiveUsers', 'GroupMessages'];
+const REALTIME_TAGS: TagType[] = ['Notifications', 'Conversations', 'Unread', 'ActiveUsers', 'GroupMessages', 'GroupActivity'];
 
 export default function RealtimeBridge() {
   const token = useAppSelector((state) => state.auth.token);
@@ -34,6 +34,8 @@ export default function RealtimeBridge() {
     // Mesajlaştığım biri çevrimiçi oldu / çıktı: liste ve açık sohbet başlığı yenilenir.
     socket.on('dm:presence', () => invalidate(['Conversations', 'Conversation']));
     socket.on('group:message', ({ groupId }) => invalidate([{ type: 'GroupMessages', id: groupId }]));
+    // Üyesi olduğum bir grupta yeni mesaj / not: "Gruplarım" listesi (son hareket, okunmamış) yenilenir.
+    socket.on('group:activity', () => invalidate(['GroupActivity']));
     socket.on('presence:changed', () => invalidate(['ActiveUsers']));
 
     return () => disconnectSocket();

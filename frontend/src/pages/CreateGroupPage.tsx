@@ -44,7 +44,7 @@ export default function CreateGroupPage() {
         You'll be the founder: you can edit the group, approve join requests, remove members and hand over the founder role.
       </p>
       <div className="card p-5 sm:p-7 mt-6">
-        <GroupForm onSubmit={handleSubmit} isLoading={isLoading} submitLabel="Create Group" error={error} />
+        <GroupForm initialValues={{ university: user.university }} onSubmit={handleSubmit} isLoading={isLoading} submitLabel="Create Group" error={error} />
       </div>
     </PageLayout>
   );

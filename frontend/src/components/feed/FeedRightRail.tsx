@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import { Bookmark, FileText, UserPlus, Users } from 'lucide-react';
 import UserAvatar from '@/components/users/UserAvatar';
+import PeopleModal from '@/components/users/PeopleModal';
 import FollowButton from '@/components/users/FollowButton';
 import { useGetActiveUsersQuery, useGetSuggestionsQuery } from '@/services/usersApi';
 import { useGetTrendingCoursesQuery } from '@/services/notesApi';
@@ -91,6 +92,9 @@ function ActiveNowCard() {
   });
   const users = data?.data?.users ?? [];
   const extra = (data?.data?.total ?? 0) - users.length;
+  const [allOpen, setAllOpen] = useState(false);
+  // "See all" penceresi açıkken hepsi (en fazla 100) istenir.
+  const all = useGetActiveUsersQuery({ limit: 100 }, { skip: !allOpen });
 
   return (
     <RailCard title="Active Now">
@@ -108,10 +112,27 @@ function ActiveNowCard() {
               <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white" />
             </Link>
           ))}
-          {extra > 0 && <span className="ml-1 text-xs font-medium text-gray-500">+{extra}</span>}
+          {extra > 0 && (
+            <button
+              type="button"
+              onClick={() => setAllOpen(true)}
+              className="ml-1 text-xs font-semibold text-navy-600 hover:text-navy-700"
+            >
+              +{extra} · See all
+            </button>
+          )}
         </div>
       ) : (
         <p className="text-sm text-gray-500">None of your mutual follows are online right now.</p>
+      )}
+      {allOpen && (
+        <PeopleModal
+          title={`Active now · ${data?.data?.total ?? 0}`}
+          users={all.data?.data?.users}
+          isLoading={all.isLoading}
+          emptyText="None of your mutual follows are online right now."
+          onClose={() => setAllOpen(false)}
+        />
       )}
     </RailCard>
   );

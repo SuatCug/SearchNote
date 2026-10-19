@@ -7,6 +7,8 @@ export interface ServerToClientEvents {
   'notifications:changed': () => void;
   'message:changed': (payload: { conversationId: string; senderId?: string }) => void;
   'group:message': (payload: { groupId: string }) => void;
+  // Üyesi olduğum grupta yeni mesaj ya da paylaşılan not ("Gruplarım" listesi için).
+  'group:activity': (payload: { groupId: string }) => void;
   'presence:changed': (payload: { userId: string }) => void;
   // Mesajlaştığım biri çevrimiçi oldu / çıktı.
   'dm:presence': (payload: { userId: string }) => void;
