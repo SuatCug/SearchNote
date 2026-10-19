@@ -43,7 +43,8 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       </div>
 
       <div className="flex items-center justify-center px-6 py-8 overflow-y-auto">
-        <div className="w-full max-w-[440px]">
+        {/* 400px: Google butonu en fazla bu genişlikte çizilir; form alanları ve butonlar onunla aynı boyda olsun. */}
+        <div className="w-full max-w-[400px]">
           <div className="lg:hidden mb-8 flex justify-center">
             <Logo />
           </div>

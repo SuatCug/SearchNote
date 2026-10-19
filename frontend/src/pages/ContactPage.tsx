@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type ComponentType, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import { CheckCircle2, Clock, LifeBuoy, Mail, ShieldAlert } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
@@ -27,10 +27,13 @@ const CHANNELS: { key: 'discord' | 'telegram' | 'instagram'; label: string; text
 export default function ContactPage() {
   const user = useAppSelector((state) => state.auth.user);
   const [sendMessage, { isLoading }] = useSendContactMessageMutation();
+  // ?topic=copyright gibi bağlantılar (footer'daki "Report Content") formu o konu seçili açar.
+  const [searchParams] = useSearchParams();
+  const topicParam = searchParams.get('topic');
   const [values, setValues] = useState<ContactPayload>(() => ({
     name: user?.fullName ?? '',
     email: user?.email ?? '',
-    topic: 'general',
+    topic: TOPICS.find((t) => t.value === topicParam)?.value ?? 'general',
     message: '',
   }));
   const [error, setError] = useState('');

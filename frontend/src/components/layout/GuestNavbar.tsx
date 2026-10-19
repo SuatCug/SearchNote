@@ -1,12 +1,14 @@
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, GraduationCap, Info, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { BookOpen, Info, Lightbulb, Users, type LucideIcon } from 'lucide-react';
+import Logo from './Logo';
 
 type NavItem = { label: string; icon: LucideIcon } & ({ section: string } | { to: string });
 
+// Dersler ve bölümler karşılama sayfasında tek bölüm (sekmeli) olduğu için tek bağlantı: "Courses".
+// "How it works" footer'daki gibi ayrı How It Works sayfasına gider (aynı ad iki farklı yere gitmesin).
 const NAV_ITEMS: NavItem[] = [
   { section: 'features', label: 'Courses', icon: BookOpen },
-  { section: 'departments', label: 'Departments', icon: GraduationCap },
-  { section: 'how-it-works', label: 'Profiles', icon: UserRound },
+  { to: '/how-it-works', label: 'How it works', icon: Lightbulb },
   { section: 'community', label: 'Groups', icon: Users },
   { to: '/about', label: 'About', icon: Info },
 ];
@@ -28,14 +30,10 @@ export default function GuestNavbar() {
   return (
     <header className="sticky top-0 z-50 bg-navy-900 font-display">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
-        <Link
-          to="/"
-          onClick={() => handleSectionClick('top')}
-          className="flex min-h-11 items-center text-2xl sm:text-[28px] font-bold tracking-[-0.03em] text-white"
-          aria-label="SearchNote home"
-        >
-          SearchNote
-        </Link>
+        {/* Diğer sayfalarla (giriş, footer, üye navbar'ı) aynı ikonlu logo */}
+        <div className="flex min-h-11 items-center">
+          <Logo light onClick={() => handleSectionClick('top')} />
+        </div>
 
         <nav aria-label="Main" className="flex items-center">
           <div className="hidden lg:flex items-center">
@@ -71,7 +69,7 @@ export default function GuestNavbar() {
           </Link>
           <Link
             to="/login"
-            className="ml-2 flex min-h-11 items-center justify-center rounded-full bg-navy-500 w-24 sm:w-32 text-[15px] sm:text-base font-semibold text-white ring-1 ring-white/30 hover:bg-navy-400 transition-colors whitespace-nowrap"
+            className="ml-2 flex min-h-11 items-center justify-center rounded-full bg-white w-24 sm:w-32 text-[15px] sm:text-base font-semibold text-navy-900 hover:bg-navy-50 transition-colors whitespace-nowrap"
           >
             Log in
           </Link>

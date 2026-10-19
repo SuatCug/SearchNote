@@ -1,17 +1,19 @@
 import { Link } from 'react-router-dom';
-import { FileSearch } from 'lucide-react';
+import logoIcon from '@/assets/logo.png';
 
-// light: koyu (renkli) arka plan üzerinde kullanım için beyaz varyant.
-export default function Logo({ light = false }) {
+// Uygulama simgesi mobil uygulamayla aynı dosya (proje5 mobil-app/assets/images/logo.png).
+// light: koyu (lacivert) arka plan üzerinde; simge kaybolmasın diye ince açık çerçeve, yazı beyaz.
+// onClick: karşılama sayfasında logoya basınca en üste kaydırmak için (GuestNavbar).
+export default function Logo({ light = false, onClick }: { light?: boolean; onClick?: () => void }) {
   return (
-    <Link to="/" className="flex items-center gap-2 min-w-0" aria-label="SearchNote home">
-      <span
-        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-          light ? 'bg-white text-navy-800' : 'bg-navy-600 text-white'
-        }`}
-      >
-        <FileSearch size={20} strokeWidth={2.25} />
-      </span>
+    <Link to="/" onClick={onClick} className="flex items-center gap-2 min-w-0" aria-label="SearchNote home">
+      <img
+        src={logoIcon}
+        alt=""
+        width={36}
+        height={36}
+        className={`w-9 h-9 shrink-0 ${light ? 'rounded-[9px] ring-1 ring-white/25' : ''}`}
+      />
       <span className={`text-lg font-extrabold tracking-tight truncate ${light ? 'text-white' : 'text-gray-900'}`}>
         Search<span className={light ? 'text-sky-300' : 'text-navy-600'}>Note</span>
       </span>

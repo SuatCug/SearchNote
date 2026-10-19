@@ -9,7 +9,8 @@ import useFinishAuth from './useFinishAuth';
 // kayıtlı hesapsa oturum açılır, değilse okul bilgisini soran /register/google adımına geçilir.
 // VITE_GOOGLE_CLIENT_ID boşsa buton hiç gösterilmez.
 
-const GSI_SRC = 'https://accounts.google.com/gsi/client';
+// hl=en: buton yazısı tarayıcı dilinden bağımsız İngilizce (renderButton'daki locale tek başına yetmiyor).
+const GSI_SRC = 'https://accounts.google.com/gsi/client?hl=en';
 
 interface GoogleIdApi {
   initialize: (config: { client_id: string; callback: (res: { credential?: string }) => void; ux_mode?: 'popup' }) => void;
@@ -41,7 +42,17 @@ const loadGsi = () => {
   return scriptPromise;
 };
 
-export default function GoogleButton({ onError }: { onError: (message: string) => void }) {
+// theme: 'outline' beyaz (giriş / kayıt formları), 'filled_blue' mavi dolu (ana sayfadaki LinkedIn tarzı giriş).
+// shape: formlarda diğer butonlar gibi hafif yuvarlak köşe ('rectangular'), ana sayfada hap ('pill').
+export default function GoogleButton({
+  onError,
+  theme = 'outline',
+  shape = 'rectangular',
+}: {
+  onError: (message: string) => void;
+  theme?: 'outline' | 'filled_blue';
+  shape?: 'rectangular' | 'pill';
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const finishAuth = useFinishAuth();
@@ -83,10 +94,12 @@ export default function GoogleButton({ onError }: { onError: (message: string) =
         });
         gsi.renderButton(el, {
           type: 'standard',
-          theme: 'outline',
+          theme,
           size: 'large',
           text: 'continue_with',
-          shape: 'pill',
+          // Site İngilizce: buton yazısı tarayıcı dilinden bağımsız "Continue with Google" olsun.
+          locale: 'en',
+          shape,
           logo_alignment: 'center',
           width: Math.min(el.offsetWidth || 400, 400),
         });
@@ -95,7 +108,7 @@ export default function GoogleButton({ onError }: { onError: (message: string) =
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [theme, shape]);
 
   if (!GOOGLE_CLIENT_ID || failed) return null;
 

@@ -82,11 +82,6 @@ export default function LoginPage() {
           Sign Up
         </Link>
       </p>
-      <p className="text-center text-sm mt-3">
-        <Link to="/" className="text-gray-400 hover:text-gray-600">
-          Browse notes without logging in →
-        </Link>
-      </p>
     </AuthLayout>
   );
 }

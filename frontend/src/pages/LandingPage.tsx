@@ -1,24 +1,15 @@
 import { useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import {
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  CircleCheck,
-  Folder,
-  GraduationCap,
-  Landmark,
-  LayoutGrid,
-  MessageCircle,
-  Users,
-  type LucideIcon,
-} from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { ChevronDown, ChevronUp, GraduationCap, Landmark, LayoutGrid } from 'lucide-react';
 import GuestNavbar from '@/components/layout/GuestNavbar';
 import Footer from '@/components/layout/Footer';
 import StudyTableIllustration from '@/components/landing/StudyTableIllustration';
-import SearchDemo from '@/components/landing/SearchDemo';
+import NotePageSample from '@/components/landing/NotePageSample';
+import GroupChatSample from '@/components/landing/GroupChatSample';
+import GoogleButton from '@/components/auth/GoogleButton';
+import Alert from '@/components/common/Alert';
+import { GOOGLE_CLIENT_ID } from '@/lib/constants';
 import sampleProfilePhoto from '@/assets/landing/sample-profile.jpg';
-import studyGroupIllustration from '@/assets/landing/study-group.svg';
 
 // Giriş yapmamış ziyaretçilere ana sayfada gösterilen tanıtım sayfası.
 // Bölüm id'leri (top, features, departments, how-it-works, community) GuestNavbar ve Footer bağlantılarıyla eşleşir.
@@ -30,13 +21,11 @@ export default function LandingPage() {
       <GuestNavbar />
       <main className="flex-1 overflow-x-hidden font-display text-[#1b1f24]">
         <HeroSection />
-        <CoursesSection />
-        <DepartmentsSection />
-        <UploadBand />
+        <BrowseSection />
         <ProfileSection />
         <GroupsSection />
         <AudienceSection />
-        <TrySearchSection />
+        <ClosingSection />
       </main>
       <Footer />
     </div>
@@ -47,7 +36,6 @@ export default function LandingPage() {
 
 const pillBase = 'inline-flex items-center justify-center rounded-full font-semibold transition-colors';
 const pillPrimary = `${pillBase} min-h-[52px] px-7 text-[17px] bg-navy-900 text-white hover:bg-navy-950`;
-const pillOutline = `${pillBase} min-h-[52px] px-7 text-[17px] border border-navy-900 bg-white text-navy-900 hover:bg-navy-50`;
 const textLink = 'font-semibold text-navy-900 underline-offset-2 hover:underline hover:text-navy-950';
 
 function Container({ children, className = '' }: { children: ReactNode; className?: string }) {
@@ -61,13 +49,10 @@ function Heading({ children }: { children: ReactNode }) {
 // Ders ya da bölüm adı, girişten sonra açılacak arama adresi olarak giriş sayfasına taşınır.
 const searchState = (query: string) => ({ from: `/?q=${encodeURIComponent(query)}` });
 
-function ChipList({ items, extra, variant }: { items: string[]; extra: string[]; variant: 'outline' | 'soft' }) {
+function ChipList({ items, extra }: { items: string[]; extra: string[] }) {
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? [...items, ...extra] : items;
-  const chipClass =
-    variant === 'outline'
-      ? 'border border-[#8c9199] hover:border-navy-900 hover:bg-white'
-      : 'bg-[#e9edf4] hover:bg-navy-100';
+  const chipClass = 'border border-[#8c9199] hover:border-navy-900 hover:bg-white';
 
   return (
     <div className="flex flex-wrap gap-2.5 sm:gap-3">
@@ -97,29 +82,43 @@ function ChipList({ items, extra, variant }: { items: string[]; extra: string[];
 /* ------------------------------------------------------------------ Hero */
 
 function HeroSection() {
+  const [googleError, setGoogleError] = useState('');
   return (
     <section id="top" className="scroll-mt-16">
       <Container className="pt-8 pb-14 sm:pt-10 sm:pb-16 flex flex-wrap items-center gap-8">
         <div className="flex-[1_1_420px] max-w-[540px] flex flex-col gap-8">
           <h1 className="m-0 font-light leading-[1.15] text-navy-900 text-balance text-[36px] sm:text-[46px] lg:text-[56px]">
-            Welcome to the place where students find their notes
+            Find the notes your classmates already took
           </h1>
 
+          {/* LinkedIn'deki gibi: Google ile devam et, e-postayla giriş, yasal metin ve "Join now" */}
           <div className="flex flex-col gap-3.5 max-w-[400px]">
-            <Link to="/register" className={pillPrimary}>
-              Create a free account
-            </Link>
+            <Alert>{googleError}</Alert>
+            {GOOGLE_CLIENT_ID ? (
+              <GoogleButton theme="filled_blue" shape="pill" onError={setGoogleError} />
+            ) : (
+              <Link to="/register" className={pillPrimary}>
+                Create a free account
+              </Link>
+            )}
+            {/* Google butonuyla (40px) aynı yükseklikte */}
             <Link
               to="/login"
-              className={`${pillBase} min-h-[52px] px-6 text-[17px] border border-[#5e6670] text-[#3d434a] hover:bg-gray-50 hover:border-[#3d434a]`}
+              className={`${pillBase} h-10 px-6 text-base border border-[#5e6670] text-[#3d434a] hover:bg-gray-50 hover:border-[#3d434a]`}
             >
-              Log in
+              Sign in with email
             </Link>
             <p className="m-0 text-xs text-center text-[#5e6670]">
               By continuing, you agree to SearchNote&rsquo;s{' '}
               <Link to="/legal/terms" className={textLink}>Terms of Use</Link>,{' '}
               <Link to="/legal/privacy" className={textLink}>Privacy Policy</Link> and{' '}
               <Link to="/legal/cookies" className={textLink}>Cookie Policy</Link>.
+            </p>
+            <p className="m-0 mt-2 text-center text-[17px] text-[#1b1f24]">
+              New to SearchNote?{' '}
+              <Link to="/register" className={textLink}>
+                Join now
+              </Link>
             </p>
           </div>
         </div>
@@ -132,60 +131,63 @@ function HeroSection() {
   );
 }
 
-/* -------------------------------------------------------- Popüler dersler */
+/* ------------------------------------------------- Dersler ve bölümler */
 
 const COURSES = ['Calculus I', 'Physics II', 'Data Structures', 'Linear Algebra', 'Microeconomics', 'Organic Chemistry', 'Anatomy', 'Statistics'];
 const MORE_COURSES = ['Differential Equations', 'Thermodynamics', 'Discrete Mathematics', 'Macroeconomics', 'Biochemistry', 'Algorithms'];
-
-function CoursesSection() {
-  return (
-    <section id="features" className="scroll-mt-16 bg-[#f4f2ee]">
-      <Container className="py-12 sm:py-14 flex flex-wrap gap-8">
-        <div className="flex-[1_1_300px] flex flex-col gap-2">
-          <Heading>Explore popular courses</Heading>
-          <p className="m-0 text-lg text-[#5e6670]">The most searched courses this term</p>
-        </div>
-        <div className="flex-[2_1_520px] min-w-0">
-          <ChipList items={COURSES} extra={MORE_COURSES} variant="outline" />
-        </div>
-      </Container>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------- Bölüm sınavları */
-
 const DEPARTMENTS = ['Computer Engineering', 'Electrical & Electronics', 'Medicine', 'Law', 'Economics', 'Business', 'Architecture', 'Psychology'];
 const MORE_DEPARTMENTS = ['Civil Engineering', 'Mechanical Engineering', 'Industrial Engineering', 'Mathematics', 'Molecular Biology', 'Political Science'];
 
-function DepartmentsSection() {
+type BrowseTab = 'courses' | 'departments';
+
+// Eskiden art arda iki ayrı çip bölümüydü; tek bölümde "Courses / Departments" sekmesiyle birleşti.
+// Navbar'daki "Departments" (/#departments) bağlantısı bölümü bölümler sekmesiyle açar.
+function BrowseSection() {
+  const { hash } = useLocation();
+  const [tab, setTab] = useState<BrowseTab>(hash === '#departments' ? 'departments' : 'courses');
+  const [prevHash, setPrevHash] = useState(hash);
+  if (hash !== prevHash) {
+    setPrevHash(hash);
+    if (hash === '#departments') setTab('departments');
+    if (hash === '#features') setTab('courses');
+  }
+
   return (
-    <section id="departments" className="scroll-mt-16">
+    <section id="features" className="relative scroll-mt-16 bg-[#f4f2ee]">
+      <span id="departments" className="absolute top-0 scroll-mt-16" aria-hidden="true" />
       <Container className="py-12 sm:py-14 flex flex-wrap gap-8">
-        <div className="flex-[1_1_300px]">
-          <Heading>Find notes for your department</Heading>
+        <div className="flex-[1_1_300px] flex flex-col gap-2">
+          <Heading>Find notes for your courses</Heading>
+          <p className="m-0 text-lg text-[#5e6670]">Search by course or by department</p>
         </div>
-        <div className="flex-[2_1_520px] min-w-0 flex flex-col gap-4">
-          <span className="text-sm font-semibold tracking-wide text-[#5e6670]">BROWSE DEPARTMENTS</span>
-          <ChipList items={DEPARTMENTS} extra={MORE_DEPARTMENTS} variant="soft" />
+        <div className="flex-[2_1_520px] min-w-0 flex flex-col gap-5">
+          <div className="flex gap-6 border-b border-[#d6d1c4]" role="tablist">
+            {(
+              [
+                ['courses', 'Courses'],
+                ['departments', 'Departments'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => setTab(key)}
+                className={`-mb-px border-b-2 pb-2.5 text-[17px] font-semibold transition-colors ${
+                  tab === key ? 'border-navy-900 text-navy-900' : 'border-transparent text-[#5e6670] hover:text-navy-900'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {tab === 'courses' ? (
+            <ChipList key="courses" items={COURSES} extra={MORE_COURSES} />
+          ) : (
+            <ChipList key="departments" items={DEPARTMENTS} extra={MORE_DEPARTMENTS} />
+          )}
         </div>
-      </Container>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------ Not yükle */
-
-function UploadBand() {
-  return (
-    <section className="bg-[#eaf0f8]">
-      <Container className="py-10 sm:py-12 flex flex-wrap items-center justify-between gap-6">
-        <h2 className="flex-[1_1_480px] m-0 font-light leading-[1.15] text-navy-900 text-balance text-[28px] sm:text-[34px] lg:text-[40px]">
-          Upload your notes and reach the students who need them
-        </h2>
-        <Link to="/register" className={pillOutline}>
-          Upload a note
-        </Link>
       </Container>
     </section>
   );
@@ -193,39 +195,27 @@ function UploadBand() {
 
 /* ---------------------------------------------------------------- Profil */
 
-const PROFILE_POINTS = [
-  'All the notes you’ve shared in one place',
-  'Your university, department and year',
-  'One tap from your profile to a message',
-];
-
+// Paylaşılan not kutuları marka tonlarında (lacivert, orta mavi, açık mavi).
 const SAMPLE_NOTES = [
   { type: 'PDF', title: 'Data Structures final summary', className: 'bg-navy-900 text-white' },
-  { type: 'DOCX', title: 'Linear Algebra midterm prep', className: 'bg-[#f2c14e] text-navy-900' },
+  { type: 'DOCX', title: 'Linear Algebra midterm prep', className: 'bg-[#34557d] text-white' },
   { type: 'JPG', title: 'Algorithm analysis board notes', className: 'bg-[#c9d6ea] text-navy-900' },
 ];
 
 function ProfileSection() {
   return (
-    <section id="how-it-works" className="scroll-mt-16 bg-[#f4f2ee]">
-      <Container className="py-14 sm:py-[72px] flex flex-wrap items-center gap-10 lg:gap-14">
-        <div className="flex-[1_1_400px] flex flex-col gap-6">
+    <section id="how-it-works" className="scroll-mt-16">
+      <Container className="py-14 sm:py-[72px] flex flex-wrap items-center gap-10 lg:gap-16">
+        <div className="flex-[1_1_360px] max-w-[460px] flex flex-col gap-5">
           <Heading>Build your profile and let your notes speak for you</Heading>
-          <p className="m-0 max-w-[470px] text-lg text-[#5e6670]">
+          <p className="m-0 text-lg text-[#5e6670]">
             Your department, your courses and the notes you share — all on one page. Students taking the same course
             can find you and ask their questions directly.
           </p>
-          <ul className="m-0 p-0 list-none flex flex-col gap-3">
-            {PROFILE_POINTS.map((point) => (
-              <li key={point} className="flex items-center gap-3 text-[17px]">
-                <CircleCheck size={22} className="shrink-0 text-navy-900" aria-hidden="true" />
-                {point}
-              </li>
-            ))}
-          </ul>
-          <Link to="/register" className={`${pillPrimary} self-start`}>
-            Create your profile
-          </Link>
+          <p className="m-0 text-lg text-[#5e6670]">
+            Every note you upload counts its likes and downloads, so you can see which of your summaries actually
+            helped someone before an exam.
+          </p>
         </div>
 
         <SampleProfile />
@@ -234,7 +224,7 @@ function ProfileSection() {
   );
 }
 
-// Tanıtım amaçlı örnek profil; butonlar kayıt sayfasına gider.
+// Tanıtım amaçlı örnek profil; hiçbir parçası tıklanmaz.
 function SampleProfile() {
   return (
     <div className="flex-[1_1_420px] min-w-0 flex flex-col gap-6">
@@ -243,7 +233,7 @@ function SampleProfile() {
           <img
             src={sampleProfilePhoto}
             alt="Profile photo of Ayşe Yılmaz"
-            className="h-full w-full rounded-full border-4 border-[#f4f2ee] object-cover"
+            className="h-full w-full rounded-full border-4 border-white object-cover"
           />
         </span>
         <div className="flex-[1_1_200px] flex flex-col gap-3">
@@ -265,16 +255,16 @@ function SampleProfile() {
               </span>
             ))}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link to="/register" className={`${pillBase} min-h-[38px] px-[18px] text-[15px] bg-navy-900 text-white hover:bg-navy-950`}>
+          {/* Örnek profil: butonlar sadece görünüm, tıklanmaz */}
+          <div className="flex flex-wrap gap-2" aria-hidden="true">
+            <span className={`${pillBase} min-h-[38px] px-[18px] text-[15px] bg-navy-900 text-white cursor-default select-none`}>
               Message
-            </Link>
-            <Link
-              to="/register"
-              className={`${pillBase} min-h-[38px] px-[18px] text-[15px] border border-navy-900 text-navy-900 hover:bg-white`}
+            </span>
+            <span
+              className={`${pillBase} min-h-[38px] px-[18px] text-[15px] border border-navy-900 text-navy-900 cursor-default select-none`}
             >
               Follow
-            </Link>
+            </span>
           </div>
         </div>
       </div>
@@ -298,14 +288,14 @@ function SampleProfile() {
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           {SAMPLE_NOTES.map((note) => (
-            <Link
+            <div
               key={note.title}
-              to="/register"
-              className={`aspect-square min-w-0 rounded-md p-2.5 sm:p-3 flex flex-col justify-between transition-opacity hover:opacity-90 ${note.className}`}
+              // Telefonda kutular biraz uzun: başlık okunur boyda (15px) sığsın.
+              className={`aspect-[3/4] sm:aspect-square min-w-0 rounded-md p-3 flex flex-col justify-between ${note.className}`}
             >
-              <span className="text-[11px] font-bold tracking-[0.08em]">{note.type}</span>
-              <span className="text-[13px] sm:text-[15px] font-semibold leading-tight">{note.title}</span>
-            </Link>
+              <span className="text-xs font-bold tracking-[0.08em]">{note.type}</span>
+              <span className="text-[15px] font-semibold leading-tight">{note.title}</span>
+            </div>
           ))}
         </div>
       </div>
@@ -315,53 +305,21 @@ function SampleProfile() {
 
 /* --------------------------------------------------------- Çalışma grupları */
 
-const GROUP_FEATURES: { icon: LucideIcon; title: string; text: string }[] = [
-  { icon: Users, title: 'Course groups', text: 'Start a group with students taking the same course, or join an existing one.' },
-  { icon: Folder, title: 'Shared note space', text: 'Notes shared in the group are right there for every member.' },
-  { icon: MessageCircle, title: 'Group chat', text: 'Ask questions instantly and plan your study sessions together.' },
-];
-
+// İkonlu özellik listesi yerine uygulamadaki gerçek bir grup sohbetinin örneği gösterilir.
 function GroupsSection() {
   return (
-    <section id="community" className="scroll-mt-16">
+    <section id="community" className="scroll-mt-16 bg-[#f4f2ee]">
       <Container className="py-14 sm:py-[72px] flex flex-wrap-reverse items-center gap-10 lg:gap-14">
-        <div className="flex-[1_1_400px] min-w-0 flex justify-center">
-          <img
-            src={studyGroupIllustration}
-            alt="A group of students looking at results shared on a screen together"
-            className="w-full max-w-[500px] h-auto"
-          />
+        <div className="flex-[1_1_440px] min-w-0">
+          <GroupChatSample />
         </div>
 
-        <div className="flex-[1_1_400px] flex flex-col gap-6">
+        <div className="flex-[1_1_360px] flex flex-col gap-6">
           <Heading>Learn together in study groups</Heading>
           <p className="m-0 max-w-[470px] text-lg text-[#5e6670]">
-            Start a group for a course or an exam, keep the notes in one place and get ready for the exam together.
+            Start a group for a course or an exam. Members share notes in the group, ask each other questions in the
+            chat and get ready for the exam together. Private groups only let in the people you approve.
           </p>
-          <div className="flex flex-col gap-4">
-            {GROUP_FEATURES.map(({ icon: Icon, title, text }) => (
-              <div key={title} className="flex items-start gap-3.5">
-                <span
-                  aria-hidden="true"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-navy-900 ring-1 ring-black/[0.06]"
-                >
-                  <Icon size={22} strokeWidth={1.8} />
-                </span>
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-lg font-semibold">{title}</span>
-                  <span className="text-[#5e6670]">{text}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Link to="/register" className={pillPrimary}>
-              Start a group
-            </Link>
-            <Link to="/groups" className={pillOutline}>
-              Browse groups
-            </Link>
-          </div>
         </div>
       </Container>
     </section>
@@ -378,24 +336,16 @@ const AUDIENCES = [
 
 function AudienceSection() {
   return (
-    <section className="bg-[#f4f2ee]">
-      <Container className="py-12 sm:py-16 flex flex-wrap gap-8">
-        <div className="flex-[1_1_300px]">
-          <Heading>Who is SearchNote for?</Heading>
-        </div>
-        <div className="flex-[2_1_520px] min-w-0 flex flex-col gap-3">
+    <section>
+      {/* Sade üç sütunlu metin: kart / gölge yok, tıklanabilir gibi durmasın. */}
+      <Container className="py-12 sm:py-16">
+        <Heading>Who is SearchNote for?</Heading>
+        <div className="mt-8 grid gap-8 sm:grid-cols-3 sm:gap-10">
           {AUDIENCES.map(({ title, text }) => (
-            <Link
-              key={title}
-              to="/register"
-              className="group flex items-center justify-between gap-5 rounded-lg bg-white p-5 sm:p-6 shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)] transition-shadow hover:shadow-[0_0_0_1px_rgba(0,0,0,0.12),0_6px_14px_rgba(0,0,0,0.08)]"
-            >
-              <span className="flex flex-col gap-1">
-                <span className="text-lg sm:text-xl font-semibold">{title}</span>
-                <span className="text-[#5e6670]">{text}</span>
-              </span>
-              <ChevronRight size={24} className="shrink-0 text-[#3d434a] transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-            </Link>
+            <div key={title} className="flex flex-col gap-2 border-t-2 border-navy-900 pt-4">
+              <span className="text-lg sm:text-xl font-semibold">{title}</span>
+              <span className="text-[#5e6670]">{text}</span>
+            </div>
           ))}
         </div>
       </Container>
@@ -403,24 +353,22 @@ function AudienceSection() {
   );
 }
 
-/* ---------------------------------------------------------- Aramayı dene */
+/* -------------------------------------------------------------- Kapanış */
 
-function TrySearchSection() {
+// Footer'dan önceki son bölüm: sade bir davet ve uygulamadaki not sayfasının örneği (sahte arama yok).
+function ClosingSection() {
   return (
-    <section id="try-search" className="scroll-mt-16">
-      <Container className="py-12 sm:py-16 flex flex-wrap gap-8">
-        <div className="flex-[1_1_300px] flex flex-col gap-4">
-          <Heading>Try the search before you sign up</Heading>
+    <section className="scroll-mt-16 bg-[#f4f2ee]">
+      <Container className="py-12 sm:py-20 flex flex-wrap items-center gap-10">
+        <div className="flex-[1_1_320px] max-w-[460px] flex flex-col gap-5">
+          <Heading>Someone in your class already wrote it down</Heading>
           <p className="m-0 text-lg text-[#5e6670]">
-            These are sample notes. Search them by course, course code, instructor or university — exactly the way it
-            works inside SearchNote.
+            Every note here was shared by a student at a university in Türkiye. Read it in your browser, download it
+            for free, and if a step isn&rsquo;t clear, message the person who wrote it.
           </p>
-          <Link to="/register" className={`${pillPrimary} self-start`}>
-            Search the real catalog
-          </Link>
         </div>
-        <div className="flex-[2_1_520px] min-w-0">
-          <SearchDemo />
+        <div className="flex-[1_1_480px] min-w-0">
+          <NotePageSample />
         </div>
       </Container>
     </section>
