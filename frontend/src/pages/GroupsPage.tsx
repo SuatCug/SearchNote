@@ -13,6 +13,7 @@ import Spinner from '@/components/common/Spinner';
 import GroupFilterModal from '@/components/groups/GroupFilterModal';
 import { activeFilterCount, DEFAULT_GROUP_FILTERS, type GroupFilters } from '@/components/groups/groupFilters';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useKeepInViewOnChange } from '@/hooks/useKeepInViewOnChange';
 import {
   useGetFavoriteGroupsQuery,
   useGetGroupsQuery,
@@ -46,10 +47,13 @@ export default function GroupsPage() {
   const waiting = incoming.data?.data?.requests.length ?? 0;
 
   const setTab = (t: Tab) => setSearchParams(t === 'mine' ? {} : { tab: t });
+  const headerRef = useRef<HTMLDivElement>(null);
+  // Aşağıdayken sekme değişirse sayfa başlığı (sekmeler) en üste gelir; kısa sekmede sayfa dibine sıkışmasın.
+  useKeepInViewOnChange(tab, headerRef);
 
   return (
     <PageLayout>
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
+      <div ref={headerRef} className="flex scroll-mt-24 flex-wrap items-end justify-between gap-4 mb-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Groups</h1>
           <p className="text-sm text-gray-500 mt-1">Study groups have a chat and shared notes for one course or project.</p>
@@ -77,9 +81,11 @@ export default function GroupsPage() {
         </div>
       </div>
 
-      {tab === 'mine' && <MyGroupsTab onExplore={() => setTab('explore')} />}
-      {tab === 'explore' && <ExploreTab />}
-      {tab === 'requests' && <JoinRequestsPanel />}
+      <div className="min-h-[calc(100vh-14rem)]">
+        {tab === 'mine' && <MyGroupsTab onExplore={() => setTab('explore')} />}
+        {tab === 'explore' && <ExploreTab />}
+        {tab === 'requests' && <JoinRequestsPanel />}
+      </div>
     </PageLayout>
   );
 }

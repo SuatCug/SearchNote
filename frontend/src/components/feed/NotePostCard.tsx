@@ -6,6 +6,7 @@ import FileTypeBadge from '@/components/notes/FileTypeBadge';
 import VisibilityBadge from '@/components/notes/VisibilityBadge';
 import UserAvatar from '@/components/users/UserAvatar';
 import LikesModal from '@/components/notes/LikesModal';
+import CommentsModal from '@/components/notes/CommentsModal';
 import { useDialog } from '@/components/common/DialogProvider';
 import { useRegisterDownloadMutation, useToggleLikeMutation, useToggleSaveMutation } from '@/services/notesApi';
 import { downloadNote } from '@/lib/downloadNote';
@@ -43,6 +44,7 @@ export default function NotePostCard({ note, index = 0 }: { note: NoteCard; inde
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showLikes, setShowLikes] = useState(false);
+  const [showComments, setShowComments] = useState(false);
 
   const noteUrl = `/notes/${note._id}`;
   const FileIcon = (FILE_TYPES[note.fileType] ?? FILE_TYPES.pdf).icon;
@@ -201,11 +203,12 @@ export default function NotePostCard({ note, index = 0 }: { note: NoteCard; inde
             <span className="sr-only">likes — see who liked this</span>
           </button>
         </span>
-        <Link to={`${noteUrl}#comments`} className={actionClass}>
+        {/* Yorumlar akıştan ayrılmadan pencerede açılır (Instagram web gibi). */}
+        <button type="button" onClick={() => setShowComments(true)} className={actionClass}>
           <MessageCircle size={17} />
           {formatCount(note.commentsCount)}
           <span className="sr-only">comments</span>
-        </Link>
+        </button>
         <button
           type="button"
           onClick={handleDownload}
@@ -235,6 +238,7 @@ export default function NotePostCard({ note, index = 0 }: { note: NoteCard; inde
         </button>
       </footer>
       {showLikes && <LikesModal noteId={note._id} onClose={() => setShowLikes(false)} />}
+      {showComments && <CommentsModal noteId={note._id} onClose={() => setShowComments(false)} />}
     </article>
   );
 }

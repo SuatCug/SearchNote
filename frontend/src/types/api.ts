@@ -43,6 +43,12 @@ export interface UserCard {
   isFollowing?: boolean; // sayfalı takipçi listelerinde (izleyici bu kişiyi takip ediyor mu)
 }
 
+// "Who to follow" önerisi: izleyiciyle aynı okulda / bölümde mi.
+export interface SuggestedUser extends UserCard {
+  sameUniversity?: boolean;
+  sameDepartment?: boolean;
+}
+
 // Notu beğenenler listesindeki kişi: izleyicinin onu takip edip etmediği ve kendisi olup olmadığı ile.
 export interface NoteLiker extends UserCard {
   isFollowing: boolean;

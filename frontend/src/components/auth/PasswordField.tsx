@@ -11,6 +11,7 @@ interface PasswordFieldProps {
   autoComplete?: string;
   minLength?: number;
   hint?: ReactNode;
+  autoFocus?: boolean;
   // Doğrulama hatası (alanın altında kırmızı; varken hint gizlenir — mobildeki gibi)
   error?: string;
 }
@@ -24,6 +25,7 @@ export default function PasswordField({
   autoComplete,
   minLength,
   hint,
+  autoFocus,
   error,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
@@ -41,6 +43,7 @@ export default function PasswordField({
           required
           minLength={minLength}
           autoComplete={autoComplete}
+          autoFocus={autoFocus}
           value={value}
           onChange={onChange}
           placeholder={placeholder}

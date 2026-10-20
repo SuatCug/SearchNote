@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import {
@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Search,
   Share2,
   Upload,
   Users,
@@ -45,6 +46,7 @@ import { useGetSavedNotesQuery } from '@/services/notesApi';
 import { useGetMyGroupActivityQuery, useGetMyGroupsQuery } from '@/services/groupsApi';
 import { FILE_TYPES } from '@/lib/constants';
 import { DESKTOP_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
+import { useKeepInViewOnChange } from '@/hooks/useKeepInViewOnChange';
 import logo from '@/assets/logo.png';
 import { formatCount, formatDate, pluralize } from '@/lib/format';
 import type { NoteCard, ProfileData, UserCourse } from '@/types/api';
@@ -80,6 +82,13 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { data, isLoading, error } = useGetProfileQuery(id);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  // "My notes" kısayollarından gelindiyse (state.scrollTo) profil yüklenince notların olduğu bölüme inilir.
+  const scrollToNotes = location.state?.scrollTo === 'notes';
+  const loaded = Boolean(data);
+  useEffect(() => {
+    if (loaded && scrollToNotes) contentRef.current?.scrollIntoView({ block: 'start' });
+  }, [loaded, scrollToNotes]);
   // Geniş ekranda "All" sekmesi yok (özet bilgiler soldaki sütunda): profil doğrudan Notes ile açılır.
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
 
@@ -91,6 +100,8 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
       : isDesktop
         ? 'notes'
         : 'all';
+  // Aşağıdayken sekme değişirse notların / sekmenin başı en üste gelir (kısa sekmede sayfa dibine sıkışmasın).
+  useKeepInViewOnChange(tab, contentRef);
 
   if (isLoading) return <PageLayout><Spinner /></PageLayout>;
   if (error || !data) {
@@ -117,6 +128,11 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
     setSearchParams(next === 'all' || (isDesktop && next === 'notes') ? {} : { tab: next });
   // Soldaki "Courses shared" kartından: Notes sekmesi o dersle filtrelenmiş açılır.
   const openCourse = (code: string) => setSearchParams(isDesktop ? { course: code } : { tab: 'notes', course: code });
+  // Başlıktaki "Notes" sayacı: Notes sekmesini açar ve notların olduğu bölüme kaydırır (yeni sekme çizilsin diye bir kare beklenir).
+  const showNotes = () => {
+    changeTab('notes');
+    requestAnimationFrame(() => contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
 
   const tabChips = (
     <div className="flex w-max min-w-full justify-center lg:justify-start gap-2 py-5 lg:py-3" role="tablist">
@@ -142,12 +158,15 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
       {/* Telefon / tablet: mobil uygulamadaki düzen. Geniş ekran (lg): Facebook tarzı geniş başlık + solda "Intro" sütunu. */}
       <div className="mx-auto max-w-[720px] lg:max-w-none">
         <div className="lg:hidden">
-          <ProfileHeader profile={data.data} onNotes={() => changeTab('notes')} />
-          <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">{tabChips}</div>
+          <ProfileHeader profile={data.data} onNotes={showNotes} />
+          {/* Telefonda kaydırma hedefi sekme satırı: sekmeler de görünür kalır. */}
+          <div ref={isDesktop ? undefined : contentRef} className="no-scrollbar -mx-4 scroll-mt-16 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+            {tabChips}
+          </div>
           <div className="-mx-4 mb-5 border-t border-gray-200 sm:mx-0" />
         </div>
         {/* Başkasının profilinde geniş ekranda tek sekme (Notes) kalır: sekme satırı gösterilmez. */}
-        <DesktopHeader profile={data.data} onNotes={() => changeTab('notes')} tabs={tabs.length > 1 ? tabChips : null} />
+        <DesktopHeader profile={data.data} onNotes={showNotes} tabs={tabs.length > 1 ? tabChips : null} />
 
         <div className="lg:mt-6 lg:grid lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start lg:gap-6">
           <aside className="hidden lg:block space-y-4">
@@ -156,7 +175,7 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
             {isMe ? <GroupsCard onSeeAll={() => changeTab('groups')} /> : <PopularNotesCard userId={user.id} />}
           </aside>
 
-          <div className="min-w-0">
+          <div ref={isDesktop ? contentRef : undefined} className="min-h-[calc(100vh-10rem)] min-w-0 scroll-mt-24">
             {tab === 'all' && <AllTab profile={data.data} onSeeAbout={() => setAboutOpen(true)} onNotes={() => changeTab('notes')} />}
             {tab === 'notes' && <NotesTab userId={user.id} isMe={isMe} total={data.data.stats.notesCount} />}
             {tab === 'saved' && <SavedTab />}
@@ -205,7 +224,7 @@ function ProfileHeader({ profile, onNotes }: { profile: ProfileData; onNotes: ()
           )}
         </div>
 
-        <div className="mt-3 flex justify-center gap-8">
+        <div className="mt-3 flex justify-center gap-10">
           <Stat value={stats.notesCount} label="Notes" onClick={onNotes} />
           <Stat value={user.followersCount} label="Followers" to={`/users/${user.id}/followers`} />
           <Stat value={user.followingCount} label="Following" to={`/users/${user.id}/following`} />
@@ -273,9 +292,10 @@ function DesktopHeader({ profile, onNotes, tabs }: { profile: ProfileData; onNot
   const button = 'flex-none px-5';
 
   return (
-    <header className="hidden lg:block overflow-hidden rounded-2xl border border-gray-200 bg-white">
+    // overflow-hidden yalnızca bantta: başlıkta olsaydı "⋯" menüsü kartın altına taşınca kesilirdi.
+    <header className="hidden lg:block rounded-2xl border border-gray-200 bg-white">
       {/* Kapak fotoğrafı yok: soluk nokta deseni ve sağ altta soluk logo, bant boş görünmesin. */}
-      <div className="relative h-[140px] overflow-hidden bg-gradient-to-br from-navy-800 via-navy-700 to-navy-900">
+      <div className="relative h-[140px] overflow-hidden rounded-t-2xl bg-gradient-to-br from-navy-800 via-navy-700 to-navy-900">
         <div
           className="absolute inset-0 opacity-[0.12]"
           style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1.5px)', backgroundSize: '18px 18px' }}
@@ -302,12 +322,12 @@ function DesktopHeader({ profile, onNotes, tabs }: { profile: ProfileData; onNot
           {(user.university || user.department) && (
             <p className="mt-0.5 text-[15px] text-gray-500">{[user.university, user.department].filter(Boolean).join(' · ')}</p>
           )}
-          <p className="mt-1.5 flex flex-wrap gap-x-1.5 text-[15px] text-gray-500">
+          <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-[17px] text-gray-500">
+            <InlineStat value={stats.notesCount} label={stats.notesCount === 1 ? 'note' : 'notes'} onClick={onNotes} />
+            <span aria-hidden="true">·</span>
             <InlineStat value={user.followersCount} label="followers" to={`/users/${user.id}/followers`} />
             <span aria-hidden="true">·</span>
             <InlineStat value={user.followingCount} label="following" to={`/users/${user.id}/following`} />
-            <span aria-hidden="true">·</span>
-            <InlineStat value={stats.notesCount} label={stats.notesCount === 1 ? 'note' : 'notes'} onClick={onNotes} />
           </p>
           {token && !isMe && !isBlocked && user.followersCount > 0 && (
             <div className="mt-2">
@@ -331,10 +351,13 @@ function DesktopHeader({ profile, onNotes, tabs }: { profile: ProfileData; onNot
             </>
           ) : (
             <>
+              {/* Follow ve Message aynı genişlikte. */}
               <span className="flex w-36">
                 <FollowButton userId={user.id} isFollowing={isFollowing} name={user.fullName} variant="profile" />
               </span>
-              <MessageButton userId={user.id} className={`${SOFT_BUTTON} ${button}`} />
+              <span className="flex w-36">
+                <MessageButton userId={user.id} className={SOFT_BUTTON} />
+              </span>
               {token && <ProfileMenu userId={user.id} name={user.fullName} isBlocked={isBlocked} />}
             </>
           )}
@@ -349,7 +372,7 @@ function InlineStat({ value, label, to, onClick }: { value: number; label: strin
   const { search } = useLocation();
   const content = (
     <>
-      <b className="font-bold text-gray-900">{formatCount(value)}</b> {label}
+      <b className="text-[19px] font-extrabold text-gray-900">{formatCount(value)}</b> {label}
     </>
   );
   return to ? (
@@ -548,8 +571,8 @@ function Stat({ value, label, to, onClick }: { value: number; label: string; to?
   const className = 'flex min-w-[60px] flex-col items-center hover:opacity-70 transition-opacity';
   const content = (
     <>
-      <span className="text-[19px] font-extrabold leading-tight text-gray-900">{formatCount(value)}</span>
-      <span className="text-[13px] text-gray-500">{label}</span>
+      <span className="text-[22px] font-extrabold leading-tight text-gray-900">{formatCount(value)}</span>
+      <span className="text-sm text-gray-500">{label}</span>
     </>
   );
   return to ? (
@@ -804,13 +827,16 @@ function NotesEmpty({ isMe, course }: { isMe: boolean; course?: string }) {
   );
 }
 
-// Notes: sıralama + (birden fazla ders varsa) ders filtresi + sayfalı not kartları.
+// Notes: arama + sıralama + (birden fazla ders varsa) ders filtresi + sayfalı not kartları.
 function NotesTab({ userId, isMe, total }: { userId: string; isMe: boolean; total: number }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const sort = searchParams.get('sort') || 'newest';
   const course = searchParams.get('course') ?? '';
+  const q = searchParams.get('q') ?? '';
   const page = Number(searchParams.get('page')) || 1;
-  const notes = useGetUserNotesQuery({ id: userId, sort, page, limit: PAGE_SIZE, q: course || undefined });
+  // Sunucudaki arama kelime bazlı (her kelime bir alanda geçmeli): ders kodu aramaya bir kelime olarak eklenir.
+  const query = [course, q].filter(Boolean).join(' ');
+  const notes = useGetUserNotesQuery({ id: userId, sort, page, limit: PAGE_SIZE, q: query || undefined });
   const courseCodes = useGetUserCoursesQuery(userId).data?.data?.courses.map((c) => c.code) ?? [];
 
   const update = (changes: Record<string, string>) => {
@@ -825,6 +851,7 @@ function NotesTab({ userId, isMe, total }: { userId: string; isMe: boolean; tota
     <>
       {total > 1 && (
         <div className="-mt-2 mb-4 space-y-2">
+          <NotesSearch value={q} onSearch={(value) => update({ q: value })} />
           <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0" role="group" aria-label="Sort notes">
             {SORTS.map((s) => (
               <FilterPill key={s.key} active={sort === s.key} onClick={() => update({ sort: s.key === 'newest' ? '' : s.key })}>
@@ -846,7 +873,11 @@ function NotesTab({ userId, isMe, total }: { userId: string; isMe: boolean; tota
           )}
         </div>
       )}
-      <NoteCards notes={notes.data?.data?.items} isLoading={notes.isLoading} empty={<NotesEmpty isMe={isMe} course={course} />} />
+      <NoteCards
+        notes={notes.data?.data?.items}
+        isLoading={notes.isLoading}
+        empty={q ? <EmptyState icon={Search} title="No matching notes" text="Try a different keyword." /> : <NotesEmpty isMe={isMe} course={course} />}
+      />
       <Pagination
         pagination={notes.data?.data?.pagination}
         onPageChange={(p) => {
@@ -855,6 +886,41 @@ function NotesTab({ userId, isMe, total }: { userId: string; isMe: boolean; tota
         }}
       />
     </>
+  );
+}
+
+// Başlık / ders / hoca adında arama; Enter ile uygulanır, adresteki q değişirse (geri tuşu) kutu senkronlanır.
+function NotesSearch({ value, onSearch }: { value: string; onSearch: (value: string) => void }) {
+  const [text, setText] = useState(value);
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setText(value);
+  }
+  return (
+    <form
+      role="search"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSearch(text.trim());
+      }}
+    >
+      <label className="relative block">
+        <span className="sr-only">Search notes</span>
+        <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="search"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            // Kutudaki çarpıyla temizlenince arama da kalkar.
+            if (!e.target.value && value) onSearch('');
+          }}
+          placeholder="Search by title, course or instructor..."
+          className="h-10 w-full rounded-full border border-gray-200 bg-white pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-navy-500 focus:outline-none focus:ring-2 focus:ring-navy-100"
+        />
+      </label>
+    </form>
   );
 }
 

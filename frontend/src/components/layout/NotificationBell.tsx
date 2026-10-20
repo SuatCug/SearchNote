@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, Heart, MessageCircle, UserPlus, Users, type LucideIcon } from 'lucide-react';
 import UserAvatar from '@/components/users/UserAvatar';
+import { NAV_BADGE, NAV_ITEM, NAV_LABEL } from './navStyles';
 import {
   useGetNotificationCountQuery,
   useGetNotificationsQuery,
@@ -72,14 +73,11 @@ export default function NotificationBell() {
         aria-expanded={open}
         aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
         title="Notifications"
-        className="relative inline-flex h-10 w-10 items-center justify-center rounded-lg text-white/90 hover:bg-white/10 hover:text-white transition-colors"
+        className={`${NAV_ITEM} ${open ? 'text-white' : 'text-white/80'}`}
       >
-        <Bell size={22} />
-        {unread > 0 && (
-          <span className="absolute top-1 left-5 min-w-[18px] rounded-full bg-rose-500 px-1 text-center text-[10px] font-bold leading-[18px] text-white ring-2 ring-navy-800">
-            {unread > 99 ? '99+' : unread}
-          </span>
-        )}
+        <Bell size={22} strokeWidth={open ? 2.4 : 2} />
+        <span className={NAV_LABEL}>Notifications</span>
+        {unread > 0 && <span className={NAV_BADGE}>{unread > 99 ? '99+' : unread}</span>}
       </button>
 
       {open && (

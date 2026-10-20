@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import SlowHint from '@/components/auth/SlowHint';
 import AuthLayout from '@/components/auth/AuthLayout';
 import BackButton from '@/components/auth/BackButton';
 import CodeForm, { CODE_LENGTH } from '@/components/auth/CodeForm';
@@ -31,8 +32,10 @@ export default function ForgotPasswordPage() {
   const [verifyCode] = useVerifyResetCodeMutation();
   const [resetPassword, { isLoading: resetting }] = useResetPasswordMutation();
 
+  const location = useLocation();
   const [step, setStep] = useState<Step>('email');
-  const [email, setEmail] = useState('');
+  // Giriş ekranında yazılmış e-posta hazır gelir (mobildeki gibi).
+  const [email, setEmail] = useState(() => (location.state as { email?: string } | null)?.email ?? '');
   const [account, setAccount] = useState<ResetAccount | null>(null);
   const [resendIn, setResendIn] = useState(60);
   const [resetToken, setResetToken] = useState('');
@@ -97,8 +100,8 @@ export default function ForgotPasswordPage() {
 
       {step === 'email' && (
         <>
-          <h1 className="text-3xl font-bold text-gray-900 text-center">Find your account</h1>
-          <p className="text-sm text-gray-500 mt-2 text-center">Enter the email address you signed up with.</p>
+          <h1 className="text-3xl font-bold text-gray-900 text-center">Trouble logging in?</h1>
+          <p className="text-sm text-gray-500 mt-2 text-center">Enter your email and we&apos;ll send you a code to get back into your account.</p>
           <form onSubmit={handleFind} noValidate className="mt-6 space-y-4">
             <TextField
               id="email"
@@ -145,9 +148,10 @@ export default function ForgotPasswordPage() {
 
       {step === 'code' && account && (
         <>
-          <h1 className="text-3xl font-bold text-gray-900 text-center">Enter the code</h1>
+          <h1 className="text-3xl font-bold text-gray-900 text-center">Enter confirmation code</h1>
           <p className="text-sm text-gray-500 mt-2 text-center">
-            We sent a {CODE_LENGTH}-digit code to <span className="font-semibold text-gray-800">{account.maskedEmail}</span>.
+            Enter the {CODE_LENGTH}-digit code we sent to <span className="font-semibold text-gray-800">{account.maskedEmail}</span>. Check
+            your spam folder if you don&apos;t see it.
           </p>
           <div className="mt-6">
             <CodeForm
@@ -167,7 +171,7 @@ export default function ForgotPasswordPage() {
         <>
           <h1 className="text-3xl font-bold text-gray-900 text-center">Create a new password</h1>
           <p className="text-sm text-gray-500 mt-2 text-center">
-            Use at least 8 characters. You'll be logged in right after.
+            Create a password with at least 8 characters. Use a mix of letters and numbers that would be hard to guess.
           </p>
           <form onSubmit={handleReset} noValidate className="mt-6 space-y-4">
             <PasswordField
@@ -190,6 +194,8 @@ export default function ForgotPasswordPage() {
           </form>
         </>
       )}
+
+      <SlowHint loading={finding || sending || resetting} />
 
       <p className="text-center text-sm text-gray-500 mt-6">
         Remembered it?{' '}

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import ScrollToTop from '@/components/ScrollToTop';
 import RealtimeBridge from '@/components/RealtimeBridge';
@@ -7,6 +7,7 @@ import { useGetMeQuery } from '@/services/authApi';
 import LoginPage from '@/pages/LoginPage';
 import RegisterPage from '@/pages/RegisterPage';
 import GoogleSignupPage from '@/pages/GoogleSignupPage';
+import WelcomePage from '@/pages/WelcomePage';
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import VerifyEmailPage from '@/pages/VerifyEmailPage';
 import HomePage from '@/pages/HomePage';
@@ -14,7 +15,6 @@ import NoteDetailPage from '@/pages/NoteDetailPage';
 import UploadNotePage from '@/pages/UploadNotePage';
 import EditNotePage from '@/pages/EditNotePage';
 import ProfilePage from '@/pages/ProfilePage';
-import UserNotesPage from '@/pages/UserNotesPage';
 import SettingsPage from '@/pages/SettingsPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import LegalPage from '@/pages/LegalPage';
@@ -45,6 +45,15 @@ function GuestOnly({ children }: { children: ReactNode }) {
   return hadTokenOnMount ? <Navigate to="/" replace /> : children;
 }
 
+// Eski "tüm notlar" sayfası kaldırıldı: kayıtlı / paylaşılmış bağlantılar profildeki Notes sekmesine gider.
+function UserNotesRedirect() {
+  const { id = '' } = useParams();
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  params.set('tab', 'notes');
+  return <Navigate to={`/users/${id}?${params}`} state={{ scrollTo: 'notes' }} replace />;
+}
+
 export default function App() {
   const token = useAppSelector((state) => state.auth.token);
   const user = useAppSelector((state) => state.auth.user);
@@ -68,7 +77,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/notes/:id" element={<NoteDetailPage />} />
         <Route path="/users/:id" element={<ProfilePage />} />
-        <Route path="/users/:id/notes" element={<UserNotesPage />} />
+        <Route path="/users/:id/notes" element={<UserNotesRedirect />} />
         <Route path="/users/:id/followers" element={<ProfilePage list="followers" />} />
         <Route path="/users/:id/following" element={<ProfilePage list="following" />} />
         <Route path="/users/:id/mutual" element={<ProfilePage list="mutual" />} />
@@ -88,6 +97,8 @@ export default function App() {
         <Route path="/forgot-password" element={<GuestOnly><ForgotPasswordPage /></GuestOnly>} />
 
         {/* Giriş gerekli */}
+        {/* Kayıttan sonraki karşılama adımları (fotoğraf, takip önerileri) */}
+        <Route path="/welcome" element={<RequireAuth><WelcomePage /></RequireAuth>} />
         <Route path="/upload" element={<RequireAuth><UploadNotePage /></RequireAuth>} />
         <Route path="/notes/:id/edit" element={<RequireAuth><EditNotePage /></RequireAuth>} />
         <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />

@@ -1,31 +1,33 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import AuthLayout from '@/components/auth/AuthLayout';
+import AuthStep from '@/components/auth/AuthStep';
+import SlowHint from '@/components/auth/SlowHint';
 import useFinishAuth from '@/components/auth/useFinishAuth';
 import Alert from '@/components/common/Alert';
 import SchoolFields from '@/components/common/SchoolFields';
-import TextField from '@/components/common/TextField';
 import UserAvatar from '@/components/users/UserAvatar';
 import { useCompleteGoogleSignupMutation, type GoogleSignupProfile } from '@/services/authApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { compactErrors, serverFieldErrors, validateRequired } from '@/lib/validation';
 
-type Field = 'fullName' | 'university' | 'department';
+type Field = 'university' | 'department';
 
-// "Continue with Google" ile gelen yeni kullanıcı: e-posta Google'dan doğrulanmış gelir,
-// sadece ad ve okul bilgisi istenir. Şifre yoktur; isterse sonra Ayarlar'dan belirler.
+// "Continue with Google" ile ilk kez gelen kullanıcı (mobildeki gibi): ad, e-posta ve fotoğraf Google'dan geldi,
+// sadece okul bilgisi sorulur. Şifre yoktur; isterse sonra Ayarlar'dan belirler.
+// Hesap açılınca normal kayıttaki gibi karşılama adımları (/welcome) gelir.
 export default function GoogleSignupPage() {
   const location = useLocation();
   const state = location.state as { signupToken?: string; profile?: GoogleSignupProfile } | null;
   const finishAuth = useFinishAuth();
   const [completeSignup, { isLoading }] = useCompleteGoogleSignupMutation();
-  const [form, setForm] = useState({ fullName: state?.profile?.fullName ?? '', university: '', department: '' });
+  const [form, setForm] = useState({ university: '', department: '' });
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({});
   const [error, setError] = useState('');
 
   // Sayfa yenilenirse (state kaybolur) Google adımı baştan yapılır.
   if (!state?.signupToken || !state.profile) return <Navigate to="/register" replace />;
   const { signupToken, profile } = state;
+  const fullName = profile.fullName || profile.email.split('@')[0];
 
   const setField = (field: Field, value: string) => {
     setForm((f) => ({ ...f, [field]: value }));
@@ -36,7 +38,6 @@ export default function GoogleSignupPage() {
     e.preventDefault();
     setError('');
     const errors = compactErrors({
-      fullName: validateRequired(form.fullName, 'Full name'),
       university: validateRequired(form.university, 'University'),
       department: validateRequired(form.department, 'Department'),
     });
@@ -45,41 +46,43 @@ export default function GoogleSignupPage() {
     try {
       const { data } = await completeSignup({
         signupToken,
-        fullName: form.fullName.trim(),
+        fullName,
         university: form.university.trim(),
         department: form.department.trim(),
       }).unwrap();
-      finishAuth(data, '/');
+      finishAuth(data, '/welcome');
     } catch (err) {
       const fields = serverFieldErrors(err);
-      if (Object.keys(fields).length) setFieldErrors(fields);
-      else setError(getErrorMessage(err));
+      if (fields.university || fields.department) setFieldErrors(fields);
+      else setError(Object.values(fields)[0] ?? getErrorMessage(err));
     }
   };
 
   return (
-    <AuthLayout>
-      <div className="flex flex-col items-center text-center">
-        <UserAvatar user={{ fullName: form.fullName || profile.email, avatarUrl: profile.avatarUrl }} size="lg" />
-        <h1 className="mt-4 text-3xl font-bold text-gray-900">Where do you study?</h1>
-        <p className="text-sm text-gray-500 mt-2">
-          Signing up as <span className="font-semibold text-gray-800">{profile.email}</span>. Your university and
-          department help classmates find your notes.
+    <AuthStep
+      title="Where do you study?"
+      subtitle="Your university and department help classmates find your notes. You can change these later."
+      footer={
+        <p className="text-center text-sm text-gray-500 mt-6">
+          Not you?{' '}
+          <Link to="/register" replace className="text-navy-600 hover:text-navy-700 font-semibold">
+            Use another email
+          </Link>
         </p>
+      }
+    >
+      {/* Google'dan gelen hesap (mobildeki gibi kart) */}
+      <div className="mb-5 flex items-center gap-3 rounded-xl border border-gray-200 p-3">
+        <UserAvatar user={{ fullName, avatarUrl: profile.avatarUrl }} size="md" />
+        <div className="min-w-0">
+          <p className="truncate text-[15px] font-bold text-gray-900">{fullName}</p>
+          <p className="truncate text-[13px] text-gray-500">{profile.email}</p>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-4">
-        <TextField
-          id="fullName"
-          label="Full Name"
-          maxLength={80}
-          autoComplete="name"
-          value={form.fullName}
-          onChange={(v) => setField('fullName', v)}
-          error={fieldErrors.fullName}
-        />
-
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
         <SchoolFields
+          showCountry
           university={form.university}
           department={form.department}
           onUniversityChange={(university) => setField('university', university)}
@@ -87,20 +90,12 @@ export default function GoogleSignupPage() {
           universityError={fieldErrors.university}
           departmentError={fieldErrors.department}
         />
-
         <Alert>{error}</Alert>
-
         <button type="submit" disabled={isLoading} className="btn-primary w-full py-2.5 text-[15px]">
           {isLoading ? 'Creating your account...' : 'Sign Up'}
         </button>
       </form>
-
-      <p className="text-center text-sm text-gray-500 mt-6">
-        Not you?{' '}
-        <Link to="/register" replace className="text-navy-600 hover:text-navy-700 font-semibold">
-          Use another email
-        </Link>
-      </p>
-    </AuthLayout>
+      <SlowHint loading={isLoading} />
+    </AuthStep>
   );
 }

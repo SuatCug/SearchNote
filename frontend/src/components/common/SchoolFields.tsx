@@ -11,6 +11,8 @@ interface SchoolFieldsProps {
   idPrefix?: string;
   universityError?: string;
   departmentError?: string;
+  // En üstte salt okunur "Country: Türkiye" (mobildeki gibi; okul listesi şimdilik yalnızca Türkiye).
+  showCountry?: boolean;
 }
 
 // Üniversite → bölüm seçici (Türkiye; veri YÖK'ten, mobil uygulamayla aynı liste).
@@ -23,6 +25,7 @@ export default function SchoolFields({
   idPrefix = '',
   universityError,
   departmentError,
+  showCountry = false,
 }: SchoolFieldsProps) {
   const universityId = useUniversityId(university);
   const getUniversityOptions = useUniversityOptions();
@@ -48,6 +51,14 @@ export default function SchoolFields({
 
   return (
     <>
+      {showCountry && (
+        <div>
+          <label htmlFor={`${idPrefix}country`} className="form-label">
+            Country
+          </label>
+          <input id={`${idPrefix}country`} value="Türkiye" readOnly tabIndex={-1} className="form-input cursor-default bg-gray-50 text-gray-600" />
+        </div>
+      )}
       <Combobox
         id={`${idPrefix}university`}
         label="University"

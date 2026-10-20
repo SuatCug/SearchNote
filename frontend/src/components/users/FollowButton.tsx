@@ -15,6 +15,8 @@ interface FollowButtonProps {
   name?: string;
   compact?: boolean;
   variant?: 'default' | 'profile' | 'list';
+  // Takip durumu değişince (örn. karşılama ekranı listeyi kendisi tutar, sunucudan yenilemez).
+  onChange?: (isFollowing: boolean) => void;
 }
 
 const VARIANT_CLASS = {
@@ -30,7 +32,7 @@ const VARIANT_CLASS = {
   },
 };
 
-export default function FollowButton({ userId, isFollowing, name, compact = false, variant = 'default' }: FollowButtonProps) {
+export default function FollowButton({ userId, isFollowing, name, compact = false, variant = 'default', onChange }: FollowButtonProps) {
   const token = useAppSelector((state) => state.auth.token);
   const isVerified = useAppSelector((state) => state.auth.user?.isVerified);
   const navigate = useNavigate();
@@ -52,6 +54,7 @@ export default function FollowButton({ userId, isFollowing, name, compact = fals
     }
     try {
       await toggleFollow({ id: userId, following: isFollowing }).unwrap();
+      onChange?.(!isFollowing);
     } catch (err) {
       dialog.alert({ message: getErrorMessage(err) });
     }

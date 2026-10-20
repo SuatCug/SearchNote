@@ -6,6 +6,7 @@ import UserAvatar from '@/components/users/UserAvatar';
 import PeopleModal from '@/components/users/PeopleModal';
 import FollowButton from '@/components/users/FollowButton';
 import { useGetActiveUsersQuery, useGetSuggestionsQuery } from '@/services/usersApi';
+import { suggestionReason } from '@/lib/suggestionReason';
 import { useGetTrendingCoursesQuery } from '@/services/notesApi';
 import { courseLink } from '@/lib/links';
 import { useFallbackPolling } from '@/lib/socket';
@@ -38,17 +39,19 @@ function ForYouCard() {
   const links = [
     { to: '/?tab=following', icon: UserPlus, label: 'People you follow' },
     { to: '/?tab=saved', icon: Bookmark, label: 'Saved notes' },
-    { to: `/users/${userId}/notes`, icon: FileText, label: 'My notes' },
+    // Profildeki Notes sekmesi; profil açılınca notların olduğu bölüme kaydırılır.
+    { to: `/users/${userId}?tab=notes`, state: { scrollTo: 'notes' }, icon: FileText, label: 'My notes' },
     { to: '/groups?tab=mine', icon: Users, label: 'My groups' },
   ];
 
   return (
     <RailCard title="For You">
       <ul className="-mx-2 space-y-0.5">
-        {links.map(({ to, icon: Icon, label }) => (
+        {links.map(({ to, state, icon: Icon, label }) => (
           <li key={label}>
             <Link
               to={to}
+              state={state}
               className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-navy-700"
             >
               <Icon size={16} className="text-gray-400" /> {label}
@@ -154,7 +157,7 @@ function WhoToFollowCard() {
                 <span className="block truncate text-sm font-semibold text-gray-900 group-hover:text-navy-700">
                   {u.fullName}
                 </span>
-                <span className="block truncate text-xs text-gray-500">{u.university}</span>
+                <span className="block truncate text-xs text-gray-500">{suggestionReason(u)}</span>
               </span>
             </Link>
             <FollowButton userId={u._id} isFollowing={false} compact />

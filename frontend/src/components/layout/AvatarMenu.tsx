@@ -1,16 +1,27 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
-import { Bookmark, ChevronDown, FileText, LogOut, Settings, User, Users } from 'lucide-react';
+import { Bookmark, ChevronDown, FileText, HelpCircle, LogOut, Settings, Users } from 'lucide-react';
 import { logout } from '@/app/authSlice';
 import { baseApi, SESSION_TAGS } from '@/services/baseApi';
 import UserAvatar from '@/components/users/UserAvatar';
 
+const itemClass = 'flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors';
+
+// Hesap menüsü: üstte profil kartı ve "View profile", altında kısayollar.
 export default function AvatarMenu() {
   const user = useAppSelector((state) => state.auth.user);
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Açık menü Esc ile kapanır.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
 
   const handleLogout = () => {
     setMenuOpen(false);
@@ -19,6 +30,9 @@ export default function AvatarMenu() {
     dispatch(baseApi.util.invalidateTags(SESSION_TAGS));
     navigate('/');
   };
+
+  const close = () => setMenuOpen(false);
+  const school = [user?.university, user?.department].filter(Boolean).join(' · ');
 
   return (
     <div className="relative">
@@ -35,49 +49,45 @@ export default function AvatarMenu() {
 
       {menuOpen && (
         <>
-          <div className="fixed inset-0 z-[55]" onClick={() => setMenuOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-[56] w-64 rounded-xl border border-gray-100 bg-white shadow-lg py-2">
-            <div className="px-4 py-2">
-              <p className="text-sm font-semibold text-gray-800 truncate">{user?.fullName}</p>
-              <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+          <div className="fixed inset-0 z-[55]" onClick={close} />
+          <div className="sheet-up absolute right-0 top-full mt-2 z-[56] w-72 rounded-xl border border-gray-100 bg-white shadow-lg py-2">
+            <div className="px-4 pb-3 pt-1">
+              <div className="flex items-center gap-3">
+                <UserAvatar user={user} size="lg" />
+                <div className="min-w-0">
+                  <p className="truncate text-[15px] font-bold text-gray-900">{user?.fullName}</p>
+                  {school && <p className="line-clamp-2 text-xs text-gray-500">{school}</p>}
+                  <p className="truncate text-xs text-gray-400">{user?.email}</p>
+                </div>
+              </div>
+              <Link
+                to={`/users/${user?.id}`}
+                onClick={close}
+                className="mt-3 flex h-8 items-center justify-center rounded-full border border-navy-600 text-sm font-semibold text-navy-700 hover:bg-navy-50 transition-colors"
+              >
+                View profile
+              </Link>
             </div>
 
             <div className="my-1 border-t border-gray-100" />
 
-            <Link
-              to={`/users/${user?.id}`}
-              onClick={() => setMenuOpen(false)}
-              className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <User size={16} className="text-gray-400" /> My Profile
-            </Link>
-            <Link
-              to={`/users/${user?.id}/notes`}
-              onClick={() => setMenuOpen(false)}
-              className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
+            <Link to={`/users/${user?.id}?tab=notes`} state={{ scrollTo: 'notes' }} onClick={close} className={itemClass}>
               <FileText size={16} className="text-gray-400" /> My Notes
             </Link>
-            <Link
-              to="/?tab=saved"
-              onClick={() => setMenuOpen(false)}
-              className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
+            <Link to="/?tab=saved" onClick={close} className={itemClass}>
               <Bookmark size={16} className="text-gray-400" /> Saved Notes
             </Link>
-            <Link
-              to="/groups?tab=mine"
-              onClick={() => setMenuOpen(false)}
-              className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
+            <Link to="/groups?tab=mine" onClick={close} className={itemClass}>
               <Users size={16} className="text-gray-400" /> My Groups
             </Link>
-            <Link
-              to="/settings"
-              onClick={() => setMenuOpen(false)}
-              className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-            >
+
+            <div className="my-1 border-t border-gray-100" />
+
+            <Link to="/settings" onClick={close} className={itemClass}>
               <Settings size={16} className="text-gray-400" /> Settings
+            </Link>
+            <Link to="/help" onClick={close} className={itemClass}>
+              <HelpCircle size={16} className="text-gray-400" /> Help
             </Link>
 
             <div className="my-1 border-t border-gray-100" />

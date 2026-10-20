@@ -4,6 +4,7 @@ import { Bookmark, Compass, FileText, Users } from 'lucide-react';
 import UserAvatar from '@/components/users/UserAvatar';
 import FollowButton from '@/components/users/FollowButton';
 import { useGetActiveUsersQuery, useGetSuggestionsQuery } from '@/services/usersApi';
+import { suggestionReason } from '@/lib/suggestionReason';
 import { useGetTrendingCoursesQuery } from '@/services/notesApi';
 import { courseLink } from '@/lib/links';
 import { useFallbackPolling } from '@/lib/socket';
@@ -19,16 +20,18 @@ export function MobileShortcuts() {
   const items = [
     { to: '/?all=1', icon: Compass, label: 'Explore' },
     { to: '/?tab=saved', icon: Bookmark, label: 'Saved' },
-    { to: `/users/${userId}/notes`, icon: FileText, label: 'My notes' },
+    // Profildeki Notes sekmesi; profil açılınca notların olduğu bölüme kaydırılır.
+    { to: `/users/${userId}?tab=notes`, state: { scrollTo: 'notes' }, icon: FileText, label: 'My notes' },
     { to: '/groups?tab=mine', icon: Users, label: 'My groups' },
   ];
 
   return (
     <nav aria-label="Shortcuts" className="lg:hidden mt-3 grid grid-cols-4 gap-2">
-      {items.map(({ to, icon: Icon, label }) => (
+      {items.map(({ to, state, icon: Icon, label }) => (
         <Link
           key={label}
           to={to}
+          state={state}
           className="card flex flex-col items-center gap-1.5 px-1 py-3 text-xs font-semibold text-gray-700 hover:border-navy-200 active:bg-navy-50 transition-colors"
         >
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-50 text-navy-600">
@@ -108,7 +111,7 @@ export function SuggestionsCarousel() {
             <Link to={`/users/${u._id}`} className="flex min-w-0 flex-col items-center">
               <UserAvatar user={u} size="lg" />
               <span className="mt-2 w-full truncate text-sm font-semibold text-gray-900">{u.fullName}</span>
-              <span className="w-full truncate text-xs text-gray-500">{u.university}</span>
+              <span className="w-full truncate text-xs text-gray-500">{suggestionReason(u)}</span>
             </Link>
             <div className="mt-2.5">
               <FollowButton userId={u._id} isFollowing={false} compact />

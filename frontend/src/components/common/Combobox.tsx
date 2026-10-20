@@ -118,7 +118,8 @@ export default function Combobox({
           onKeyDown={handleKeyDown}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
-          className="form-input pr-9 disabled:bg-gray-50 disabled:text-gray-400"
+          // Seçim kutusu gibi: üzerine gelince el işareti, yazarken metin imleci.
+          className="form-input pr-9 cursor-pointer focus:cursor-text disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
         />
         <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
       </div>
@@ -129,6 +130,8 @@ export default function Combobox({
           ref={listRef}
           id={listId}
           role="listbox"
+          // Satır aralarına / başlıklara basınca da odak kutudan gitmesin (liste kapanmasın).
+          onMouseDown={(e) => e.preventDefault()}
           className="absolute z-30 left-0 right-0 mt-1 max-h-72 overflow-y-auto rounded-xl bg-white shadow-xl ring-1 ring-black/5 py-1"
         >
           {loading && <li className="px-4 py-3 text-sm text-gray-400">Loading...</li>}
@@ -148,7 +151,8 @@ export default function Combobox({
                     e.preventDefault();
                     choose(o);
                   }}
-                  onMouseEnter={() => setActive(i)}
+                  // mouseenter değil: ok tuşlarıyla liste kayınca sabit duran farenin altındaki satır seçimi kaçırmasın.
+                  onMouseMove={() => i !== active && setActive(i)}
                   className={`flex items-center justify-between gap-3 px-4 py-2 text-sm cursor-pointer ${
                     i === active ? 'bg-navy-50 text-navy-800' : 'text-gray-800'
                   }`}

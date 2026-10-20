@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import { Bookmark, Compass, FileUp, Flame, Loader2, UserPlus, type LucideIcon } from 'lucide-react';
@@ -13,6 +13,7 @@ import FeedRightRail from './FeedRightRail';
 import { ActiveNowStrip, CourseChips, MobileShortcuts, SuggestionsCarousel } from './MobileFeedExtras';
 import { useGetFeedQuery, useGetNotesQuery, useGetSavedNotesQuery } from '@/services/notesApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
+import { useKeepInViewOnChange } from '@/hooks/useKeepInViewOnChange';
 
 const FEED_PAGE_SIZE = 10;
 
@@ -73,6 +74,9 @@ export default function SocialHome() {
 
 function Feed({ tab }: { tab: FeedTab }) {
   const [, setSearchParams] = useSearchParams();
+  const tabsRef = useRef<HTMLDivElement>(null);
+  // Aşağıdayken sekme değişirse sekme çubuğu en üste gelir (kısa listede sayfa dibine sıkışmasın).
+  useKeepInViewOnChange(tab, tabsRef);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -81,7 +85,12 @@ function Feed({ tab }: { tab: FeedTab }) {
       <ActiveNowStrip />
       <CourseChips />
 
-      <div role="tablist" aria-label="Feed" className="mt-4 mb-4 flex gap-1 overflow-x-auto rounded-xl bg-gray-200/70 p-1">
+      <div
+        ref={tabsRef}
+        role="tablist"
+        aria-label="Feed"
+        className="mt-4 mb-4 flex scroll-mt-20 gap-1 overflow-x-auto rounded-xl bg-gray-200/70 p-1"
+      >
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -142,7 +151,8 @@ function FeedList({ tab }: { tab: FeedTab }) {
   const totalPages = last.data?.data?.pagination?.totalPages ?? 0;
 
   return (
-    <div className="space-y-4">
+    // En az ekran boyu: liste kısa olsa da (Saved'da 1-2 not) sekme çubuğu ekranın üstüne gelebilsin.
+    <div className="min-h-[calc(100vh-10rem)] space-y-4">
       {Array.from({ length: pageCount }, (_, i) => (
         <FeedPage key={i} tab={tab} page={i + 1} />
       ))}

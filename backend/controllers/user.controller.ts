@@ -155,13 +155,23 @@ const getSuggestions = asyncHandler<AuthedRequest>(async (req, res) => {
   if (!me) throw new ApiError(404, 'User not found.');
   const base = excludeSelfAndBlocked(me);
   const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 50);
+  // scope=university: sadece aynı okul. scope=school (web "Who to follow"): aynı okul VEYA aynı bölüm.
+  // Parametresiz (mobil): herkes, okul / bölüm eşleşenler önce.
   const onlyUniversity = req.query.scope === 'university';
+  const onlySchool = req.query.scope === 'school';
   const university = me.university?.trim() ?? '';
   const department = me.department?.trim() ?? '';
   if (onlyUniversity && !university) return res.json({ success: true, data: { users: [] } });
+  if (onlySchool && !university && !department) return res.json({ success: true, data: { users: [] } });
 
   const sameAs = (field: string, value: string) =>
     value ? { $regexMatch: { input: { $ifNull: [field, ''] }, regex: exactRegex(value) } } : false;
+  const schoolMatch = {
+    $or: [
+      ...(university ? [{ university: exactRegex(university) }] : []),
+      ...(department ? [{ department: exactRegex(department) }] : []),
+    ],
+  };
 
   const users = await User.aggregate([
     {
@@ -169,6 +179,7 @@ const getSuggestions = asyncHandler<AuthedRequest>(async (req, res) => {
         ...base,
         _id: { $nin: [...base._id.$nin, ...me.following] },
         ...(onlyUniversity ? { university: exactRegex(university) } : {}),
+        ...(onlySchool ? schoolMatch : {}),
       },
     },
     {

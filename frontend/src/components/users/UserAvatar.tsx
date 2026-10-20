@@ -36,6 +36,9 @@ export default function UserAvatar({ user, size = 'md', square = false, classNam
       <img
         src={assetUrl(user.avatarUrl)}
         alt={user.fullName}
+        // Google profil fotoğrafı (lh3.googleusercontent.com) başka sitenin Referer'ıyla istenince resim yerine
+        // hata döner ve tarayıcı engeller (ERR_BLOCKED_BY_ORB); Referer gönderilmeyince yüklenir.
+        referrerPolicy="no-referrer"
         className={`${SIZES[size]} ${shape} max-w-none object-cover shrink-0 bg-gray-100 ${className}`}
       />
     );

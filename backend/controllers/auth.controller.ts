@@ -254,6 +254,8 @@ const googleSignIn = asyncHandler(async (req, res) => {
   if (user) {
     // Aynı e-postayla şifreli açılmış hesap: ilk Google girişinde bağlanır, e-posta da doğrulanmış sayılır.
     user.googleId = profile.googleId;
+    // Profil fotoğrafı yoksa Google'daki fotoğraf kullanılır (kullanıcının yüklediği fotoğrafın üstüne yazılmaz).
+    if (!user.avatarUrl && profile.avatarUrl) user.avatarUrl = profile.avatarUrl;
     user.isVerified = true;
     user.verificationTokenHash = undefined;
     user.verificationTokenExpires = undefined;

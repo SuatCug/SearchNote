@@ -9,6 +9,7 @@ import type {
   ProfileData,
   ProfileInput,
   ReportReason,
+  SuggestedUser,
   UserCard,
   UserCourse,
 } from '@/types/api';
@@ -39,8 +40,15 @@ export const usersApi = baseApi.injectEndpoints({
       query: (params) => ({ url: '/users/active', params: params ?? undefined }),
       providesTags: ['User', 'ActiveUsers'],
     }),
-    getSuggestions: builder.query<UsersResponse, void>({
-      query: () => '/users/suggestions',
+    // Kayıttan sonraki "Follow your classmates" listesi (mobildeki gibi): scope=university aynı okul (aynı bölüm önde),
+    // scope=school "Who to follow" ile aynı (aynı okul veya bölüm). Bilerek etiketsiz: takip edince liste yenilenip kişi kaybolmasın.
+    getPeopleToFollow: builder.query<ApiResponse<{ users: SuggestedUser[] }>, { scope?: 'university' | 'school'; limit: number }>({
+      query: (params) => ({ url: '/users/suggestions', params }),
+      keepUnusedDataFor: 0,
+    }),
+    // Sadece aynı okul veya aynı bölümden kişiler (aynı okul + bölüm en üstte).
+    getSuggestions: builder.query<ApiResponse<{ users: SuggestedUser[] }>, void>({
+      query: () => ({ url: '/users/suggestions', params: { scope: 'school' } }),
       providesTags: ['User'],
     }),
     getProfile: builder.query<ApiResponse<ProfileData>, string>({
@@ -173,6 +181,7 @@ export const {
   useSearchUsersQuery,
   useGetActiveUsersQuery,
   useGetSuggestionsQuery,
+  useGetPeopleToFollowQuery,
   useGetProfileQuery,
   useGetUserNotesQuery,
   useGetFollowersQuery,

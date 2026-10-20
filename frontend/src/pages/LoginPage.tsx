@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import AuthLayout from '@/components/auth/AuthLayout';
 import PasswordField from '@/components/auth/PasswordField';
 import GoogleButton, { OrDivider } from '@/components/auth/GoogleButton';
+import SlowHint from '@/components/auth/SlowHint';
 import useFinishAuth from '@/components/auth/useFinishAuth';
 import Alert from '@/components/common/Alert';
 import TextField from '@/components/common/TextField';
@@ -71,30 +72,35 @@ export default function LoginPage() {
           autoComplete="current-password"
           error={fieldErrors.password}
         />
-        <p className="-mt-2 text-right text-sm">
-          <Link to="/forgot-password" className="font-semibold text-navy-600 hover:text-navy-700">
-            Forgot password?
-          </Link>
-        </p>
-
         <Alert>{error}</Alert>
 
         <button type="submit" disabled={isLoading} className="btn-primary w-full py-2.5 text-[15px]">
           {isLoading ? 'Logging in...' : 'Log In'}
         </button>
       </form>
+      <SlowHint loading={isLoading} />
+
+      {/* Mobildeki gibi: yazılmış e-posta şifre sıfırlama ekranına hazır geçer */}
+      <p className="mt-3 text-center text-sm">
+        <Link to="/forgot-password" state={{ email: email.trim() }} className="font-semibold text-navy-600 hover:text-navy-700">
+          Forgot password?
+        </Link>
+      </p>
 
       <div className="mt-5 space-y-5">
         <OrDivider />
         <GoogleButton onError={setError} />
       </div>
 
-      <p className="text-center text-sm text-gray-500 mt-6">
-        Don't have an account?{' '}
-        <Link to="/register" className="text-navy-600 hover:text-navy-700 font-semibold">
-          Sign Up
+      {/* Mobildeki gibi en altta çerçeveli "Create new account" */}
+      <div className="mt-8 border-t border-gray-100 pt-6">
+        <Link
+          to="/register"
+          className="flex h-11 w-full items-center justify-center rounded-full border border-navy-300 text-[15px] font-semibold text-navy-700 hover:bg-navy-50 transition-colors"
+        >
+          Create new account
         </Link>
-      </p>
+      </div>
     </AuthLayout>
   );
 }

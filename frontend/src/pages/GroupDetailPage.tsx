@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Check,
@@ -45,6 +45,7 @@ import { formatCount, formatDate } from '@/lib/format';
 import { compact } from '@/lib/compact';
 import { groupTitle } from '@/lib/groupStyle';
 import type { FileType, GroupDetail } from '@/types/api';
+import { useKeepInViewOnChange } from '@/hooks/useKeepInViewOnChange';
 
 type GroupTab = { key: 'notes' | 'members' | 'chat' | 'requests'; label: string; count?: number; badge?: number };
 
@@ -87,6 +88,9 @@ export default function GroupDetailPage() {
       ])
     : [];
   const tab = tabs.some((t) => t.key === requestedTab) ? requestedTab : 'notes';
+  const tabsRef = useRef<HTMLDivElement>(null);
+  // Aşağıdayken sekme değişirse sekme çubuğu en üste gelir; kısa sekmede sayfa dibine sıkışmasın.
+  useKeepInViewOnChange(tab, tabsRef);
 
   const notes = useGetGroupNotesQuery({ id, page, fileType }, { skip: !group?.isMember || tab !== 'notes' });
   const members = useGetGroupMembersQuery(id, { skip: !canView || tab !== 'members' });
@@ -182,7 +186,7 @@ export default function GroupDetailPage() {
         </div>
       ) : (
         <>
-          <div className="mt-8 border-b border-gray-200 flex gap-6 overflow-x-auto" role="tablist">
+          <div ref={tabsRef} className="mt-8 flex scroll-mt-20 gap-6 overflow-x-auto border-b border-gray-200" role="tablist">
             {tabs.map((t) => (
               <button
                 key={t.key}
@@ -211,7 +215,8 @@ export default function GroupDetailPage() {
             ))}
           </div>
 
-          <div className="mt-6">
+          {/* Sohbetin kendi yüksekliği var; diğer sekmelerde en az ekran boyu (bkz. useKeepInViewOnChange). */}
+          <div className={`mt-6 ${tab === 'chat' ? '' : 'min-h-[calc(100vh-12rem)]'}`}>
             {tab === 'notes' && !group.isMember && <LockedNotice group={group} />}
             {tab === 'notes' && group.isMember && (
               <>

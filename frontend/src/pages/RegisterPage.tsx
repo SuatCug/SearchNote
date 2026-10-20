@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
-import AuthLayout from '@/components/auth/AuthLayout';
-import BackButton from '@/components/auth/BackButton';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import AuthStep from '@/components/auth/AuthStep';
 import PasswordField from '@/components/auth/PasswordField';
 import CodeForm, { CODE_LENGTH } from '@/components/auth/CodeForm';
 import GoogleButton, { OrDivider } from '@/components/auth/GoogleButton';
+import SlowHint from '@/components/auth/SlowHint';
 import useFinishAuth from '@/components/auth/useFinishAuth';
 import Alert from '@/components/common/Alert';
 import SchoolFields from '@/components/common/SchoolFields';
@@ -12,20 +12,30 @@ import TextField from '@/components/common/TextField';
 import { useCompleteSignupMutation, useSendSignupCodeMutation, useVerifySignupCodeMutation } from '@/services/authApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { EDU_EMAIL_REGEX, EMAIL_PLACEHOLDER, REQUIRE_EDU_EMAIL } from '@/lib/constants';
-import { compactErrors, serverFieldErrors, validateEmail, validateNewPassword, validateRequired } from '@/lib/validation';
+import {
+  compactErrors,
+  MIN_PASSWORD_LENGTH,
+  serverFieldErrors,
+  validateEmail,
+  validateNewPassword,
+  validateRequired,
+} from '@/lib/validation';
 
-// Mobil uygulamayla aynı kayıt akışı: önce e-posta kodla doğrulanır, hesap en son adımda oluşturulur
-// (böylece doğrulanmamış hesap hiç açılmaz). Adımlar: e-posta → kod → ad, şifre ve okul.
-type Step = 'email' | 'code' | 'details';
+// Mobil uygulamayla aynı kayıt akışı (Instagram/TikTok gibi adım adım, her ekranda tek soru):
+// e-posta → kod → ad → şifre → okul. E-posta kodla doğrulanır, hesap en son adımda oluşturulur
+// (doğrulanmamış hesap hiç açılmaz). Sonra karşılama adımları (/welcome: fotoğraf, takip önerileri) gelir.
+// Adım tarayıcı geçmişinde (location.state.step) tutulur: tarayıcının geri tuşu da bir önceki adıma döner.
+type Step = 'email' | 'code' | 'name' | 'password' | 'school';
 type Field = 'email' | 'fullName' | 'password' | 'university' | 'department';
 
 export default function RegisterPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const finishAuth = useFinishAuth();
   const [sendCode, { isLoading: sending }] = useSendSignupCodeMutation();
   const [verifyCode] = useVerifySignupCodeMutation();
   const [completeSignup, { isLoading: completing }] = useCompleteSignupMutation();
 
-  const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
   const [resendIn, setResendIn] = useState(60);
@@ -35,10 +45,23 @@ export default function RegisterPage() {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<Field, string>>>({});
   const [error, setError] = useState('');
 
-  const goTo = (next: Step) => {
+  // Sayfa yenilenirse (bellekteki e-posta / kod kaybolur) ilk adımdan başlanır.
+  const state = location.state as { step?: Step; from?: string } | null;
+  const requested = state?.step ?? 'email';
+  const step: Step =
+    requested === 'code' && maskedEmail ? 'code' : requested !== 'email' && requested !== 'code' && signupToken ? requested : 'email';
+
+  // İleri: yeni geçmiş kaydı (geri tuşu bir önceki adıma döner). replace: kod ekranı geçmişten silinsin
+  // (mobildeki gibi isim ekranından geri gelince doğrudan e-posta adımı açılır).
+  const goTo = (next: Step, replace = false) => {
     setError('');
     setFieldErrors({});
-    setStep(next);
+    navigate('.', { state: { ...state, step: next }, replace });
+  };
+  const goBack = () => {
+    setError('');
+    setFieldErrors({});
+    navigate(-1);
   };
 
   const clearField = (field: Field) => setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
@@ -61,6 +84,7 @@ export default function RegisterPage() {
       setEmail(clean);
       setMaskedEmail(data.maskedEmail);
       setResendIn(data.resendIn);
+      setSignupToken(''); // e-posta değiştiyse eski doğrulama geçersiz
       goTo('code');
     } catch (err) {
       // Kayıtlı e-posta, .edu.tr şartı gibi hatalar kutunun altında görünsün (mobildeki gibi 409 / 422)
@@ -70,12 +94,24 @@ export default function RegisterPage() {
     }
   };
 
-  const handleDetails = async (e: FormEvent<HTMLFormElement>) => {
+  const handleName = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const invalid = validateRequired(form.fullName, 'Full name');
+    setFieldErrors({ fullName: invalid });
+    if (!invalid) goTo('password');
+  };
+
+  const handlePassword = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const invalid = validateNewPassword(form.password);
+    setFieldErrors({ password: invalid });
+    if (!invalid) goTo('school');
+  };
+
+  const handleSignUp = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     const errors = compactErrors({
-      fullName: validateRequired(form.fullName, 'Full name'),
-      password: validateNewPassword(form.password),
       university: validateRequired(form.university, 'University'),
       department: validateRequired(form.department, 'Department'),
     });
@@ -89,11 +125,13 @@ export default function RegisterPage() {
         university: form.university.trim(),
         department: form.department.trim(),
       }).unwrap();
-      finishAuth(data, '/');
+      // Yeni hesap: önce karşılama adımları (fotoğraf, sınıf arkadaşlarını takip et)
+      finishAuth(data, '/welcome');
     } catch (err) {
       const fields = serverFieldErrors(err);
-      if (Object.keys(fields).length) setFieldErrors(fields);
-      else setError(getErrorMessage(err));
+      // Ad / şifre hatası önceki adımlarda kaldı: mesaj formun altında gösterilir
+      if (fields.university || fields.department) setFieldErrors(fields);
+      else setError(Object.values(fields)[0] ?? getErrorMessage(err));
     }
   };
 
@@ -105,46 +143,48 @@ export default function RegisterPage() {
       </Link>
     </p>
   );
+  const nextButton = (label = 'Next', busy = false, busyLabel = label) => (
+    <button type="submit" disabled={busy} className="btn-primary w-full py-2.5 text-[15px]">
+      {busy ? busyLabel : label}
+    </button>
+  );
 
   if (step === 'code') {
     return (
-      <AuthLayout>
-        <BackButton onClick={() => goTo('email')} />
-        <h1 className="text-3xl font-bold text-gray-900 text-center">Check your email</h1>
-        <p className="text-sm text-gray-500 mt-2 text-center">
-          To confirm your account, enter the {CODE_LENGTH}-digit code we sent to{' '}
-          <span className="font-semibold text-gray-800">{maskedEmail}</span>.
-        </p>
-        <div className="mt-6">
-          <CodeForm
-            resendIn={resendIn}
-            onVerify={async (code) => {
-              const { data } = await verifyCode({ email, code }).unwrap();
-              setSignupToken(data.signupToken);
-              goTo('details');
-            }}
-            onResend={async () => (await sendCode(email).unwrap()).data.resendIn}
-          />
-        </div>
+      <AuthStep
+        onBack={goBack}
+        title="Enter the confirmation code"
+        subtitle={
+          <>
+            To confirm your account, enter the {CODE_LENGTH}-digit code we sent to{' '}
+            <span className="font-semibold text-gray-800">{maskedEmail}</span>.
+          </>
+        }
+        footer={footer}
+      >
+        <CodeForm
+          resendIn={resendIn}
+          submitLabel="Next"
+          onVerify={async (code) => {
+            const { data } = await verifyCode({ email, code }).unwrap();
+            setSignupToken(data.signupToken);
+            goTo('name', true);
+          }}
+          onResend={async () => (await sendCode(email).unwrap()).data.resendIn}
+        />
         <p className="text-center text-sm mt-4">
-          <button type="button" onClick={() => goTo('email')} className="font-semibold text-gray-500 hover:text-gray-700">
+          <button type="button" onClick={goBack} className="font-semibold text-navy-600 hover:text-navy-700">
             Change email
           </button>
         </p>
-        {footer}
-      </AuthLayout>
+      </AuthStep>
     );
   }
 
-  if (step === 'details') {
+  if (step === 'name') {
     return (
-      <AuthLayout>
-        <h1 className="text-3xl font-bold text-gray-900 text-center">Almost there</h1>
-        <p className="text-sm text-gray-500 mt-2 text-center">
-          <span className="font-semibold text-gray-800">{email}</span> is confirmed. Tell classmates who you are.
-        </p>
-
-        <form onSubmit={handleDetails} noValidate className="mt-6 space-y-4">
+      <AuthStep onBack={goBack} title="What's your name?" subtitle="This is how classmates will see you on SearchNote." footer={footer}>
+        <form onSubmit={handleName} noValidate className="space-y-4">
           <TextField
             id="fullName"
             label="Full Name"
@@ -154,23 +194,53 @@ export default function RegisterPage() {
             value={form.fullName}
             onChange={(v) => setField('fullName', v)}
             placeholder="Jane Doe"
-            hint="This is how classmates will see you on SearchNote."
             error={fieldErrors.fullName}
           />
+          {nextButton()}
+        </form>
+      </AuthStep>
+    );
+  }
 
+  if (step === 'password') {
+    return (
+      <AuthStep
+        onBack={goBack}
+        title="Create a password"
+        subtitle={`Create a password with at least ${MIN_PASSWORD_LENGTH} characters. Use a mix of letters and numbers that would be hard to guess.`}
+        footer={footer}
+      >
+        <form onSubmit={handlePassword} noValidate className="space-y-4">
+          {/* Tarayıcı şifre yöneticisi kaydederken hangi hesap olduğunu bilsin */}
+          <input type="email" name="email" value={email} autoComplete="username" readOnly hidden />
           <PasswordField
             id="password"
             label="Password"
             value={form.password}
             onChange={(e) => setField('password', e.target.value)}
-            placeholder="At least 8 characters"
+            placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
             autoComplete="new-password"
-            minLength={8}
-            hint="Use a mix of letters and numbers that would be hard to guess."
+            minLength={MIN_PASSWORD_LENGTH}
+            autoFocus
             error={fieldErrors.password}
           />
+          {nextButton()}
+        </form>
+      </AuthStep>
+    );
+  }
 
+  if (step === 'school') {
+    return (
+      <AuthStep
+        onBack={goBack}
+        title="Where do you study?"
+        subtitle="Your university and department help classmates find your notes. You can change these later."
+        footer={footer}
+      >
+        <form onSubmit={handleSignUp} noValidate className="space-y-4">
           <SchoolFields
+            showCountry
             university={form.university}
             department={form.department}
             onUniversityChange={(university) => setField('university', university)}
@@ -178,26 +248,23 @@ export default function RegisterPage() {
             universityError={fieldErrors.university}
             departmentError={fieldErrors.department}
           />
-
           <Alert>{error}</Alert>
-
-          <button type="submit" disabled={completing} className="btn-primary w-full py-2.5 text-[15px]">
-            {completing ? 'Creating your account...' : 'Sign Up'}
-          </button>
+          {nextButton('Sign Up', completing, 'Creating your account...')}
         </form>
-        {footer}
-      </AuthLayout>
+        <SlowHint loading={completing} />
+      </AuthStep>
     );
   }
 
   return (
-    <AuthLayout>
-      <h1 className="text-3xl font-bold text-gray-900 text-center">Sign Up</h1>
-      <p className="text-sm text-gray-500 mt-2 text-center">
-        {REQUIRE_EDU_EMAIL ? 'Create a free account with your school email.' : 'Create a free account.'}
-      </p>
-
-      <form onSubmit={handleEmail} noValidate className="mt-6 space-y-4">
+    <AuthStep
+      title="What's your email?"
+      subtitle={`Enter the email where you can be reached. We'll send you a code to confirm it. No one will see this on your profile.${
+        REQUIRE_EDU_EMAIL ? ' Only .edu.tr addresses are accepted.' : ''
+      }`}
+      footer={footer}
+    >
+      <form onSubmit={handleEmail} noValidate className="space-y-4">
         <TextField
           id="email"
           label={REQUIRE_EDU_EMAIL ? 'School Email' : 'Email'}
@@ -210,23 +277,17 @@ export default function RegisterPage() {
             clearField('email');
           }}
           placeholder={EMAIL_PLACEHOLDER}
-          hint={`${REQUIRE_EDU_EMAIL ? 'Only .edu.tr addresses are accepted. ' : ''}We'll send you a code to confirm it. No one will see it on your profile.`}
           error={fieldErrors.email}
         />
-
         <Alert>{error}</Alert>
-
-        <button type="submit" disabled={sending} className="btn-primary w-full py-2.5 text-[15px]">
-          {sending ? 'Sending code...' : 'Next'}
-        </button>
+        {nextButton('Next', sending, 'Sending code...')}
       </form>
+      <SlowHint loading={sending} />
 
       <div className="mt-5 space-y-5">
         <OrDivider />
         <GoogleButton onError={setError} />
       </div>
-      {footer}
-    </AuthLayout>
+    </AuthStep>
   );
 }
-
