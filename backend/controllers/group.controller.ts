@@ -3,6 +3,7 @@ import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
 import { Group, GroupMessage, Note, User } from '../models/index.ts';
 import {
+  deleteGroupWithContent,
   favoriteGroupIds,
   followedMembersFor,
   listIncomingRequests,
@@ -199,17 +200,12 @@ const updateGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, message: 'Group updated.', data: { group: await toGroupDetail(group, req.user.id) } });
 });
 
-// Grup silinince notlar silinmez, sadece grupla bağları kaldırılır. Sohbet mesajları silinir.
+// Grup silinince gruba paylaşılan notlar (dosyalarıyla) ve sohbet mesajları da silinir.
 const deleteGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   assertOwner(group, req.user.id);
 
-  await group.deleteOne();
-  await Promise.all([
-    Note.updateMany({ group: group._id }, { $unset: { group: 1 } }),
-    GroupMessage.deleteMany({ group: group._id }),
-    User.updateMany({ favoriteGroups: group._id }, { $pull: { favoriteGroups: group._id } }),
-  ]);
+  await deleteGroupWithContent(group);
 
   res.json({ success: true, message: 'Group deleted.' });
 });

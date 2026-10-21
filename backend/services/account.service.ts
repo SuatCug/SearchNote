@@ -12,10 +12,11 @@ import {
 } from '../models/index.ts';
 import { removeFile } from './storage.service.ts';
 import { disconnectUser } from './realtime.service.ts';
+import { deleteGroupWithContent } from './group.service.ts';
 
 // Hesabı ve kullanıcıya ait her şeyi kalıcı olarak siler (mobil uygulamadaki "Delete account").
 //  - Notları (dosyalarıyla), yorumları, beğenileri, grup mesajları ve birebir konuşmaları silinir.
-//  - Kurucusu olduğu gruplar: başka üye varsa en eski üyeye devredilir, yoksa grup silinir.
+//  - Kurucusu olduğu gruplar: başka üye varsa en eski üyeye devredilir, yoksa grup notlarıyla birlikte silinir.
 //  - Diğer kullanıcıların takip / takipçi / engel listelerinden çıkarılır.
 //  - İletişim formu mesajları kalır ama kullanıcıyla bağı koparılır.
 const deleteAccount = async (userId: string) => {
@@ -23,11 +24,7 @@ const deleteAccount = async (userId: string) => {
   const user = await User.findById(id).select('avatarUrl');
   if (!user) return;
 
-  // Notlar: dosya anahtarları silmeden önce okunur
-  const notes = await Note.find({ author: id }).select('+fileUrl').lean();
-  const noteIds = notes.map((n) => n._id);
-
-  // Kurucusu olduğu gruplar
+  // Kurucusu olduğu gruplar (notlardan önce: silinen grupların notları burada dosyalarıyla gider)
   const ownedGroups = await Group.find({ owner: id });
   for (const group of ownedGroups) {
     const heir = group.members.find((m) => !m.equals(id));
@@ -37,13 +34,13 @@ const deleteAccount = async (userId: string) => {
       group.lastReadAt.delete(userId);
       await group.save();
     } else {
-      await group.deleteOne();
-      await Promise.all([
-        Note.updateMany({ group: group._id }, { $unset: { group: 1 } }),
-        GroupMessage.deleteMany({ group: group._id }),
-      ]);
+      await deleteGroupWithContent(group);
     }
   }
+
+  // Notlar: dosya anahtarları silmeden önce okunur
+  const notes = await Note.find({ author: id }).select('+fileUrl').lean();
+  const noteIds = notes.map((n) => n._id);
 
   const conversations = await Conversation.find({ participants: id }).select('_id').lean();
   const conversationIds = conversations.map((c) => c._id);

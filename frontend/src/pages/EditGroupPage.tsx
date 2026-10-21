@@ -49,7 +49,7 @@ export default function EditGroupPage() {
   const handleDelete = async () => {
     const ok = await dialog.confirm({
       title: `Delete "${group.name}"?`,
-      message: "This group will be deleted permanently. Notes shared in it will stay on their authors' profiles.",
+      message: "This group, its chat and all notes shared in it will be deleted permanently. This cannot be undone.",
       confirmLabel: 'Delete group',
       tone: 'danger',
     });
@@ -86,7 +86,7 @@ export default function EditGroupPage() {
       <section className="card p-5 sm:p-7 mt-6 border-rose-100">
         <h2 className="text-base font-semibold text-gray-900">Delete group</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Members will lose access to the group page. Notes shared in the group are not deleted.
+          Members will lose access to the group. The chat and all notes shared in the group are deleted too.
         </p>
         <Alert className="mt-3">{deleteError}</Alert>
         <button

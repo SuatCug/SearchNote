@@ -352,7 +352,7 @@ function GroupMenu({ group, onInvite }: { group: GroupDetail; onInvite: () => vo
     setOpen(false);
     const ok = await dialog.confirm({
       title: `Delete "${group.name}"?`,
-      message: "This group will be deleted permanently. Notes shared in it will stay on their authors' profiles.",
+      message: "This group, its chat and all notes shared in it will be deleted permanently. This cannot be undone.",
       confirmLabel: 'Delete group',
       tone: 'danger',
     });

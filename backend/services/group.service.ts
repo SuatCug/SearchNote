@@ -1,6 +1,8 @@
 import mongoose, { type PipelineStage } from 'mongoose';
-import { Group, GroupMessage, Note, User } from '../models/index.ts';
+import { Group, GroupMessage, Note, Notification, User } from '../models/index.ts';
 import { emitToUsers } from './realtime.service.ts';
+import { removeFile } from './storage.service.ts';
+import type { GroupDocument } from '../models/group.model.ts';
 import ApiError from '../utils/apiError.ts';
 import { buildPagination, type PaginationParams } from '../utils/pagination.util.ts';
 import type { IdLike, MatchFilter, SortSpec } from '../types/common.ts';
@@ -279,7 +281,29 @@ const listSentRequests = async (userId: string) => {
     .sort(newestFirst);
 };
 
+// Grubu içeriğiyle birlikte siler: gruba paylaşılan notlar (dosyalarıyla) ve sohbet mesajları da gider.
+// Notlar gruptan ayrılıp bırakılmaz; aksi halde grup notları (görünürlüğü 'public') herkese açık hale gelirdi.
+const deleteGroupWithContent = async (group: GroupDocument) => {
+  const notes = await Note.find({ group: group._id }).select('+fileUrl').lean();
+  const noteIds = notes.map((n) => n._id);
+
+  await group.deleteOne();
+  await Promise.all([
+    Note.deleteMany({ _id: { $in: noteIds } }),
+    GroupMessage.deleteMany({ group: group._id }),
+    User.updateMany(
+      { $or: [{ favoriteGroups: group._id }, { savedNotes: { $in: noteIds } }] },
+      { $pull: { favoriteGroups: group._id, savedNotes: { $in: noteIds } } }
+    ),
+    Notification.deleteMany({ note: { $in: noteIds } }),
+  ]);
+
+  // Dosya silme hataları grubun silinmesini engellemez (removeFile sadece loglar)
+  await Promise.all(notes.map((n) => removeFile(n.fileUrl)));
+};
+
 export {
+  deleteGroupWithContent,
   favoriteGroupIds,
   listIncomingRequests,
   listSentRequests,
