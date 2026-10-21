@@ -2,6 +2,8 @@
 // özellik değişirse (dosya limiti, görünürlük, silme davranışı vb.) buradaki ilgili cümle de güncellenmelidir.
 // Taslaktır; yayına almadan önce bir hukukçuya kontrol ettirilmelidir.
 
+import kvkkVideo from '@/assets/legal/kvkk.mp4';
+
 // Paragraf (string) ya da madde listesi (string[]).
 export type LegalBlock = string | string[];
 
@@ -16,6 +18,7 @@ export type LegalDocument = {
   title: string;
   updated?: string;
   intro?: string;
+  // İçindekilerin üstünde, beyaz alanda gösterilen tanıtım videosu.
   video?: { src: string; poster?: string };
   sections: LegalSection[];
 };
@@ -363,6 +366,7 @@ const privacy: LegalDocument = {
 
 const kvkk: LegalDocument = {
   title: 'KVKK Notice',
+  video: { src: kvkkVideo },
   intro:
     'This notice is given under Article 10 of the Turkish Personal Data Protection Law No. 6698 (KVKK). It explains which personal data SearchNote processes when you use the website or the mobile app, why we process it, who receives it and how you can use your rights.',
   sections: [

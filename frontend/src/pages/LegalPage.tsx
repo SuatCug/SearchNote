@@ -4,7 +4,7 @@ import NotFoundPage from './NotFoundPage';
 import { formatDate } from '@/lib/format';
 import { LAST_UPDATED, LEGAL_DOCUMENTS, type LegalBlock } from './legalDocuments';
 
-// Düzen LinkedIn'in Privacy Policy sayfasını izler: üstte belge sekmeleri, krem başlık bandı (+ varsa video),
+// Düzen LinkedIn'in Privacy Policy sayfasını izler: üstte belge sekmeleri, krem başlık bandı (altında varsa video),
 // içindekiler, numaralı bölümler ve alt bölümler (1.1, 1.2 ...). Metinler legalDocuments.ts'te.
 const bodyClass = 'text-[15px] leading-relaxed text-gray-700';
 
@@ -60,22 +60,7 @@ export default function LegalPage() {
           <h1 className="text-center text-3xl sm:text-4xl font-semibold text-gray-900">{doc.title}</h1>
           <p className="mt-2 text-center text-sm italic text-gray-500">Effective {formatDate(doc.updated ?? LAST_UPDATED)}</p>
 
-          {(doc.intro || doc.video) && (
-            <div className={`mt-8 grid gap-6 ${doc.video ? 'lg:grid-cols-2 lg:items-center' : ''}`}>
-              {doc.intro && (
-                <p className={`${bodyClass} max-w-3xl ${doc.video ? '' : 'mx-auto text-center'}`}>{doc.intro}</p>
-              )}
-              {doc.video && (
-                <video
-                  src={doc.video.src}
-                  poster={doc.video.poster}
-                  controls
-                  preload="metadata"
-                  className="w-full aspect-video rounded-lg bg-black"
-                />
-              )}
-            </div>
-          )}
+          {doc.intro && <p className={`mt-8 max-w-3xl mx-auto text-center ${bodyClass}`}>{doc.intro}</p>}
         </div>
       </div>
     </header>
@@ -84,7 +69,17 @@ export default function LegalPage() {
   return (
     <PageLayout hero={hero} plain>
       <article className="max-w-3xl mx-auto pb-4">
-        <nav className="mt-4" aria-label="Table of contents">
+        {doc.video && (
+          <video
+            src={doc.video.src}
+            poster={doc.video.poster}
+            controls
+            preload="metadata"
+            className="mt-4 block w-full h-auto"
+          />
+        )}
+
+        <nav className={doc.video ? 'mt-12' : 'mt-4'} aria-label="Table of contents">
           <h2 className="text-lg font-semibold text-gray-900">Table of contents</h2>
           <ol className="mt-3 space-y-2 list-decimal list-inside text-[15px]">
             {doc.sections.map(({ heading }, i) => (
