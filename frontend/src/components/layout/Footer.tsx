@@ -9,11 +9,15 @@ import { REQUIRE_EDU_EMAIL, SOCIAL_LINKS } from '@/lib/constants';
 const YEAR = new Date().getFullYear();
 
 // Platform sütunu oturuma göre değişir: ziyaretçi notları görmediği için karşılama sayfasının bölümlerine gider
-// (adlar bölüm başlıklarıyla aynı). Kayıt / giriş zaten navbar'da var.
+// (adlar bölüm başlıklarıyla aynı). /upload ziyaretçiyi girişe yollar, girişten sonra yükleme sayfasına döner.
 const PLATFORM_LINKS = {
   guest: [
     { to: '/#features', label: 'Find Notes' },
+    { to: '/#profiles', label: 'Student Profiles' },
     { to: '/#community', label: 'Study Groups' },
+    { to: '/upload', label: 'Share Your Notes' },
+    { to: '/register', label: 'Sign Up' },
+    { to: '/login', label: 'Log In' },
   ],
   member: [
     { to: '/', label: 'Home Feed' },
@@ -74,11 +78,12 @@ function SocialLink({ href, label, icon: Icon }: { href: string; label: string; 
   );
 }
 
-export default function Footer() {
+// flush: üst boşluk yok (son bölümü bantla biten tam genişlik sayfalar)
+export default function Footer({ flush = false }: { flush?: boolean }) {
   const token = useAppSelector((state) => state.auth.token);
 
   return (
-    <footer className="mt-16 bg-navy-900 text-white">
+    <footer className={`${flush ? '' : 'mt-16'} bg-navy-900 text-white`}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-10">
         <div className="grid gap-10 pb-10 lg:grid-cols-[1.3fr_2.7fr]">
           <div>

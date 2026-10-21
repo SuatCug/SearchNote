@@ -11,21 +11,24 @@ import MobileTabBar from './MobileTabBar';
 // Giriş yapılmışsa telefonda alt sekme çubuğu çıkar; içerik onun altında kalmasın diye alttan boşluk bırakılır.
 // hero: navbar'ın hemen altına, kenardan kenara konan alan (ör. yasal sayfaların başlık bandı).
 // plain: gri yerine beyaz zemin ve üstte sadece logo (belge gibi okunan sayfalar, ör. yasal metinler).
+// full: beyaz zemin, içerik kenardan kenara; bölümler kendi genişliğini belirler (karşılama sayfası gibi bilgi sayfaları).
 export default function PageLayout({
   children,
   narrow = false,
   hero,
   plain = false,
+  full = false,
 }: {
   children: ReactNode;
   narrow?: boolean;
   hero?: ReactNode;
   plain?: boolean;
+  full?: boolean;
 }) {
   const token = useAppSelector((state) => state.auth.token);
 
   return (
-    <div className={`min-h-screen flex flex-col ${plain ? 'bg-white' : ''} ${token ? 'pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}>
+    <div className={`min-h-screen flex flex-col ${plain || full ? 'bg-white' : ''} ${token ? 'pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0' : ''}`}>
       {plain ? (
         <header className="sticky top-0 z-50 bg-navy-900 font-display">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center">
@@ -39,10 +42,14 @@ export default function PageLayout({
       )}
       <VerifyBanner />
       {hero}
-      <main className={`flex-1 w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 ${narrow ? 'max-w-3xl' : 'max-w-6xl'}`}>
-        {children}
-      </main>
-      <Footer />
+      {full ? (
+        <main className="flex-1 w-full overflow-x-hidden font-display text-[#1b1f24]">{children}</main>
+      ) : (
+        <main className={`flex-1 w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 ${narrow ? 'max-w-3xl' : 'max-w-6xl'}`}>
+          {children}
+        </main>
+      )}
+      <Footer flush={full} />
       {token && <MobileTabBar />}
     </div>
   );

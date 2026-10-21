@@ -3,6 +3,7 @@
 // Taslaktır; yayına almadan önce bir hukukçuya kontrol ettirilmelidir.
 
 import kvkkVideo from '@/assets/legal/kvkk.mp4';
+import termsVideo from '@/assets/legal/terms.mp4';
 
 // Paragraf (string) ya da madde listesi (string[]).
 export type LegalBlock = string | string[];
@@ -29,6 +30,7 @@ const terms: LegalDocument = {
   title: 'Terms of Use',
   intro:
     'These terms apply when you use the SearchNote website or mobile app. By creating an account you agree to them. Please read them together with the Privacy Policy, the KVKK Notice and the Community Guidelines.',
+  video: { src: termsVideo },
   sections: [
     {
       heading: 'About SearchNote',
@@ -133,7 +135,7 @@ const terms: LegalDocument = {
           'The founder can edit the group, approve or reject join requests, remove members, hand the group over to another member or delete it.',
           'When a group is deleted, the notes shared in it and its chat messages are deleted too, including notes shared by other members. Keep your own copy of anything you share in a group.',
           'Founders are expected to keep their groups on topic and remove members who break these terms.',
-          'You can leave a group at any time.',
+          'Members can leave a group at any time. The founder first has to hand the group over to another member or delete it.',
         ],
       ],
     },

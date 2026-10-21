@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronUp, GraduationCap, Landmark, LayoutGrid } from 'lucide-react';
+import { ChevronDown, ChevronUp, GraduationCap, Landmark, LayoutGrid, Smartphone } from 'lucide-react';
 import GuestNavbar from '@/components/layout/GuestNavbar';
 import Footer from '@/components/layout/Footer';
 import StudyTableIllustration from '@/components/landing/StudyTableIllustration';
@@ -8,11 +8,11 @@ import NotePageSample from '@/components/landing/NotePageSample';
 import GroupChatSample from '@/components/landing/GroupChatSample';
 import GoogleButton from '@/components/auth/GoogleButton';
 import Alert from '@/components/common/Alert';
-import { GOOGLE_CLIENT_ID } from '@/lib/constants';
+import { ANDROID_APP_URL, GOOGLE_CLIENT_ID } from '@/lib/constants';
 import sampleProfilePhoto from '@/assets/landing/sample-profile.jpg';
 
 // Giriş yapmamış ziyaretçilere ana sayfada gösterilen tanıtım sayfası.
-// Bölüm id'leri (top, features, departments, profiles, community) GuestNavbar ve Footer bağlantılarıyla eşleşir.
+// Bölüm id'leri (features, departments, profiles, community) Footer bağlantılarıyla eşleşir.
 // Ziyaretçi notlara göz atamadığı için ders/bölüm çipleri giriş sayfasına gider; girişten sonra o aramaya dönülür.
 
 export default function LandingPage() {
@@ -27,7 +27,7 @@ export default function LandingPage() {
         <AudienceSection />
         <ClosingSection />
       </main>
-      <Footer />
+      <Footer flush />
     </div>
   );
 }
@@ -120,6 +120,16 @@ function HeroSection() {
                 Join now
               </Link>
             </p>
+            {/* Telefondan girene doğrudan indirme bağlantısı; geniş ekranda navbar'daki "Get the app" QR'ı gösterir */}
+            <a
+              href={ANDROID_APP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="md:hidden mt-1 inline-flex items-center justify-center gap-2 text-[17px] font-semibold text-navy-900 underline-offset-2 hover:underline"
+            >
+              <Smartphone size={18} strokeWidth={1.8} aria-hidden="true" />
+              Get the Android app
+            </a>
           </div>
         </div>
 
@@ -141,7 +151,7 @@ const MORE_DEPARTMENTS = ['Civil Engineering', 'Mechanical Engineering', 'Indust
 type BrowseTab = 'courses' | 'departments';
 
 // Eskiden art arda iki ayrı çip bölümüydü; tek bölümde "Courses / Departments" sekmesiyle birleşti.
-// Navbar'daki "Departments" (/#departments) bağlantısı bölümü bölümler sekmesiyle açar.
+// /#departments adresi bölümü bölümler sekmesiyle, /#features dersler sekmesiyle açar.
 function BrowseSection() {
   const { hash } = useLocation();
   const [tab, setTab] = useState<BrowseTab>(hash === '#departments' ? 'departments' : 'courses');
@@ -363,6 +373,9 @@ function ClosingSection() {
             Every note here was shared by a student at a university in Türkiye. Read it in your browser, download it
             for free, and if a step isn&rsquo;t clear, message the person who wrote it.
           </p>
+          <Link to="/register" className={`${pillPrimary} self-start`}>
+            Join now
+          </Link>
         </div>
         <div className="flex-[1_1_480px] min-w-0">
           <NotePageSample />

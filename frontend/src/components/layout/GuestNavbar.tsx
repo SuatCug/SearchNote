@@ -1,28 +1,28 @@
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Info, Lightbulb, UserRound, Users, type LucideIcon } from 'lucide-react';
 import Logo from './Logo';
+import { AppIcon, CoursesIcon, GroupsIcon, PopularNotesIcon, StudentsIcon } from './GuestNavIcons';
+import Modal from '@/components/common/Modal';
+import appQr from '@/assets/landing/app-qr.png';
 
-type NavItem = { label: string; icon: LucideIcon } & ({ section: string } | { to: string });
-
-// Sıra karşılama sayfasındaki bölüm sırasını izler (Courses → Profiles → Groups), sonra ayrı sayfalar.
-// Dersler ve bölümler karşılama sayfasında tek bölüm (sekmeli) olduğu için tek bağlantı: "Courses".
-// "How it works" footer'daki gibi ayrı How It Works sayfasına gider (aynı ad iki farklı yere gitmesin).
-const NAV_ITEMS: NavItem[] = [
-  { section: 'features', label: 'Courses', icon: BookOpen },
-  { section: 'profiles', label: 'Profiles', icon: UserRound },
-  { section: 'community', label: 'Groups', icon: Users },
-  { to: '/how-it-works', label: 'How it works', icon: Lightbulb },
-  { to: '/about', label: 'About', icon: Info },
+// LinkedIn'in ziyaretçi navbar'ı gibi uygulamanın bölümleri. Ziyaretçi hiçbir şeyi hesapsız kullanamadığı için hepsi giriş
+// sayfasına gider; `from` giriş yapılınca o bölümün açılmasını sağlar.
+// How it works ve About footer'da.
+const NAV_ITEMS = [
+  { from: '/?all=1&sort=popular', label: 'Popular Notes', icon: PopularNotesIcon },
+  { from: '/?all=1', label: 'Courses', icon: CoursesIcon },
+  { from: '/', label: 'Students', icon: StudentsIcon },
+  { from: '/groups?tab=explore', label: 'Groups', icon: GroupsIcon },
 ];
 
 // Giriş yapmamış ziyaretçinin lacivert üst çubuğu (karşılama sayfası ve diğer tüm sayfalar).
-// Simgeli bağlantılar karşılama sayfasındaki bölümlere gider; telefonda gizlenir, sadece Sign up / Log in görünür.
+// Simgeli bağlantılar telefonda gizlenir, sadece Sign up / Log in görünür.
 export default function GuestNavbar() {
   const location = useLocation();
   const onLanding = location.pathname === '/' && !location.search;
+  const [appOpen, setAppOpen] = useState(false);
 
-  // Zaten karşılama sayfasındaysa (aynı #bölüm adresine tekrar tıklanınca da) doğrudan kaydırılır;
-  // başka sayfadan gelindiğinde kaydırmayı ScrollToTop adresteki #bölüme göre yapar.
+  // Karşılama sayfasındayken logo sayfanın başına kaydırır.
   const handleSectionClick = (id: string) => {
     if (!onLanding) return;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -30,7 +30,7 @@ export default function GuestNavbar() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-navy-900 font-display">
+    <header className="sticky top-0 z-50 bg-navy-900 font-sans">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
         {/* Diğer sayfalarla (giriş, footer, üye navbar'ı) aynı ikonlu logo */}
         <div className="flex min-h-11 items-center">
@@ -39,27 +39,22 @@ export default function GuestNavbar() {
 
         <nav aria-label="Main" className="flex items-center">
           <div className="hidden lg:flex items-center">
-            {NAV_ITEMS.map(({ label, icon: Icon, ...item }) => {
-              const active = 'to' in item && location.pathname === item.to;
-              const className = `flex min-h-11 flex-col items-center gap-0.5 px-4 py-1.5 text-xs transition-colors ${
-                active ? 'text-white' : 'text-[#c9d3e3] hover:text-white'
-              }`;
-              const content = (
-                <>
-                  <Icon size={24} strokeWidth={1.7} aria-hidden="true" />
-                  {label}
-                </>
-              );
-              return 'to' in item ? (
-                <Link key={label} to={item.to} className={className} aria-current={active ? 'page' : undefined}>
-                  {content}
-                </Link>
-              ) : (
-                <Link key={label} to={`/#${item.section}`} onClick={() => handleSectionClick(item.section)} className={className}>
-                  {content}
-                </Link>
-              );
-            })}
+            {NAV_ITEMS.map(({ from, label, icon: Icon }) => (
+              <Link
+                key={label}
+                to="/login"
+                state={{ from }}
+                className="flex min-h-11 flex-col items-center gap-0.5 px-4 py-1.5 text-[13px] text-white/70 hover:text-white transition-colors"
+              >
+                <Icon />
+                {label}
+              </Link>
+            ))}
+            {/* Uygulamayı indirmek hesap gerektirmez: giriş sayfasına değil QR penceresine açılır */}
+            <button type="button" onClick={() => setAppOpen(true)} className="flex min-h-11 flex-col items-center gap-0.5 px-4 py-1.5 text-[13px] text-white/70 hover:text-white transition-colors">
+              <AppIcon />
+              Get the app
+            </button>
             <span aria-hidden="true" className="ml-4 mr-5 h-10 w-px bg-white/25" />
           </div>
 
@@ -77,6 +72,17 @@ export default function GuestNavbar() {
           </Link>
         </nav>
       </div>
+
+      {appOpen && (
+        <Modal title="Get the app" size="sm" onClose={() => setAppOpen(false)}>
+          {/* QR, afişteki (SearchNote-afis.png) Android uygulaması koduyla aynı */}
+          <div className="flex flex-col items-center gap-2 px-6 pt-2 pb-4 text-center">
+            <img src={appQr} alt="QR code for the SearchNote Android app" width={192} height={192} className="mb-2 h-48 w-48" />
+            <p className="text-[15px] font-semibold text-gray-900">Scan to get the Android app</p>
+            <p className="text-sm text-gray-500">Point your Android phone&rsquo;s camera at the code. The app is not available for iPhone.</p>
+          </div>
+        </Modal>
+      )}
     </header>
   );
 }

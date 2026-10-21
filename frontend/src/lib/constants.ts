@@ -28,6 +28,10 @@ export const SOCIAL_LINKS = {
   contactEmail: '', // örn. iletisim@searchnote.app
 };
 
+// Android uygulamasının (APK) indirme sayfası. Afişteki ve navbar'daki QR kod (assets/landing/app-qr.png) bu adrese gider;
+// yeni build alınınca ikisi birlikte güncellenmeli. iPhone sürümü yok.
+export const ANDROID_APP_URL = 'https://drive.google.com/file/d/1i_iasEM7YJ-buJr26iujeOHSQHPBRHPA/view?usp=drive_link';
+
 export const EDU_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.edu\.tr$/;
 
 // Backend'deki REQUIRE_EDU_EMAIL ile aynı tutulmalı (frontend/.env: VITE_REQUIRE_EDU_EMAIL=true).
