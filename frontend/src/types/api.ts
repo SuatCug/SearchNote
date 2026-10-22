@@ -40,6 +40,7 @@ export interface UserCard {
   department?: string;
   followersCount?: number;
   isOwner?: boolean; // grup üye listesinde
+  isAdmin?: boolean; // grup üye listesinde
   isFollowing?: boolean; // sayfalı takipçi listelerinde (izleyici bu kişiyi takip ediyor mu)
 }
 
@@ -213,6 +214,7 @@ export interface GroupActivity {
   courseCode?: string;
   isFavorite?: boolean;
   isOwner: boolean;
+  isAdmin?: boolean;
   membersCount: number;
   notesCount: number;
   lastActivity: {
@@ -236,7 +238,7 @@ export interface GroupSummary {
   membersCount?: number;
 }
 
-// Kurucusu olduğum gruplara gelen istek (GET /groups/requests/incoming).
+// Kurucusu veya yöneticisi olduğum gruplara gelen istek (GET /groups/requests/incoming).
 export interface IncomingJoinRequest {
   group: GroupSummary;
   user: UserCard;
@@ -254,7 +256,8 @@ export interface SentJoinRequest {
 export interface GroupDetail extends GroupCard {
   updatedAt: ISODate;
   isOwner: boolean;
-  pendingCount?: number; // sadece kurucuya
+  isAdmin?: boolean; // eski sunucuda gelmeyebilir
+  pendingCount?: number; // sadece kurucu ve yöneticilere
 }
 
 export interface GroupMessage {

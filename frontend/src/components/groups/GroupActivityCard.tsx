@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Crown, FileText, Lock, MessageCircle } from 'lucide-react';
+import { Crown, FileText, Lock, MessageCircle, ShieldCheck } from 'lucide-react';
 import GroupIcon from './GroupIcon';
 import FavoriteButton from './FavoriteButton';
 import { formatCount } from '@/lib/format';
@@ -35,6 +35,11 @@ export default function GroupActivityCard({ group, index = 0 }: { group: GroupAc
           {group.isOwner && (
             <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
               <Crown size={11} /> Founder
+            </span>
+          )}
+          {group.isAdmin && !group.isOwner && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-navy-50 px-2 py-0.5 text-xs font-semibold text-navy-700">
+              <ShieldCheck size={11} /> Admin
             </span>
           )}
           {group.isPrivate && (

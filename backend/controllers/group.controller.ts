@@ -37,6 +37,13 @@ const assertOwner = (group: GroupDocument, userId: string) => {
   }
 };
 
+// Kurucu veya yönetici
+const assertManager = (group: GroupDocument, userId: string) => {
+  if (!group.canManage(userId)) {
+    throw new ApiError(403, 'Only the group founder or an admin can do this.');
+  }
+};
+
 // Özel grubun üye listesi sadece üyelere açıktır.
 const assertCanView = (group: GroupDocument, userId: string | undefined) => {
   if (group.isPrivate && !group.hasMember(userId)) {
@@ -54,8 +61,10 @@ const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined)
     favoriteGroupIds(viewer),
   ]);
   // lastReadAt üyelerin okuma zamanları, requestInfo istek mesajlarıdır; kimseye gösterilmez.
-  const { members, joinRequests, lastReadAt: _lastReadAt, requestInfo: _requestInfo, __v, ...rest } = group.toObject();
+  const { members, joinRequests, admins: _admins, lastReadAt: _lastReadAt, requestInfo: _requestInfo, __v, ...rest } =
+    group.toObject();
   const isOwner = viewerId ? group.owner._id.equals(viewerId) : false;
+  const isAdmin = group.isAdmin(viewerId);
   const mine = followed.get(String(group._id));
   return {
     ...rest,
@@ -69,8 +78,9 @@ const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined)
     isMember: group.hasMember(viewerId),
     isPending: group.hasPendingRequest(viewerId),
     isOwner,
-    // Bekleyen istek sayısını sadece kurucu görür.
-    ...(isOwner && { pendingCount: joinRequests.length }),
+    isAdmin,
+    // Bekleyen istek sayısını sadece kurucu ve yöneticiler görür.
+    ...((isOwner || isAdmin) && { pendingCount: joinRequests.length }),
   };
 };
 
@@ -225,13 +235,13 @@ const joinGroup = asyncHandler<AuthedRequest>(async (req, res) => {
       group.joinRequests.addToSet(userId);
     } else group.members.addToSet(userId);
     await group.save();
-    // Kurucuya: açık grupta yeni üye, özel grupta onay bekleyen istek bildirimi.
-    await notify({
-      recipient: group.owner,
-      actor: userId,
-      type: group.isPrivate ? 'group_request' : 'group_join',
-      group: group._id,
-    });
+    // Kurucuya: açık grupta yeni üye bildirimi. Özel grupta onay bekleyen istek kurucuya ve yöneticilere gider.
+    const recipients = group.isPrivate ? [group.owner, ...group.admins] : [group.owner];
+    await Promise.all(
+      recipients.map((recipient) =>
+        notify({ recipient, actor: userId, type: group.isPrivate ? 'group_request' : 'group_join', group: group._id })
+      )
+    );
   }
 
   const isMember = group.hasMember(userId);
@@ -264,6 +274,7 @@ const leaveGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   }
 
   group.members.pull(userId);
+  group.admins.pull(userId);
   await group.save();
 
   res.json({
@@ -273,7 +284,8 @@ const leaveGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   });
 });
 
-// Kurucu en üstte, diğer üyeler son katılan önce. Giriş yapmışsa her üyede izleyicinin onu takip edip etmediği de döner.
+// Kurucu en üstte, sonra yöneticiler, diğer üyeler son katılan önce.
+// Giriş yapmışsa her üyede izleyicinin onu takip edip etmediği de döner.
 const getMembers = asyncHandler(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   assertCanView(group, req.user?.id);
@@ -285,8 +297,13 @@ const getMembers = asyncHandler(async (req, res) => {
 
   const users = [...populated.members]
     .reverse()
-    .map((u) => ({ ...u.toObject(), isOwner: u._id.equals(group.owner), isFollowing: following.has(String(u._id)) }))
-    .sort((a, b) => Number(b.isOwner) - Number(a.isOwner));
+    .map((u) => ({
+      ...u.toObject(),
+      isOwner: u._id.equals(group.owner),
+      isAdmin: group.isAdmin(u._id),
+      isFollowing: following.has(String(u._id)),
+    }))
+    .sort((a, b) => Number(b.isOwner) - Number(a.isOwner) || Number(b.isAdmin) - Number(a.isAdmin));
 
   res.json({ success: true, data: { users } });
 });
@@ -312,19 +329,49 @@ const getFollowedMembers = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, data: { users } });
 });
 
+// Kurucu herkesi, yönetici sadece normal üyeleri çıkarabilir (başka bir yöneticiyi değil).
 const removeMember = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
-  assertOwner(group, req.user.id);
+  assertManager(group, req.user.id);
   if (group.owner.equals(req.params.userId)) throw new ApiError(400, 'The founder cannot be removed.');
   if (!group.hasMember(req.params.userId)) throw new ApiError(404, 'User is not a member.');
+  if (!group.owner.equals(req.user.id) && group.isAdmin(req.params.userId)) {
+    throw new ApiError(403, 'Only the founder can remove an admin.');
+  }
 
   group.members.pull(req.params.userId);
+  group.admins.pull(req.params.userId);
   await group.save();
 
   res.json({ success: true, message: 'Member removed.', data: { membersCount: group.members.length } });
 });
 
-// Kuruculuk sadece mevcut bir üyeye devredilebilir.
+// Kurucu bir üyeyi yönetici yapar.
+const addAdmin = asyncHandler<AuthedRequest>(async (req, res) => {
+  const group = await findGroupOrFail(req.params.id);
+  assertOwner(group, req.user.id);
+  if (group.owner.equals(req.params.userId)) throw new ApiError(400, 'The founder already manages the group.');
+  if (!group.hasMember(req.params.userId)) throw new ApiError(400, 'Only group members can be made admins.');
+
+  group.admins.addToSet(req.params.userId);
+  await group.save();
+
+  res.json({ success: true, message: 'Admin added.', data: { isAdmin: true } });
+});
+
+// Yöneticiliği kurucu geri alabilir; yönetici de kendi yöneticiliğini bırakabilir.
+const removeAdmin = asyncHandler<AuthedRequest>(async (req, res) => {
+  const group = await findGroupOrFail(req.params.id);
+  if (req.params.userId !== req.user.id) assertOwner(group, req.user.id);
+  if (!group.isAdmin(req.params.userId)) throw new ApiError(404, 'User is not an admin.');
+
+  group.admins.pull(req.params.userId);
+  await group.save();
+
+  res.json({ success: true, message: 'Admin removed.', data: { isAdmin: false } });
+});
+
+// Kuruculuk sadece mevcut bir üyeye devredilebilir. Yeni kurucu yönetici listesinden çıkar; eski kurucu normal üye olur.
 const transferOwnership = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   assertOwner(group, req.user.id);
@@ -333,15 +380,16 @@ const transferOwnership = asyncHandler<AuthedRequest>(async (req, res) => {
   }
 
   group.owner = new mongoose.Types.ObjectId(req.params.userId);
+  group.admins.pull(req.params.userId);
   await group.save();
 
   res.json({ success: true, message: 'Ownership transferred.', data: { group: await toGroupDetail(group, req.user.id) } });
 });
 
-// Özel grubun bekleyen katılma istekleri (sadece kurucu).
+// Özel grubun bekleyen katılma istekleri (kurucu ve yöneticiler).
 const getJoinRequests = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
-  assertOwner(group, req.user.id);
+  assertManager(group, req.user.id);
   await group.populate('joinRequests', USER_CARD_FIELDS);
 
   res.json({ success: true, data: { users: group.joinRequests } });
@@ -349,7 +397,7 @@ const getJoinRequests = asyncHandler<AuthedRequest>(async (req, res) => {
 
 const approveJoinRequest = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
-  assertOwner(group, req.user.id);
+  assertManager(group, req.user.id);
   if (!group.hasPendingRequest(req.params.userId)) throw new ApiError(404, 'Join request not found.');
 
   group.joinRequests.pull(req.params.userId);
@@ -363,7 +411,7 @@ const approveJoinRequest = asyncHandler<AuthedRequest>(async (req, res) => {
 
 const rejectJoinRequest = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
-  assertOwner(group, req.user.id);
+  assertManager(group, req.user.id);
   if (!group.hasPendingRequest(req.params.userId)) throw new ApiError(404, 'Join request not found.');
 
   group.joinRequests.pull(req.params.userId);
@@ -451,13 +499,13 @@ const sendMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   res.status(201).json({ success: true, data: { message } });
 });
 
-// Mesajı yazan kişi veya grubun kurucusu silebilir.
+// Mesajı yazan kişi, grubun kurucusu veya bir yönetici silebilir.
 const deleteMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   const message = await GroupMessage.findOne({ _id: req.params.messageId, group: group._id });
   if (!message) throw new ApiError(404, 'Message not found.');
 
-  if (!message.user.equals(req.user.id) && !group.owner.equals(req.user.id)) {
+  if (!message.user.equals(req.user.id) && !group.canManage(req.user.id)) {
     throw new ApiError(403, 'You are not allowed to delete this message.');
   }
 
@@ -508,7 +556,7 @@ const removeFavorite = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, data: { isFavorite: false } });
 });
 
-// Tüm gruplarıma gelen bekleyen istekler (kurucusu olduğum gruplar).
+// Tüm gruplarıma gelen bekleyen istekler (kurucusu veya yöneticisi olduğum gruplar).
 const getIncomingRequests = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, data: { requests: await listIncomingRequests(req.user.id) } });
 });
@@ -536,6 +584,8 @@ export {
   getMembers,
   getFollowedMembers,
   removeMember,
+  addAdmin,
+  removeAdmin,
   transferOwnership,
   getJoinRequests,
   approveJoinRequest,

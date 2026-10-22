@@ -52,7 +52,8 @@ interface ActionState {
 // Grup sohbeti: sadece üyelere gösterilir. Son 100 mesaj listelenir.
 // Mobil uygulamayla aynı özellikler: mesajı yanıtlama, kendi mesajını düzenleme ve mesaja not ekleme ("+").
 // Mesaj işlemleri DM'deki gibi: telefonda basılı tutunca, masaüstünde sağ tıkla ya da "⋯" ile açılan menüde.
-export default function GroupChat({ groupId, isOwner }: { groupId: string; isOwner: boolean }) {
+// canModerate: kurucu ve yöneticiler herkesin mesajını silebilir.
+export default function GroupChat({ groupId, canModerate }: { groupId: string; canModerate: boolean }) {
   const me = useAppSelector((state) => state.auth.user);
   const { data, isLoading, error } = useGetGroupMessagesQuery(groupId, {
     pollingInterval: useFallbackPolling(POLL_INTERVAL_MS),
@@ -390,7 +391,7 @@ export default function GroupChat({ groupId, isOwner }: { groupId: string; isOwn
             />
           }
           canEdit={action.message.user?._id === me?.id}
-          canDelete={action.message.user?._id === me?.id || isOwner}
+          canDelete={action.message.user?._id === me?.id || canModerate}
           onAction={handleAction}
           onClose={closeActions}
         />

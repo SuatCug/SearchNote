@@ -190,6 +190,11 @@ export const groupsApi = baseApi.injectEndpoints({
       query: ({ id, userId }) => ({ url: `/groups/${id}/members/${userId}`, method: 'DELETE' }),
       invalidatesTags: (_result, _error, { id }) => [{ type: 'Group', id }, { type: 'GroupMembers', id }, ...GROUP_LISTS],
     }),
+    // Yönetici yapma / yöneticiliği geri alma (yönetici kendi yöneticiliğini de bırakabilir).
+    setGroupAdmin: builder.mutation<ApiResponse<{ isAdmin: boolean }>, { id: string; userId: string; isAdmin: boolean }>({
+      query: ({ id, userId, isAdmin }) => ({ url: `/groups/${id}/admins/${userId}`, method: isAdmin ? 'POST' : 'DELETE' }),
+      invalidatesTags: (_result, _error, { id }) => [{ type: 'Group', id }, { type: 'GroupMembers', id }, ...GROUP_LISTS],
+    }),
     transferGroupOwnership: builder.mutation<GroupResponse, { id: string; userId: string }>({
       query: ({ id, userId }) => ({ url: `/groups/${id}/owner/${userId}`, method: 'POST' }),
       invalidatesTags: (_result, _error, { id }) => [{ type: 'Group', id }, { type: 'GroupMembers', id }, ...GROUP_LISTS],
@@ -241,5 +246,6 @@ export const {
   useEditGroupMessageMutation,
   useDeleteGroupMessageMutation,
   useRemoveGroupMemberMutation,
+  useSetGroupAdminMutation,
   useTransferGroupOwnershipMutation,
 } = groupsApi;

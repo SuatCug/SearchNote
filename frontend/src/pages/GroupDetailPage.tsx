@@ -73,14 +73,16 @@ export default function GroupDetailPage() {
   const activity = useGetMyGroupActivityQuery(undefined, { skip: !group?.isMember });
   const unread = activity.data?.data?.groups.find((g) => g._id === id)?.unreadCount ?? 0;
 
-  // Grup notları ve sohbet her grupta sadece üyelere açık; özel grubun üye listesi de öyle. İstekler sadece kurucuya.
+  // Grup notları ve sohbet her grupta sadece üyelere açık; özel grubun üye listesi de öyle.
+  // İstekler sadece kurucu ve yöneticilere.
   const canView = Boolean(group && (!group.isPrivate || group.isMember));
+  const canManage = Boolean(group && (group.isOwner || group.isAdmin));
   const tabs = group
     ? compact<GroupTab>([
         { key: 'notes', label: 'Notes', count: group.notesCount },
         { key: 'members', label: 'Members', count: group.membersCount },
         group.isMember && { key: 'chat', label: 'Chat', badge: unread },
-        group.isOwner && (group.isPrivate || (group.pendingCount ?? 0) > 0) && {
+        canManage && (group.isPrivate || (group.pendingCount ?? 0) > 0) && {
           key: 'requests',
           label: 'Requests',
           count: group.pendingCount,
@@ -270,10 +272,11 @@ export default function GroupDetailPage() {
                 groupId={group._id}
                 users={members.data?.data?.users}
                 isLoading={members.isLoading}
-                canManage={group.isOwner}
+                isOwner={group.isOwner}
+                isAdmin={group.isAdmin}
               />
             )}
-            {tab === 'chat' && <GroupChat groupId={group._id} isOwner={group.isOwner} />}
+            {tab === 'chat' && <GroupChat groupId={group._id} canModerate={canManage} />}
             {tab === 'requests' && <GroupRequestList groupId={group._id} />}
           </div>
         </>

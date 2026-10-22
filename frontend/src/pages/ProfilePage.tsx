@@ -89,17 +89,12 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
   useEffect(() => {
     if (loaded && scrollToNotes) contentRef.current?.scrollIntoView({ block: 'start' });
   }, [loaded, scrollToNotes]);
-  // Geniş ekranda "All" sekmesi yok (özet bilgiler soldaki sütunda): profil doğrudan Notes ile açılır.
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
 
   const isMe = data?.data?.isMe ?? false;
   const requested = searchParams.get('tab');
   const tab: ProfileTab =
-    requested === 'notes' || (isMe && (requested === 'saved' || requested === 'groups'))
-      ? requested
-      : isDesktop
-        ? 'notes'
-        : 'all';
+    requested === 'notes' || (isMe && (requested === 'saved' || requested === 'groups')) ? requested : 'all';
   // Aşağıdayken sekme değişirse notların / sekmenin başı en üste gelir (kısa sekmede sayfa dibine sıkışmasın).
   useKeepInViewOnChange(tab, contentRef);
 
@@ -113,8 +108,9 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
   }
 
   const { user } = data.data;
+  // Facebook'taki gibi ilk sekme "All": geniş ekranda soldaki Intro sütunu + son notlar.
   const tabs: { key: ProfileTab; label: string }[] = [
-    ...(isDesktop ? [] : [{ key: 'all' as const, label: 'All' }]),
+    { key: 'all', label: 'All' },
     { key: 'notes', label: 'Notes' },
     ...(isMe
       ? [
@@ -123,19 +119,19 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
         ]
       : []),
   ];
-  // Varsayılan sekme (telefonda All, geniş ekranda Notes) adreste yazılmaz.
-  const changeTab = (next: ProfileTab) =>
-    setSearchParams(next === 'all' || (isDesktop && next === 'notes') ? {} : { tab: next });
+  // Varsayılan sekme (All) adreste yazılmaz.
+  const changeTab = (next: ProfileTab) => setSearchParams(next === 'all' ? {} : { tab: next });
   // Soldaki "Courses shared" kartından: Notes sekmesi o dersle filtrelenmiş açılır.
-  const openCourse = (code: string) => setSearchParams(isDesktop ? { course: code } : { tab: 'notes', course: code });
+  const openCourse = (code: string) => setSearchParams({ tab: 'notes', course: code });
   // Başlıktaki "Notes" sayacı: Notes sekmesini açar ve notların olduğu bölüme kaydırır (yeni sekme çizilsin diye bir kare beklenir).
   const showNotes = () => {
     changeTab('notes');
     requestAnimationFrame(() => contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
+  // Telefon: mobil uygulamadaki gibi çipler.
   const tabChips = (
-    <div className="flex w-max min-w-full justify-center lg:justify-start gap-2 py-5 lg:py-3" role="tablist">
+    <div className="flex w-max min-w-full justify-center gap-2 py-5" role="tablist">
       {tabs.map((t) => (
         <button
           key={t.key}
@@ -152,6 +148,28 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
       ))}
     </div>
   );
+  // Geniş ekran (Facebook profil sekmeleri gibi): düz yazı; seçili sekme lacivert ve altında kartın
+  // alt kenarına oturan kalın çizgi, diğerlerinde üzerine gelince gri zemin.
+  const tabStrip = (
+    <div className="flex gap-1" role="tablist">
+      {tabs.map((t) => {
+        const selected = tab === t.key;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => changeTab(t.key)}
+            className={`relative py-1 text-[15px] font-semibold ${selected ? 'text-navy-700' : 'text-gray-600'}`}
+          >
+            <span className={`block rounded-lg px-4 py-3 transition-colors ${selected ? '' : 'hover:bg-gray-100'}`}>{t.label}</span>
+            {selected && <span className="absolute inset-x-0 bottom-0 h-[3px] rounded-t-full bg-navy-700" aria-hidden="true" />}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <PageLayout>
@@ -165,8 +183,7 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
           </div>
           <div className="-mx-4 mb-5 border-t border-gray-200 sm:mx-0" />
         </div>
-        {/* Başkasının profilinde geniş ekranda tek sekme (Notes) kalır: sekme satırı gösterilmez. */}
-        <DesktopHeader profile={data.data} onNotes={showNotes} tabs={tabs.length > 1 ? tabChips : null} />
+        <DesktopHeader profile={data.data} onNotes={showNotes} tabs={tabStrip} />
 
         <div className="lg:mt-6 lg:grid lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start lg:gap-6">
           <aside className="hidden lg:block space-y-4">
@@ -285,7 +302,7 @@ function ProfileHeader({ profile, onNotes }: { profile: ProfileData; onNotes: ()
 }
 
 // Geniş ekran başlığı (Facebook gibi): geniş lacivert bant, solda bandın alt kenarına taşan avatar,
-// yanında ad / okul / satır içi sayaçlar, sağda butonlar; altta ince çizgiyle ayrılmış sekme çipleri.
+// yanında ad / okul / satır içi sayaçlar, sağda butonlar; altta ince çizgiyle ayrılmış, alt çizgili sekmeler.
 function DesktopHeader({ profile, onNotes, tabs }: { profile: ProfileData; onNotes: () => void; tabs: ReactNode }) {
   const token = useAppSelector((state) => state.auth.token);
   const { user, stats, isFollowing, isBlocked, isMe } = profile;
@@ -304,13 +321,14 @@ function DesktopHeader({ profile, onNotes, tabs }: { profile: ProfileData; onNot
         <img src={logo} alt="" className="absolute -bottom-10 -right-6 h-48 w-48 rotate-[-12deg] opacity-[0.08] grayscale invert" aria-hidden="true" />
       </div>
       <div className="flex items-end gap-6 px-8">
-        <div className="relative -mt-[60px] shrink-0">
+        {/* pb: fotoğraf alttaki sekme çizgisine yapışmasın */}
+        <div className="relative -mt-[60px] shrink-0 pb-4">
           <UserAvatar user={user} className="!h-[168px] !w-[168px] !text-5xl ring-4 ring-white" />
           {isMe && (
             <Link
               to="/settings/profile"
               aria-label="Change profile photo"
-              className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-gray-100 text-gray-900 shadow hover:bg-gray-200"
+              className="absolute bottom-7 right-3 flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-gray-100 text-gray-900 shadow hover:bg-gray-200"
             >
               <Camera size={17} />
             </Link>
@@ -363,7 +381,7 @@ function DesktopHeader({ profile, onNotes, tabs }: { profile: ProfileData; onNot
           )}
         </div>
       </div>
-      {tabs ? <div className="mx-8 border-t border-gray-200">{tabs}</div> : <div className="h-2" />}
+      <div className="mx-8 border-t border-gray-200">{tabs}</div>
     </header>
   );
 }

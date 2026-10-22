@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Crown, MoreHorizontal, Search, UserMinus, Users } from 'lucide-react';
+import { Crown, MoreHorizontal, Search, ShieldCheck, ShieldOff, UserMinus, Users } from 'lucide-react';
 import { useAppSelector } from '@/app/hooks';
 import UserAvatar from '@/components/users/UserAvatar';
 import FollowButton from '@/components/users/FollowButton';
 import EmptyState from '@/components/common/EmptyState';
 import Spinner from '@/components/common/Spinner';
-import { useRemoveGroupMemberMutation, useTransferGroupOwnershipMutation } from '@/services/groupsApi';
+import {
+  useRemoveGroupMemberMutation,
+  useSetGroupAdminMutation,
+  useTransferGroupOwnershipMutation,
+} from '@/services/groupsApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { normalize } from '@/lib/schoolSearch';
 import { useDialog, type ConfirmOptions } from '@/components/common/DialogProvider';
@@ -16,7 +20,9 @@ interface GroupMemberListProps {
   groupId: string;
   users?: UserCard[];
   isLoading?: boolean;
-  canManage?: boolean;
+  // Kurucu: her şey; yönetici: normal üyeleri çıkarabilir ve kendi yöneticiliğini bırakabilir.
+  isOwner?: boolean;
+  isAdmin?: boolean;
 }
 
 type RunAction = (action: () => { unwrap: () => Promise<unknown> }, options: ConfirmOptions) => Promise<void>;
@@ -25,12 +31,13 @@ const PAGE_SIZE = 20;
 const FOLLOWED_PREVIEW = 5;
 
 // Grup üyeleri (Facebook grup üyeleri sayfası gibi): tek panelde başlık + arama, altında
-// "Founder", "People you follow" ve geri kalan üyeler bölümleri. Satırda takip butonu;
-// kurucuya ayrıca üye çıkarma ve kuruculuğu devretme seçenekleri olan bir "⋯" menüsü.
-export default function GroupMemberList({ groupId, users, isLoading, canManage }: GroupMemberListProps) {
+// "Founder", "Admins", "People you follow" ve geri kalan üyeler bölümleri. Satırda takip butonu;
+// yönetebilen kişiye ayrıca bir "⋯" menüsü (yönetici yapma, kuruculuğu devretme, gruptan çıkarma).
+export default function GroupMemberList({ groupId, users, isLoading, isOwner, isAdmin }: GroupMemberListProps) {
   const [removeMember, { isLoading: removing }] = useRemoveGroupMemberMutation();
+  const [setAdmin, { isLoading: settingAdmin }] = useSetGroupAdminMutation();
   const [transferOwnership, { isLoading: transferring }] = useTransferGroupOwnershipMutation();
-  const busy = removing || transferring;
+  const busy = removing || settingAdmin || transferring;
   const dialog = useDialog();
   const myId = useAppSelector((state) => state.auth.user?.id);
   const [query, setQuery] = useState('');
@@ -47,7 +54,17 @@ export default function GroupMemberList({ groupId, users, isLoading, canManage }
     }
   };
 
-  const rowProps = { groupId, myId, canManage, busy, run, transferOwnership, removeMember };
+  const rowProps = {
+    groupId,
+    myId,
+    viewerIsOwner: isOwner,
+    viewerIsAdmin: isAdmin,
+    busy,
+    run,
+    transferOwnership,
+    removeMember,
+    setAdmin,
+  };
   const q = normalize(query.trim());
   const matches = q
     ? users.filter((u) =>
@@ -56,8 +73,10 @@ export default function GroupMemberList({ groupId, users, isLoading, canManage }
     : [];
 
   const owner = users.filter((u) => u.isOwner);
-  const followed = users.filter((u) => !u.isOwner && u.isFollowing && u._id !== myId);
-  const others = users.filter((u) => !u.isOwner && !(u.isFollowing && u._id !== myId));
+  const admins = users.filter((u) => u.isAdmin && !u.isOwner);
+  const rest = users.filter((u) => !u.isOwner && !u.isAdmin);
+  const followed = rest.filter((u) => u.isFollowing && u._id !== myId);
+  const others = rest.filter((u) => !(u.isFollowing && u._id !== myId));
 
   return (
     <div className="card overflow-hidden">
@@ -90,6 +109,15 @@ export default function GroupMemberList({ groupId, users, isLoading, canManage }
         <>
           {owner.length > 0 && (
             <MemberSection title="Founder" note="Created and manages this group." users={owner} rowProps={rowProps} />
+          )}
+          {admins.length > 0 && (
+            <MemberSection
+              title="Admins"
+              count={admins.length}
+              note="Help the founder manage members and join requests."
+              users={admins}
+              rowProps={rowProps}
+            />
           )}
           {followed.length > 0 && (
             <MemberSection
@@ -167,17 +195,34 @@ interface MemberRowProps {
   groupId: string;
   user: UserCard;
   myId?: string;
-  canManage?: boolean;
+  viewerIsOwner?: boolean;
+  viewerIsAdmin?: boolean;
   busy: boolean;
   run: RunAction;
   transferOwnership: ReturnType<typeof useTransferGroupOwnershipMutation>[0];
   removeMember: ReturnType<typeof useRemoveGroupMemberMutation>[0];
+  setAdmin: ReturnType<typeof useSetGroupAdminMutation>[0];
 }
 
-// Tek üye satırı: büyük avatar, kalın ad, altında okul ve bölüm; sağda takip butonu ve (kurucuya) yönetim menüsü.
-function MemberRow({ groupId, user: u, myId, canManage, busy, run, transferOwnership, removeMember }: MemberRowProps) {
+// Tek üye satırı: büyük avatar, kalın ad, altında okul ve bölüm; sağda takip butonu ve (yönetebilene) yönetim menüsü.
+function MemberRow({
+  groupId,
+  user: u,
+  myId,
+  viewerIsOwner,
+  viewerIsAdmin,
+  busy,
+  run,
+  transferOwnership,
+  removeMember,
+  setAdmin,
+}: MemberRowProps) {
   const [open, setOpen] = useState(false);
   const isMe = u._id === myId;
+  // Kurucu kendisi dışında herkesi, yönetici sadece normal üyeleri çıkarabilir; yönetici kendi yöneticiliğini bırakabilir.
+  const canRemove = !u.isOwner && !isMe && (viewerIsOwner || (viewerIsAdmin && !u.isAdmin));
+  const canStepDown = isMe && u.isAdmin;
+  const hasMenu = (viewerIsOwner && !u.isOwner) || canRemove || canStepDown;
 
   const act = (action: () => void) => {
     setOpen(false);
@@ -192,6 +237,11 @@ function MemberRow({ groupId, user: u, myId, canManage, busy, run, transferOwner
           {u.isOwner && (
             <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-white ring-2 ring-white">
               <Crown size={11} />
+            </span>
+          )}
+          {u.isAdmin && !u.isOwner && (
+            <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-navy-600 text-white ring-2 ring-white">
+              <ShieldCheck size={11} />
             </span>
           )}
         </span>
@@ -210,7 +260,7 @@ function MemberRow({ groupId, user: u, myId, canManage, busy, run, transferOwner
 
       {!isMe && <FollowButton userId={u._id} isFollowing={Boolean(u.isFollowing)} name={u.fullName} variant="list" />}
 
-      {canManage && !u.isOwner && (
+      {hasMenu && (
         <div className="relative shrink-0">
           <button
             type="button"
@@ -226,38 +276,96 @@ function MemberRow({ groupId, user: u, myId, canManage, busy, run, transferOwner
             <>
               <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
               <div className="sheet-up absolute right-0 top-full mt-1.5 z-20 w-56 rounded-2xl bg-white shadow-xl ring-1 ring-black/5 py-1.5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    act(() =>
-                      run(() => transferOwnership({ id: groupId, userId: u._id }), {
-                        title: `Make ${u.fullName} the founder?`,
-                        message: 'They will manage the group. You will stay in it as a regular member.',
-                        confirmLabel: 'Make founder',
-                      })
-                    )
-                  }
-                  className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50"
-                >
-                  <Crown size={15} className="text-amber-600" /> Make founder
-                </button>
-                <div className="my-1 border-t border-gray-100" />
-                <button
-                  type="button"
-                  onClick={() =>
-                    act(() =>
-                      run(() => removeMember({ id: groupId, userId: u._id }), {
-                        title: `Remove ${u.fullName}?`,
-                        message: 'They will no longer be a member of this group.',
-                        confirmLabel: 'Remove',
-                        tone: 'danger',
-                      })
-                    )
-                  }
-                  className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-rose-600 hover:bg-rose-50"
-                >
-                  <UserMinus size={15} /> Remove from group
-                </button>
+                {viewerIsOwner && !u.isOwner && (
+                  <>
+                    {u.isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          act(() =>
+                            run(() => setAdmin({ id: groupId, userId: u._id, isAdmin: false }), {
+                              title: `Remove ${u.fullName} as admin?`,
+                              message: 'They will stay in the group as a regular member.',
+                              confirmLabel: 'Remove admin',
+                            })
+                          )
+                        }
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50"
+                      >
+                        <ShieldOff size={15} className="text-gray-500" /> Remove as admin
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          act(() =>
+                            run(() => setAdmin({ id: groupId, userId: u._id, isAdmin: true }), {
+                              title: `Make ${u.fullName} an admin?`,
+                              message: 'Admins can remove members, approve join requests and delete chat messages.',
+                              confirmLabel: 'Make admin',
+                            })
+                          )
+                        }
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50"
+                      >
+                        <ShieldCheck size={15} className="text-navy-600" /> Make admin
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        act(() =>
+                          run(() => transferOwnership({ id: groupId, userId: u._id }), {
+                            title: `Make ${u.fullName} the founder?`,
+                            message: 'They will manage the group. You will stay in it as a regular member.',
+                            confirmLabel: 'Make founder',
+                          })
+                        )
+                      }
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50"
+                    >
+                      <Crown size={15} className="text-amber-600" /> Make founder
+                    </button>
+                  </>
+                )}
+                {canStepDown && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      act(() =>
+                        run(() => setAdmin({ id: groupId, userId: u._id, isAdmin: false }), {
+                          title: 'Step down as admin?',
+                          message: 'You will stay in the group as a regular member.',
+                          confirmLabel: 'Step down',
+                        })
+                      )
+                    }
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50"
+                  >
+                    <ShieldOff size={15} className="text-gray-500" /> Step down as admin
+                  </button>
+                )}
+                {canRemove && (
+                  <>
+                    {viewerIsOwner && <div className="my-1 border-t border-gray-100" />}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        act(() =>
+                          run(() => removeMember({ id: groupId, userId: u._id }), {
+                            title: `Remove ${u.fullName}?`,
+                            message: 'They will no longer be a member of this group.',
+                            confirmLabel: 'Remove',
+                            tone: 'danger',
+                          })
+                        )
+                      }
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-rose-600 hover:bg-rose-50"
+                    >
+                      <UserMinus size={15} /> Remove from group
+                    </button>
+                  </>
+                )}
               </div>
             </>
           )}

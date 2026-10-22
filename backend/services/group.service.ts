@@ -144,7 +144,7 @@ const UNREAD_CAP = 99;
 const listMyGroupActivity = async (userId: string) => {
   const me = new mongoose.Types.ObjectId(userId);
   const groups = await Group.find({ members: me })
-    .select('name isPrivate owner members lastReadAt lastActivityAt createdAt color courseCode')
+    .select('name isPrivate owner admins members lastReadAt lastActivityAt createdAt color courseCode')
     .lean();
   if (!groups.length) return [];
   const favorites = new Set((await favoriteGroupIds(userId)).map(String));
@@ -210,6 +210,7 @@ const listMyGroupActivity = async (userId: string) => {
       courseCode: g.courseCode,
       isFavorite: favorites.has(id),
       isOwner: String(g.owner) === userId,
+      isAdmin: (g.admins ?? []).some((id) => String(id) === userId),
       membersCount: g.members?.length ?? 0,
       notesCount: note?.count ?? 0,
       lastActivity,
@@ -260,9 +261,9 @@ const groupSummary = (g: { _id: unknown; name: string; color?: string; courseCod
 const newestFirst = (a: { createdAt: Date | null }, b: { createdAt: Date | null }) =>
   (b.createdAt ? new Date(b.createdAt).getTime() : 0) - (a.createdAt ? new Date(a.createdAt).getTime() : 0);
 
-// Kurucusu olduğum gruplara gelen bekleyen katılma istekleri, en yenisi üstte.
+// Kurucusu veya yöneticisi olduğum gruplara gelen bekleyen katılma istekleri, en yenisi üstte.
 const listIncomingRequests = async (userId: string) => {
-  const groups = await Group.find({ owner: userId, 'joinRequests.0': { $exists: true } })
+  const groups = await Group.find({ $or: [{ owner: userId }, { admins: userId }], 'joinRequests.0': { $exists: true } })
     .select('name color courseCode isPrivate joinRequests requestInfo')
     .populate<{ joinRequests: { _id: unknown; fullName: string }[] }>('joinRequests', REQUEST_USER_FIELDS)
     .lean();

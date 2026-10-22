@@ -43,6 +43,8 @@ router.delete('/:id/join', idParamRules, validate, authenticate, groupController
 // Üye yönetimi (sadece kurucu)
 router.delete('/:id/members/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.removeMember);
 router.post('/:id/owner/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.transferOwnership);
+router.post('/:id/admins/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.addAdmin);
+router.delete('/:id/admins/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.removeAdmin);
 
 // Özel grup katılma istekleri (sadece kurucu)
 router.get('/:id/requests', idParamRules, validate, authenticate, groupController.getJoinRequests);

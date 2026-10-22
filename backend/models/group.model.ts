@@ -10,6 +10,7 @@ export interface IGroup {
   description: string;
   owner: Types.ObjectId;
   members: Types.ObjectId[];
+  admins: Types.ObjectId[];
   isPrivate: boolean;
   joinRequests: Types.ObjectId[];
   requestInfo: Map<string, { message: string; createdAt: Date }>;
@@ -25,11 +26,14 @@ export interface IGroup {
 interface IGroupMethods {
   hasMember(userId: IdLike | undefined): boolean;
   hasPendingRequest(userId: IdLike | undefined): boolean;
+  isAdmin(userId: IdLike | undefined): boolean;
+  canManage(userId: IdLike | undefined): boolean;
 }
 
 // Dokümanda dizi alanları Mongoose dizisidir (addToSet / pull kullanılabilir).
 type GroupDocumentOverrides = {
   members: Types.Array<Types.ObjectId>;
+  admins: Types.Array<Types.ObjectId>;
   joinRequests: Types.Array<Types.ObjectId>;
 };
 
@@ -43,6 +47,9 @@ const groupSchema = new Schema<IGroup, GroupModel, IGroupMethods>(
     // Grubun kurucusu: grubu düzenleyebilir, silebilir ve üyeleri çıkarabilir. Kurucu da members içindedir.
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     members: [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
+    // Kurucunun yönetici yaptığı üyeler: üye çıkarabilir, katılma isteklerini yönetir, sohbetten mesaj silebilir.
+    // Grubu düzenlemek, silmek ve yönetici atamak sadece kurucuya aittir. Yöneticiler de members içindedir.
+    admins: [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
     // Özel grup: katılmak için kurucunun onayı gerekir; notlar, üyeler ve sohbet sadece üyelere görünür.
     isPrivate: { type: Boolean, default: false },
     // Özel gruba gönderilmiş, kurucunun onayını bekleyen katılma istekleri.
@@ -71,6 +78,13 @@ const groupSchema = new Schema<IGroup, GroupModel, IGroupMethods>(
       },
       hasPendingRequest(userId) {
         return Boolean(userId) && this.joinRequests.some((id) => id.equals(userId));
+      },
+      isAdmin(userId) {
+        return Boolean(userId) && this.admins.some((id) => id.equals(userId));
+      },
+      // Kurucu veya yönetici
+      canManage(userId) {
+        return Boolean(userId) && (this.owner.equals(String(userId)) || this.admins.some((id) => id.equals(userId)));
       },
     },
   }
