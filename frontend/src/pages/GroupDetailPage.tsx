@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Check,
@@ -91,6 +91,10 @@ export default function GroupDetailPage() {
   const tabsRef = useRef<HTMLDivElement>(null);
   // Aşağıdayken sekme değişirse sekme çubuğu en üste gelir; kısa sekmede sayfa dibine sıkışmasın.
   useKeepInViewOnChange(tab, tabsRef);
+  // Sohbet açılınca sekme çubuğu her zaman en üste gelir; sohbet ekranın geri kalanını doldurur (sayfa değil, mesajlar kayar).
+  useLayoutEffect(() => {
+    if (tab === 'chat') tabsRef.current?.scrollIntoView({ block: 'start' });
+  }, [tab]);
 
   const notes = useGetGroupNotesQuery({ id, page, fileType }, { skip: !group?.isMember || tab !== 'notes' });
   const members = useGetGroupMembersQuery(id, { skip: !canView || tab !== 'members' });
@@ -215,8 +219,15 @@ export default function GroupDetailPage() {
             ))}
           </div>
 
-          {/* Sohbetin kendi yüksekliği var; diğer sekmelerde en az ekran boyu (bkz. useKeepInViewOnChange). */}
-          <div className={`mt-6 ${tab === 'chat' ? '' : 'min-h-[calc(100vh-12rem)]'}`}>
+          {/* Sohbet sekmesi sohbet kutusuyla aynı yükseklikte (yüklenirken de, sekme çubuğu en üste kayabilsin);
+              diğer sekmelerde en az ekran boyu (bkz. useKeepInViewOnChange). */}
+          <div
+            className={
+              tab === 'chat'
+                ? 'mt-4 min-h-[calc(100dvh-13rem-env(safe-area-inset-bottom))] md:min-h-[calc(100dvh-9rem)]'
+                : 'mt-6 min-h-[calc(100vh-12rem)]'
+            }
+          >
             {tab === 'notes' && !group.isMember && <LockedNotice group={group} />}
             {tab === 'notes' && group.isMember && (
               <>

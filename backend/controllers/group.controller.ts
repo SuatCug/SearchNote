@@ -273,14 +273,19 @@ const leaveGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   });
 });
 
-// Kurucu en üstte, diğer üyeler katılım sırasına göre.
+// Kurucu en üstte, diğer üyeler son katılan önce. Giriş yapmışsa her üyede izleyicinin onu takip edip etmediği de döner.
 const getMembers = asyncHandler(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   assertCanView(group, req.user?.id);
-  const populated = await group.populate<{ members: UserDocument[] }>('members', USER_CARD_FIELDS);
+  const [populated, viewer] = await Promise.all([
+    group.populate<{ members: UserDocument[] }>('members', USER_CARD_FIELDS),
+    req.user ? User.findById(req.user.id).select('following').lean() : null,
+  ]);
+  const following = new Set((viewer?.following ?? []).map(String));
 
-  const users = populated.members
-    .map((u) => ({ ...u.toObject(), isOwner: u._id.equals(group.owner) }))
+  const users = [...populated.members]
+    .reverse()
+    .map((u) => ({ ...u.toObject(), isOwner: u._id.equals(group.owner), isFollowing: following.has(String(u._id)) }))
     .sort((a, b) => Number(b.isOwner) - Number(a.isOwner));
 
   res.json({ success: true, data: { users } });
