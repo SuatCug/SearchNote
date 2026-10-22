@@ -9,7 +9,7 @@ import {
   sendPasswordResetCode,
   sendSignupCode as sendSignupCodeEmail,
 } from '../services/mail.service.ts';
-import { verifyGoogleIdToken } from '../services/google.service.ts';
+import { verifyGoogleAccessToken, verifyGoogleIdToken } from '../services/google.service.ts';
 import { User, SignupCode } from '../models/index.ts';
 import { requireEduEmail, requireEmailVerification } from '../config/features.ts';
 import { EDU_EMAIL_REGEX, type UserDocument } from '../models/user.model.ts';
@@ -247,7 +247,10 @@ const completeSignup = asyncHandler(async (req, res) => {
 
 // 1) idToken'ı doğrular. Kayıtlıysa { user, token }, değilse { needsSignup, signupToken, profile } döner.
 const googleSignIn = asyncHandler(async (req, res) => {
-  const profile = await verifyGoogleIdToken(req.body.idToken);
+  // Mobil idToken, web'in kendi butonu accessToken gönderir.
+  const profile = req.body.idToken
+    ? await verifyGoogleIdToken(req.body.idToken)
+    : await verifyGoogleAccessToken(req.body.accessToken);
 
   const user =
     (await User.findOne({ googleId: profile.googleId })) ?? (await User.findOne({ email: profile.email }));

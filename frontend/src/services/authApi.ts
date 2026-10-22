@@ -82,8 +82,9 @@ export const authApi = baseApi.injectEndpoints({
     }),
 
     // "Continue with Google": Google'dan alınan idToken (credential) backend'de doğrulanır.
-    googleSignIn: builder.mutation<ApiResponse<GoogleSignInResult>, string>({
-      query: (idToken) => ({ url: '/auth/google', method: 'POST', body: { idToken } }),
+    // Web kendi butonundan accessToken gönderir (mobil idToken); backend ikisini de kabul eder.
+    googleSignIn: builder.mutation<ApiResponse<GoogleSignInResult>, { idToken: string } | { accessToken: string }>({
+      query: (body) => ({ url: '/auth/google', method: 'POST', body }),
     }),
     completeGoogleSignup: builder.mutation<
       AuthResponse,

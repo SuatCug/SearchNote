@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import { UserCheck, UserPlus } from 'lucide-react';
@@ -39,10 +40,20 @@ export default function FollowButton({ userId, isFollowing, name, compact = fals
   const [toggleFollow, { isLoading }] = useToggleFollowMutation();
   const dialog = useDialog();
 
+  // Buton sunucuyu beklemeden değişir (iyimser); listeler yenilenip yeni değer prop olarak gelince yerel durum bırakılır.
+  const [optimistic, setOptimistic] = useState<boolean | null>(null);
+  const [prevIsFollowing, setPrevIsFollowing] = useState(isFollowing);
+  if (isFollowing !== prevIsFollowing) {
+    setPrevIsFollowing(isFollowing);
+    setOptimistic(null);
+  }
+  const following = optimistic ?? isFollowing;
+
   const handleClick = async () => {
     if (!token) return navigate('/login');
+    if (isLoading) return;
     if (
-      isFollowing &&
+      following &&
       !(await dialog.confirm({
         title: name ? `Unfollow ${name}?` : 'Unfollow this user?',
         message: "Their new notes won't show up in your Following feed anymore.",
@@ -52,10 +63,12 @@ export default function FollowButton({ userId, isFollowing, name, compact = fals
     ) {
       return;
     }
+    setOptimistic(!following);
     try {
-      await toggleFollow({ id: userId, following: isFollowing }).unwrap();
-      onChange?.(!isFollowing);
+      await toggleFollow({ id: userId, following }).unwrap();
+      onChange?.(!following);
     } catch (err) {
+      setOptimistic(null);
       dialog.alert({ message: getErrorMessage(err) });
     }
   };
@@ -66,17 +79,17 @@ export default function FollowButton({ userId, isFollowing, name, compact = fals
     <button
       type="button"
       onClick={handleClick}
-      disabled={isLoading || Boolean(token && !isVerified)}
+      disabled={Boolean(token && !isVerified)}
       title={token && !isVerified ? 'Verify your email to follow' : undefined}
       className={
         custom
-          ? `${custom.base} ${isFollowing ? custom.following : custom.follow}`
-          : `${isFollowing ? 'btn-secondary' : 'btn-primary'} ${compact ? 'px-2.5 py-1.5 text-xs gap-1' : ''}`
+          ? `${custom.base} ${following ? custom.following : custom.follow}`
+          : `${following ? 'btn-secondary' : 'btn-primary'} ${compact ? 'px-2.5 py-1.5 text-xs gap-1' : ''}`
       }
     >
       {variant !== 'list' &&
-        (isFollowing ? <UserCheck size={compact ? 14 : 16} /> : <UserPlus size={compact ? 14 : 16} />)}
-      {isFollowing ? 'Following' : 'Follow'}
+        (following ? <UserCheck size={compact ? 14 : 16} /> : <UserPlus size={compact ? 14 : 16} />)}
+      {following ? 'Following' : 'Follow'}
     </button>
   );
 }

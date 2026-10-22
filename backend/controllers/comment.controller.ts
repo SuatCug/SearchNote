@@ -1,6 +1,6 @@
 import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
-import { Note } from '../models/index.ts';
+import { Note, User } from '../models/index.ts';
 import { assertNoteVisible } from '../services/note.service.ts';
 import { notify, removeNotification } from '../services/notification.service.ts';
 
@@ -15,13 +15,16 @@ const addComment = asyncHandler<AuthedRequest>(async (req, res) => {
   await note.save();
 
   const comment = note.comments[note.comments.length - 1];
-  await notify({ recipient: note.author, actor: req.user.id, type: 'comment', note: note._id, text: req.body.text });
-  await note.populate({ path: 'comments.user', select: USER_CARD_FIELDS });
+  // Notun bütün yorumlarını populate etmek yerine sadece yeni yorumun sahibi okunur (bildirimle aynı anda).
+  const [author] = await Promise.all([
+    User.findById(req.user.id).select(USER_CARD_FIELDS).lean(),
+    notify({ recipient: note.author, actor: req.user.id, type: 'comment', note: note._id, text: req.body.text }),
+  ]);
 
   res.status(201).json({
     success: true,
     message: 'Comment added.',
-    data: { comment: note.comments.id(comment._id), commentsCount: note.comments.length },
+    data: { comment: { ...comment.toObject(), user: author }, commentsCount: note.comments.length },
   });
 });
 

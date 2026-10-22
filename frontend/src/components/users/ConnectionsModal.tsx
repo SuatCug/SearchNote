@@ -207,6 +207,9 @@ function emptyText(type: ConnectionType, isMe: boolean) {
 function FollowBackLink({ user }: { user: UserCard }) {
   const dialog = useDialog();
   const [toggleFollow, { isLoading }] = useToggleFollowMutation();
+  // Takip edince bağlantı sunucuyu beklemeden kaybolur; hata olursa geri gelir.
+  const [followed, setFollowed] = useState(false);
+  if (followed) return null;
   return (
     <>
       <span className="text-gray-900" aria-hidden="true">
@@ -216,9 +219,11 @@ function FollowBackLink({ user }: { user: UserCard }) {
         type="button"
         disabled={isLoading}
         onClick={async () => {
+          setFollowed(true);
           try {
             await toggleFollow({ id: user._id, following: false }).unwrap();
           } catch (err) {
+            setFollowed(false);
             dialog.alert({ message: getErrorMessage(err) });
           }
         }}

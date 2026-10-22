@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Pencil, Reply, Trash2 } from 'lucide-react';
+import { Copy, CornerUpRight, Pencil, Reply, Trash2 } from 'lucide-react';
 
-export type MessageAction = 'reply' | 'copy' | 'edit' | 'delete';
+export type MessageAction = 'reply' | 'forward' | 'copy' | 'edit' | 'delete';
 
 interface MessageActionMenuProps {
   // Basılı tutulan balonun ekrandaki konumu: kopyası aynı yere çizilir, menü altına (sığmazsa üstüne) açılır.
@@ -94,6 +94,7 @@ export default function MessageActionMenu({ rect, mine, bubble, canEdit, canDele
         style={{ top: menuTop ?? -9999, left, width, visibility: menuTop === null ? 'hidden' : 'visible' }}
       >
         {item('reply', 'Reply', <Reply size={19} />)}
+        {item('forward', 'Forward', <CornerUpRight size={19} />)}
         {item('copy', 'Copy', <Copy size={19} />)}
         {canEdit && item('edit', 'Edit', <Pencil size={18} />)}
         {canDelete && (

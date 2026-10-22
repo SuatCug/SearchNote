@@ -20,6 +20,19 @@ const touchActivity = (user: { _id: Types.ObjectId; lastActiveAt?: Date | null }
   User.updateOne({ _id: user._id }, { $set: { lastActiveAt: new Date(now) } }).catch(() => {});
 };
 
+// Oturum sahibini okur. İçerik isteklerinde önce blockUnverified, sonra authenticate / optionalAuth çalıştığı için
+// sonuç istek başına saklanır: kullanıcı veritabanından bir kez okunur.
+const findSessionUser = (id: string) => User.findById(id).select('isVerified lastActiveAt').exec();
+const sessionUsers = new WeakMap<Request, ReturnType<typeof findSessionUser>>();
+const loadSessionUser = (req: Request, id: string) => {
+  let pending = sessionUsers.get(req);
+  if (!pending) {
+    pending = findSessionUser(id);
+    sessionUsers.set(req, pending);
+  }
+  return pending;
+};
+
 // İstek başlığındaki JWT'yi doğrular ve req.user'ı doldurur.
 const authenticate = asyncHandler(async (req, _res, next) => {
   const token = getBearerToken(req);
@@ -34,7 +47,7 @@ const authenticate = asyncHandler(async (req, _res, next) => {
     throw new ApiError(401, 'Invalid or expired session. Please log in again.');
   }
 
-  const user = await User.findById(decoded.id).select('isVerified lastActiveAt');
+  const user = await loadSessionUser(req, decoded.id);
   if (!user) {
     throw new ApiError(401, 'User not found.');
   }
@@ -58,7 +71,7 @@ const optionalAuth = asyncHandler(async (req, _res, next) => {
     return next();
   }
 
-  const user = await User.findById(decoded.id).select('isVerified lastActiveAt');
+  const user = await loadSessionUser(req, decoded.id);
   if (user) {
     req.user = { id: user._id.toString(), isVerified: user.hasVerifiedAccess() };
     touchActivity(user);
@@ -80,7 +93,7 @@ const blockUnverified = asyncHandler(async (req, _res, next) => {
     return next();
   }
 
-  const user = await User.findById(decoded.id).select('isVerified');
+  const user = await loadSessionUser(req, decoded.id);
   if (user && !user.hasVerifiedAccess()) {
     throw new ApiError(403, 'Please verify your email address to continue.');
   }

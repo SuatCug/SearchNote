@@ -24,11 +24,23 @@ export default function JoinGroupButton({
   const [toggleMembership, { isLoading }] = useToggleMembershipMutation();
   const [requestOpen, setRequestOpen] = useState(false);
   const dialog = useDialog();
-  const { _id: id, isMember, isPending, isPrivate } = group;
+  const { _id: id, isPrivate } = group;
+
+  // Buton sunucuyu beklemeden değişir; grup verisi yenilenip yeni üyelik durumu gelince yerel durum bırakılır.
+  const membership = `${group.isMember}-${group.isPending}`;
+  const [optimistic, setOptimistic] = useState<{ isMember: boolean; isPending: boolean } | null>(null);
+  const [prevMembership, setPrevMembership] = useState(membership);
+  if (membership !== prevMembership) {
+    setPrevMembership(membership);
+    setOptimistic(null);
+  }
+  const isMember = optimistic?.isMember ?? group.isMember;
+  const isPending = optimistic?.isPending ?? group.isPending;
   const leave = isMember || isPending;
 
   const handleClick = async () => {
     if (!token) return navigate('/login', { state: { from: `/groups/${id}` } });
+    if (isLoading) return;
     if (isPrivate && !leave) return setRequestOpen(true);
     if (
       isMember &&
@@ -54,9 +66,11 @@ export default function JoinGroupButton({
     ) {
       return;
     }
+    setOptimistic({ isMember: !leave, isPending: false });
     try {
       await toggleMembership({ id, leave }).unwrap();
     } catch (err) {
+      setOptimistic(null);
       dialog.alert({ message: getErrorMessage(err) });
     }
   };
@@ -78,7 +92,7 @@ export default function JoinGroupButton({
       <button
         type="button"
         onClick={handleClick}
-        disabled={isLoading || needsVerify}
+        disabled={needsVerify}
         title={needsVerify ? 'Verify your email to join groups' : isPending ? 'Click to cancel your request' : undefined}
         className={leave ? 'btn-secondary' : 'btn-primary'}
       >

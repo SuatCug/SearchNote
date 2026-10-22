@@ -34,6 +34,7 @@ import ChatAvatar from './ChatAvatar';
 import MessageBubble from './MessageBubble';
 import MessageActionMenu, { type MessageAction } from './MessageActionMenu';
 import NotePickerSheet from './NotePickerSheet';
+import ForwardSheet, { type SendItem } from './ForwardSheet';
 import ComposerBanner from './ComposerBanner';
 import BlockButton from '@/components/users/BlockButton';
 import { useDialog } from '@/components/common/DialogProvider';
@@ -50,6 +51,7 @@ import {
 } from '@/services/messagesApi';
 import { useGetNoteQuery } from '@/services/notesApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
+import { newClientId } from '@/lib/clientId';
 import { clockTime, dayLabel, isSameDay, lastSeenLabel } from '@/lib/chatTime';
 import { resetTypingThrottle, sendTyping, useFallbackPolling, useTypingConversations } from '@/lib/socket';
 import type { DirectMessage } from '@/types/api';
@@ -79,9 +81,6 @@ interface PendingMessage {
   failed: boolean;
 }
 
-const newClientId = () =>
-  typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
 // Birebir sohbet. ?note=<id> ile açıldıysa ("Ask the author" ya da "+") not, gönderilecek mesaja iliştirilir.
 export default function ChatPanel({ conversationId }: { conversationId: string }) {
   const me = useAppSelector((state) => state.auth.user);
@@ -110,6 +109,7 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
   const [editing, setEditing] = useState<DirectMessage | null>(null);
   const [action, setAction] = useState<ActionState | null>(null);
   const [toast, setToast] = useState('');
+  const [forwarding, setForwarding] = useState<SendItem | null>(null);
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -353,6 +353,9 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
       setEditing(null);
       setReplyTo(message);
       focusInput();
+    } else if (kind === 'forward') {
+      // Yazısız (sadece not içeren) mesaj, not paylaşımı gibi iletilir.
+      setForwarding({ text: message.text || undefined, note: message.note && { _id: message.note._id, title: message.note.title } });
     } else if (kind === 'copy') {
       try {
         await navigator.clipboard.writeText(message.text);
@@ -775,6 +778,7 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
       )}
 
       {notePickerOpen && <NotePickerSheet onPick={attachNote} onClose={() => setNotePickerOpen(false)} />}
+      {forwarding && <ForwardSheet item={forwarding} onClose={() => setForwarding(null)} />}
     </div>
   );
 }

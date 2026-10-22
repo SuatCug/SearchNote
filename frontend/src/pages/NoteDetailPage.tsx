@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
-import { Download, Heart, MessageCircle, Pencil, Trash2, UserRound, Users } from 'lucide-react';
+import { Download, Heart, MessageCircle, Pencil, Send, Trash2, UserRound, Users } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import Spinner from '@/components/common/Spinner';
 import Alert from '@/components/common/Alert';
@@ -13,6 +13,7 @@ import CommentSection from '@/components/notes/CommentSection';
 import LikesModal from '@/components/notes/LikesModal';
 import UserAvatar from '@/components/users/UserAvatar';
 import MessageButton from '@/components/messages/MessageButton';
+import ForwardSheet from '@/components/messages/ForwardSheet';
 import { useDialog } from '@/components/common/DialogProvider';
 import {
   useDeleteNoteMutation,
@@ -52,6 +53,7 @@ export default function NoteDetailPage() {
   const [downloading, setDownloading] = useState(false);
   const [actionError, setActionError] = useState('');
   const [showLikes, setShowLikes] = useState(false);
+  const [showSend, setShowSend] = useState(false);
   const dialog = useDialog();
 
   if (isLoading) return <PageLayout><Spinner /></PageLayout>;
@@ -203,6 +205,20 @@ export default function NoteDetailPage() {
                 <Heart size={16} className={note.isLiked ? 'fill-rose-500 text-rose-500' : ''} />
                 {formatCount(note.likesCount)}
               </button>
+              {/* Notu mesajla arkadaşlara gönderir. */}
+              {token && (
+                <button
+                  type="button"
+                  onClick={() => setShowSend(true)}
+                  disabled={!canInteract}
+                  title={canInteract ? 'Send in a message' : 'Verify your email to do this'}
+                  aria-label="Send in a message"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <Send size={16} />
+                  <span className="hidden sm:inline">Send</span>
+                </button>
+              )}
             </div>
           </div>
           {actionError && <Alert className="mx-5 mb-4">{actionError}</Alert>}
@@ -309,6 +325,7 @@ export default function NoteDetailPage() {
         </div>
       </div>
       {showLikes && <LikesModal noteId={note._id} onClose={() => setShowLikes(false)} />}
+      {showSend && <ForwardSheet item={{ note: { _id: note._id, title: note.title } }} onClose={() => setShowSend(false)} />}
     </PageLayout>
   );
 }

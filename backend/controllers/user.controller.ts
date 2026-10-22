@@ -290,9 +290,15 @@ const follow = asyncHandler<AuthedRequest>(async (req, res) => {
   if (targetId === req.user.id) throw new ApiError(400, 'You cannot follow yourself.');
   if (await isBlockedBetween(req.user.id, targetId)) throw new ApiError(403, 'You cannot follow this user.');
 
-  const target = await User.findByIdAndUpdate(targetId, { $addToSet: { followers: req.user.id } }, { returnDocument: 'after' });
-  if (!target) throw new ApiError(404, 'User not found.');
-  await User.updateOne({ _id: req.user.id }, { $addToSet: { following: targetId } });
+  // İki taraf aynı anda yazılır (sırayla beklemek isteği uzatıyordu); hedef yoksa benim listeme eklenen geri alınır.
+  const [target] = await Promise.all([
+    User.findByIdAndUpdate(targetId, { $addToSet: { followers: req.user.id } }, { returnDocument: 'after' }).select('followers'),
+    User.updateOne({ _id: req.user.id }, { $addToSet: { following: targetId } }),
+  ]);
+  if (!target) {
+    await User.updateOne({ _id: req.user.id }, { $pull: { following: targetId } });
+    throw new ApiError(404, 'User not found.');
+  }
   await notify({ recipient: target._id, actor: req.user.id, type: 'follow' });
 
   res.json({
@@ -305,9 +311,11 @@ const follow = asyncHandler<AuthedRequest>(async (req, res) => {
 const unfollow = asyncHandler<AuthedRequest>(async (req, res) => {
   const targetId = req.params.id;
 
-  const target = await User.findByIdAndUpdate(targetId, { $pull: { followers: req.user.id } }, { returnDocument: 'after' });
+  const [target] = await Promise.all([
+    User.findByIdAndUpdate(targetId, { $pull: { followers: req.user.id } }, { returnDocument: 'after' }).select('followers'),
+    User.updateOne({ _id: req.user.id }, { $pull: { following: targetId } }),
+  ]);
   if (!target) throw new ApiError(404, 'User not found.');
-  await User.updateOne({ _id: req.user.id }, { $pull: { following: targetId } });
   await removeNotification({ recipient: target._id, actor: req.user.id, type: 'follow' });
 
   res.json({

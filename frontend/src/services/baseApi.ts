@@ -30,7 +30,7 @@ const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
   return result;
 };
 
-const TAG_TYPES = ['Me', 'Note', 'NoteList', 'Filters', 'User', 'FollowList', 'Group', 'GroupList', 'GroupMembers', 'GroupRequests', 'GroupMessages', 'GroupActivity', 'Conversations', 'Conversation', 'Unread', 'Notifications', 'ActiveUsers', 'NotificationSettings'] as const;
+const TAG_TYPES = ['Me', 'Note', 'NoteList', 'Filters', 'User', 'FollowList', 'Group', 'GroupList', 'GroupMembers', 'GroupRequests', 'GroupMessages', 'GroupActivity', 'Conversations', 'Conversation', 'Unread', 'Notifications', 'ActiveUsers', 'NotificationSettings', 'SavedList', 'NoteLikes'] as const;
 
 export type TagType = (typeof TAG_TYPES)[number];
 

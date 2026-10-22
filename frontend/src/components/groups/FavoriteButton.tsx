@@ -20,21 +20,28 @@ export default function FavoriteButton({
 }) {
   const token = useAppSelector((state) => state.auth.token);
   const [toggleFavorite, { isLoading }] = useToggleFavoriteMutation();
+  // Yerel durum, yenilenen grup verisi yeni değeri getirene kadar tutulur (cevap ile yenileme arasında eski hale dönüp titremesin).
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
+  const [prevIsFavorite, setPrevIsFavorite] = useState(isFavorite);
+  if (isFavorite !== prevIsFavorite) {
+    setPrevIsFavorite(isFavorite);
+    setOptimistic(null);
+  }
   const dialog = useDialog();
   if (!token) return null;
 
   const active = optimistic ?? isFavorite;
   const label = active ? 'Remove from favorites' : 'Add to favorites';
 
+  // Buton istek sırasında disabled yapılmaz ("yasak" imleci görünmesin); tekrar tıklama burada yok sayılır.
   const handleClick = async () => {
+    if (isLoading) return;
     setOptimistic(!active);
     try {
       await toggleFavorite({ id: groupId, favorite: !active }).unwrap();
     } catch (err) {
-      dialog.alert({ message: getErrorMessage(err) });
-    } finally {
       setOptimistic(null);
+      dialog.alert({ message: getErrorMessage(err) });
     }
   };
 
@@ -42,7 +49,7 @@ export default function FavoriteButton({
 
   if (variant === 'button') {
     return (
-      <button type="button" onClick={handleClick} disabled={isLoading} aria-pressed={active} className={`btn-secondary ${className}`}>
+      <button type="button" onClick={handleClick} aria-pressed={active} className={`btn-secondary ${className}`}>
         {star} {active ? 'Favorited' : 'Favorite'}
       </button>
     );
@@ -52,7 +59,6 @@ export default function FavoriteButton({
     <button
       type="button"
       onClick={handleClick}
-      disabled={isLoading}
       aria-pressed={active}
       aria-label={label}
       title={label}

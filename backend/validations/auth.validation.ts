@@ -40,7 +40,14 @@ const completeSignupRules = [
 ];
 
 // Google ile giriş: idToken → (yeni hesapsa) okul bilgisiyle hesabı oluştur
-const googleRules = [body('idToken').trim().notEmpty().withMessage('Google token is required.')];
+// Mobil idToken, web accessToken gönderir; ikisinden biri yeterli.
+const googleRules = [
+  body('idToken').optional().isString().trim(),
+  body('accessToken').optional().isString().trim(),
+  body('idToken')
+    .custom((value, { req }) => Boolean(value || req.body?.accessToken))
+    .withMessage('Google token is required.'),
+];
 const completeGoogleSignupRules = [
   body('signupToken').trim().notEmpty().withMessage('Sign-up session is required.'),
   fullNameRule,

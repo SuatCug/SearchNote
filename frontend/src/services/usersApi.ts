@@ -101,7 +101,22 @@ export const usersApi = baseApi.injectEndpoints({
       { id: string; following: boolean }
     >({
       query: ({ id, following }) => ({ url: `/users/${id}/follow`, method: following ? 'DELETE' : 'POST' }),
-      invalidatesTags: ['User', 'FollowList', 'NoteList'],
+      // Açık profil başlığı (buton ve takipçi sayısı) anında değişir; listeler cevaptan sonra arka planda tazelenir.
+      async onQueryStarted({ id, following }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          usersApi.util.updateQueryData('getProfile', id, (draft) => {
+            if (draft.data.isFollowing !== following) return;
+            draft.data.isFollowing = !following;
+            draft.data.user.followersCount += following ? -1 : 1;
+          })
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+      invalidatesTags: (result) => (result ? ['User', 'FollowList', 'NoteList'] : []),
     }),
     // Takipçilerimden birini çıkarır (Instagram'daki "Remove"); karşı tarafa bildirim gitmez.
     removeFollower: builder.mutation<ApiResponse<{ followersCount: number }>, string>({

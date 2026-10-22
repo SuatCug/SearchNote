@@ -110,17 +110,27 @@ const startConversation = asyncHandler<AuthedRequest>(async (req, res) => {
   const { userId } = req.body;
   if (userId === me) throw new ApiError(400, 'You cannot message yourself.');
 
-  const exists = await User.exists({ _id: userId });
+  // Kontroller ve mevcut konuşmanın aranması aynı anda yapılır; konuşma sadece yoksa oluşturulur.
+  const participantsKey = Conversation.keyFor(me, userId);
+  const [exists, blocked, existing] = await Promise.all([
+    User.exists({ _id: userId }),
+    isBlockedBetween(me, userId),
+    Conversation.findOne({ participantsKey }).select('_id').lean(),
+  ]);
   if (!exists) throw new ApiError(404, 'User not found.');
-  if (await isBlockedBetween(me, userId)) throw new ApiError(403, 'You cannot message this user.');
+  if (blocked) throw new ApiError(403, 'You cannot message this user.');
 
-  const conversation = await Conversation.findOneAndUpdate(
-    { participantsKey: Conversation.keyFor(me, userId) },
-    { $setOnInsert: { participants: [me, userId] } },
-    { upsert: true, returnDocument: 'after' }
-  );
+  const conversationId =
+    existing?._id ??
+    (
+      await Conversation.findOneAndUpdate(
+        { participantsKey },
+        { $setOnInsert: { participants: [me, userId] } },
+        { upsert: true, returnDocument: 'after' }
+      )
+    )._id;
 
-  res.json({ success: true, data: { conversationId: conversation._id } });
+  res.json({ success: true, data: { conversationId } });
 });
 
 // Konuşma detayı + son mesajlar. Açılan konuşma okunmuş sayılır.

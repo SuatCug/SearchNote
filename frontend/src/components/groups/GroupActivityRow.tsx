@@ -7,7 +7,7 @@ import { groupTitle } from '@/lib/groupStyle';
 import type { GroupActivity } from '@/types/api';
 
 // Üyesi olduğum grubun satırı (mobil "My groups" ile aynı): renkli kod ikonu (köşesinde okunmamış sayısı), ad,
-// üye/not sayısı, son hareket ("Latest note: …" ya da "Ayşe: …") ve saati. Okunmamış varsa sohbet sekmesi açılır.
+// üye/not sayısı, son hareket ("Latest note: …" ya da "Ayşe: …") ve saati. Tıklayınca grubun Notes sekmesi açılır.
 export default function GroupActivityRow({ group }: { group: GroupActivity }) {
   const last = group.lastActivity;
   const unread = group.unreadCount > 0;
@@ -16,7 +16,7 @@ export default function GroupActivityRow({ group }: { group: GroupActivity }) {
 
   return (
     <Link
-      to={`/groups/${group._id}${unread || last?.type === 'message' ? '?tab=chat' : ''}`}
+      to={`/groups/${group._id}`}
       className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
     >
       <span className="relative shrink-0">

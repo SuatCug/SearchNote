@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
-import { Bookmark, Check, Download, Heart, Loader2, MessageCircle, Share2 } from 'lucide-react';
+import { Bookmark, Check, Download, Heart, Loader2, MessageCircle, Send, Share2 } from 'lucide-react';
 import FileTypeBadge from '@/components/notes/FileTypeBadge';
 import VisibilityBadge from '@/components/notes/VisibilityBadge';
 import UserAvatar from '@/components/users/UserAvatar';
 import LikesModal from '@/components/notes/LikesModal';
 import CommentsModal from '@/components/notes/CommentsModal';
+import ForwardSheet from '@/components/messages/ForwardSheet';
 import { useDialog } from '@/components/common/DialogProvider';
 import { useRegisterDownloadMutation, useToggleLikeMutation, useToggleSaveMutation } from '@/services/notesApi';
 import { downloadNote } from '@/lib/downloadNote';
@@ -45,6 +46,7 @@ export default function NotePostCard({ note, index = 0 }: { note: NoteCard; inde
   const [copied, setCopied] = useState(false);
   const [showLikes, setShowLikes] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  const [showSend, setShowSend] = useState(false);
 
   const noteUrl = `/notes/${note._id}`;
   const FileIcon = (FILE_TYPES[note.fileType] ?? FILE_TYPES.pdf).icon;
@@ -222,6 +224,17 @@ export default function NotePostCard({ note, index = 0 }: { note: NoteCard; inde
 
         <div className="flex-1" />
 
+        {/* Notu mesajla arkadaşlara gönderir (mobildeki kağıt uçak gibi). */}
+        <button
+          type="button"
+          onClick={() => setShowSend(true)}
+          disabled={!isVerified}
+          title={verifyHint ?? 'Send in a message'}
+          aria-label="Send in a message"
+          className={actionClass}
+        >
+          <Send size={17} />
+        </button>
         <button type="button" onClick={handleShare} title="Share" aria-label="Share" className={actionClass}>
           {copied ? <Check size={17} className="text-emerald-600" /> : <Share2 size={17} />}
           {copied && <span className="text-xs text-emerald-600">Link copied</span>}
@@ -239,6 +252,7 @@ export default function NotePostCard({ note, index = 0 }: { note: NoteCard; inde
       </footer>
       {showLikes && <LikesModal noteId={note._id} onClose={() => setShowLikes(false)} />}
       {showComments && <CommentsModal noteId={note._id} onClose={() => setShowComments(false)} />}
+      {showSend && <ForwardSheet item={{ note: { _id: note._id, title: note.title } }} onClose={() => setShowSend(false)} />}
     </article>
   );
 }

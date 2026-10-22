@@ -52,3 +52,41 @@ export const verifyGoogleIdToken = async (idToken: string): Promise<GoogleProfil
     avatarUrl: info.picture || '',
   };
 };
+
+const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
+
+const fetchGoogle = async (url: string, init?: RequestInit) => {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new ApiError(502, 'Could not reach Google. Please try again.');
+  }
+};
+
+// Web'deki kendi "Continue with Google" butonu (GIS token client) idToken yerine accessToken gönderir:
+// Google'ın hazır butonu daha önce giriş yapmış kişide kendini hesap adı / fotoğrafıyla gösteriyordu, kapatılamıyor.
+// Token'ın bizim client ID'mize verildiği (başka bir siteninki olmadığı) tokeninfo ile doğrulanır,
+// ad / fotoğraf userinfo'dan alınır.
+export const verifyGoogleAccessToken = async (accessToken: string): Promise<GoogleProfile> => {
+  if (!isGoogleSignInEnabled()) throw new ApiError(503, 'Google sign-in is not available right now.');
+
+  const tokenRes = await fetchGoogle(`${TOKENINFO_URL}?access_token=${encodeURIComponent(accessToken)}`);
+  if (!tokenRes.ok) throw new ApiError(401, 'Google sign-in failed. Please try again.');
+  const token = (await tokenRes.json()) as Record<string, string | undefined>;
+  const tokenValid = !!token.sub && allowedClientIds().includes(token.aud ?? '') && Number(token.expires_in) > 0;
+  if (!tokenValid) throw new ApiError(401, 'Google sign-in failed. Please try again.');
+
+  const infoRes = await fetchGoogle(USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!infoRes.ok) throw new ApiError(401, 'Google sign-in failed. Please try again.');
+  const info = (await infoRes.json()) as { sub?: string; email?: string; email_verified?: boolean; name?: string; picture?: string };
+  if (!info.email || info.sub !== token.sub) throw new ApiError(401, 'Google sign-in failed. Please try again.');
+  if (info.email_verified !== true) throw new ApiError(401, 'Your Google email address is not verified.');
+
+  const email = info.email.toLowerCase();
+  return {
+    googleId: token.sub!,
+    email,
+    fullName: (info.name || email.split('@')[0]).trim().slice(0, 80),
+    avatarUrl: info.picture || '',
+  };
+};
