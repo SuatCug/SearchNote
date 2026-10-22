@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import { Bookmark, Compass, FileText, Users } from 'lucide-react';
 import UserAvatar from '@/components/users/UserAvatar';
 import FollowButton from '@/components/users/FollowButton';
+import PeopleModal from '@/components/users/PeopleModal';
 import { useGetActiveUsersQuery, useGetSuggestionsQuery } from '@/services/usersApi';
 import { suggestionReason } from '@/lib/suggestionReason';
 import { useGetTrendingCoursesQuery } from '@/services/notesApi';
@@ -51,11 +53,31 @@ export function ActiveNowStrip() {
     skipPollingIfUnfocused: true,
   });
   const users = data?.data?.users ?? [];
+  const total = data?.data?.total ?? users.length;
+  const [allOpen, setAllOpen] = useState(false);
+  // Sağ paneldeki gibi: şeritte görünenden fazlası varsa "See all" penceresi (en fazla 100).
+  const all = useGetActiveUsersQuery({ limit: 100 }, { skip: !allOpen });
   if (!users.length) return null;
 
   return (
     <section aria-label="Active now" className="xl:hidden mt-4">
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Active now</h2>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-xs font-bold uppercase tracking-wide text-gray-500">Active now</h2>
+        {total > users.length && (
+          <button type="button" onClick={() => setAllOpen(true)} className="text-xs font-semibold text-navy-600 hover:text-navy-700">
+            See all {total}
+          </button>
+        )}
+      </div>
+      {allOpen && (
+        <PeopleModal
+          title={`Active now · ${total}`}
+          users={all.data?.data?.users}
+          isLoading={all.isLoading}
+          emptyText="None of your mutual follows are online right now."
+          onClose={() => setAllOpen(false)}
+        />
+      )}
       <div className="-mx-4 px-4 sm:mx-0 sm:px-0 flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none]">
         {users.map((u) => (
           <Link key={u._id} to={`/users/${u._id}`} className="flex w-16 shrink-0 flex-col items-center gap-1">
@@ -108,7 +130,7 @@ export function SuggestionsCarousel() {
       <div className="mt-3 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
         {users.map((u) => (
           <div key={u._id} className="flex w-36 shrink-0 flex-col items-center rounded-xl border border-gray-100 bg-gray-50/60 p-3 text-center">
-            <Link to={`/users/${u._id}`} className="flex min-w-0 flex-col items-center">
+            <Link to={`/users/${u._id}`} className="flex w-full min-w-0 flex-col items-center">
               <UserAvatar user={u} size="lg" />
               <span className="mt-2 w-full truncate text-sm font-semibold text-gray-900">{u.fullName}</span>
               <span className="w-full truncate text-xs text-gray-500">{suggestionReason(u)}</span>

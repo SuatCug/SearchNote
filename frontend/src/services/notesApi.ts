@@ -75,10 +75,17 @@ export const notesApi = baseApi.injectEndpoints({
       query: ({ id, saved }) => ({ url: `/notes/${id}/save`, method: saved ? 'DELETE' : 'POST' }),
       async onQueryStarted({ id, saved }, { dispatch, getState, queryFulfilled }) {
         const cards = patchNoteCards(dispatch, getState, id, () => ({ isSaved: !saved }));
+        // Not detayı açıksa oradaki kaydet butonu da anında değişir.
+        const detail = dispatch(
+          notesApi.util.updateQueryData('getNote', id, (draft) => {
+            draft.data.note.isSaved = !saved;
+          })
+        );
         try {
           await queryFulfilled;
         } catch {
           cards.undo();
+          detail.undo();
         }
       },
       // Sadece "Saved" listesi yeniden çekilir (yeni kaydedilen not orada görünsün).

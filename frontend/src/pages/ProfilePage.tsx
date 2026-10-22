@@ -193,7 +193,15 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
           </aside>
 
           <div ref={isDesktop ? contentRef : undefined} className="min-h-[calc(100vh-10rem)] min-w-0 scroll-mt-24">
-            {tab === 'all' && <AllTab profile={data.data} onSeeAbout={() => setAboutOpen(true)} onNotes={() => changeTab('notes')} />}
+            {tab === 'all' && (
+              <AllTab
+                profile={data.data}
+                onSeeAbout={() => setAboutOpen(true)}
+                onNotes={() => changeTab('notes')}
+                onCourse={openCourse}
+                onGroups={() => changeTab('groups')}
+              />
+            )}
             {tab === 'notes' && <NotesTab userId={user.id} isMe={isMe} total={data.data.stats.notesCount} />}
             {tab === 'saved' && <SavedTab />}
             {tab === 'groups' && <GroupsTab />}
@@ -201,7 +209,16 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
         </div>
       </div>
 
-      {aboutOpen && <AboutModal profile={data.data} onClose={() => setAboutOpen(false)} />}
+      {aboutOpen && (
+        <AboutModal
+          profile={data.data}
+          onCourse={(code) => {
+            setAboutOpen(false);
+            openCourse(code);
+          }}
+          onClose={() => setAboutOpen(false)}
+        />
+      )}
       {list && (
         <ConnectionsModal
           key={list}
@@ -695,7 +712,8 @@ function ProfileMenu({ userId, name, isBlocked }: { userId: string; name: string
 /* ----------------------------------------------------------------- "About" penceresi */
 
 // "At a glance" → "See all": istatistikler, okul bilgileri ve paylaşılan derslerin tam listesi.
-function AboutModal({ profile, onClose }: { profile: ProfileData; onClose: () => void }) {
+// Derse basınca pencere kapanır ve Notes sekmesi o dersle açılır.
+function AboutModal({ profile, onCourse, onClose }: { profile: ProfileData; onCourse: (code: string) => void; onClose: () => void }) {
   const { user, stats } = profile;
   const courses = useGetUserCoursesQuery(user.id).data?.data?.courses ?? [];
   return (
@@ -717,7 +735,7 @@ function AboutModal({ profile, onClose }: { profile: ProfileData; onClose: () =>
           {courses.length ? (
             <ul className="mt-3 rounded-xl border border-gray-200 bg-white px-4">
               {courses.map((c, i) => (
-                <CourseRow key={c.code} course={c} last={i === courses.length - 1} />
+                <CourseRow key={c.code} course={c} last={i === courses.length - 1} onClick={() => onCourse(c.code)} />
               ))}
             </ul>
           ) : (
@@ -751,16 +769,18 @@ function InfoRow({ icon: Icon, label, value, last }: { icon: LucideIcon; label: 
   );
 }
 
-function CourseRow({ course, last }: { course: UserCourse; last: boolean }) {
+function CourseRow({ course, last, onClick }: { course: UserCourse; last: boolean; onClick: () => void }) {
   return (
-    <li className={`flex items-center gap-3 py-3 ${last ? '' : 'border-b border-gray-200'}`}>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-bold text-gray-900">{course.code}</p>
-        {course.name && course.name !== course.code && <p className="truncate text-xs text-gray-500">{course.name}</p>}
-      </div>
-      <span className="shrink-0 rounded-full bg-navy-50 px-2.5 py-0.5 text-xs font-semibold text-navy-700">
-        {course.count} {course.count === 1 ? 'note' : 'notes'}
-      </span>
+    <li className={last ? '' : 'border-b border-gray-200'}>
+      <button type="button" onClick={onClick} className="-mx-4 flex w-[calc(100%+2rem)] items-center gap-3 px-4 py-3 text-left hover:bg-gray-50">
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-bold text-gray-900">{course.code}</span>
+          {course.name && course.name !== course.code && <span className="block truncate text-xs text-gray-500">{course.name}</span>}
+        </span>
+        <span className="shrink-0 rounded-full bg-navy-50 px-2.5 py-0.5 text-xs font-semibold text-navy-700">
+          {course.count} {course.count === 1 ? 'note' : 'notes'}
+        </span>
+      </button>
     </li>
   );
 }
@@ -782,15 +802,28 @@ function NoteCards({ notes, isLoading, empty, preview = false }: { notes?: NoteC
   );
 }
 
-// "All": "At a glance" kartı (okul, bölüm, ilk 4 ders) + son notlar.
-function AllTab({ profile, onSeeAbout, onNotes }: { profile: ProfileData; onSeeAbout: () => void; onNotes: () => void }) {
+// "All": "At a glance" kartı (beğeni / indirme, okul, bölüm, katılma tarihi, dersler) + son notlar.
+// Telefonda geniş ekranın sol sütunundaki kartların (Intro, Courses shared, Groups / Popular notes) hepsi burada.
+function AllTab({
+  profile,
+  onSeeAbout,
+  onNotes,
+  onCourse,
+  onGroups,
+}: {
+  profile: ProfileData;
+  onSeeAbout: () => void;
+  onNotes: () => void;
+  onCourse: (code: string) => void;
+  onGroups: () => void;
+}) {
   const { user, stats, isMe } = profile;
   const courses = useGetUserCoursesQuery(user.id).data?.data?.courses ?? [];
   const notes = useGetUserNotesQuery({ id: user.id, sort: 'newest', page: 1, limit: PREVIEW_COUNT });
 
   return (
     <>
-      {/* Geniş ekranda bu bilgiler soldaki "Intro" kartında. */}
+      {/* Geniş ekranda bu bilgiler soldaki "Intro" ve "Courses shared" kartlarında. */}
       <section className="rounded-2xl border border-gray-200 bg-white px-4 pt-4 pb-1 lg:hidden">
         <div className="flex items-center justify-between">
           <h2 className="text-[17px] font-extrabold text-gray-900">At a glance</h2>
@@ -798,9 +831,33 @@ function AllTab({ profile, onSeeAbout, onNotes }: { profile: ProfileData; onSeeA
             See all
           </button>
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-2.5">
+          <GlanceTile icon={Heart} value={stats.totalLikes} label="Likes received" />
+          <GlanceTile icon={Download} value={stats.totalDownloads} label="Downloads" />
+        </div>
         <GlanceRow icon={Award} label="Studies at" value={user.university} />
         <GlanceRow icon={Monitor} label="Department" value={user.department} />
-        <GlanceRow icon={FileText} label="Courses shared" value={courses.slice(0, 4).map((c) => c.code).join(', ')} last />
+        <GlanceRow icon={Calendar} label="Joined" value={formatDate(user.createdAt)} last={!courses.length} />
+        {courses.length > 0 && (
+          <div className="py-3">
+            <p className="flex items-center gap-3 text-sm text-gray-600">
+              <FileText size={17} className="shrink-0 text-gray-500" /> Courses shared
+            </p>
+            {/* Derse basınca Notes sekmesi o dersle açılır (geniş ekrandaki "Courses shared" kartı gibi). */}
+            <div className="no-scrollbar -mx-4 mt-2.5 flex gap-2 overflow-x-auto px-4">
+              {courses.map((c) => (
+                <button
+                  key={c.code}
+                  type="button"
+                  onClick={() => onCourse(c.code)}
+                  className="h-[30px] shrink-0 whitespace-nowrap rounded-full bg-navy-50 px-3 text-[13px] font-bold text-navy-700 hover:bg-navy-100"
+                >
+                  {c.code} <span className="font-semibold text-navy-500">· {c.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="mt-6 mb-3 flex items-center justify-between lg:mt-0">
@@ -812,7 +869,24 @@ function AllTab({ profile, onSeeAbout, onNotes }: { profile: ProfileData; onSeeA
         )}
       </div>
       <NoteCards notes={notes.data?.data?.items} isLoading={notes.isLoading} empty={<NotesEmpty isMe={isMe} />} preview />
+
+      {/* Geniş ekranın sol sütunundaki son kart: kendi profilimde gruplarım, başkasınınkinde en beğenilen notları. */}
+      <div className="mt-6 lg:hidden">
+        {isMe ? <GroupsCard onSeeAll={onGroups} /> : <PopularNotesCard userId={user.id} />}
+      </div>
     </>
+  );
+}
+
+function GlanceTile({ icon: Icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl bg-navy-50/60 px-3 py-2.5">
+      <Icon size={17} className="shrink-0 text-navy-600" />
+      <span className="min-w-0">
+        <span className="block text-[17px] font-extrabold leading-tight text-gray-900">{formatCount(value)}</span>
+        <span className="block truncate text-xs text-gray-500">{label}</span>
+      </span>
+    </div>
   );
 }
 
