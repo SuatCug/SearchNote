@@ -1,12 +1,23 @@
 import { useSyncExternalStore } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { API_URL } from '@/services/baseApi';
+import type { ApiErrorBody, DirectMessage, GroupMessage } from '@/types/api';
 
-// Sunucudan gelen olaylar sadece "bir şey değişti" sinyali taşır (bkz. backend/sockets/index.js).
+// Sunucudan gelen olaylar çoğunlukla "bir şey değişti" sinyali taşır (bkz. backend/sockets/index.ts).
+// Mesaj olayları değişen mesajın kendisini de taşır: açık sohbet yeniden çekmeden günceller.
 export interface ServerToClientEvents {
   'notifications:changed': () => void;
-  'message:changed': (payload: { conversationId: string; senderId?: string }) => void;
-  'group:message': (payload: { groupId: string }) => void;
+  'message:changed': (payload: {
+    conversationId: string;
+    // Yeni mesajda gönderen; message: yeni ya da düzenlenen mesaj, deletedId: silinen mesaj,
+    // readBy/readAt: konuşmayı okuyan kişi ve zamanı.
+    senderId?: string;
+    message?: DirectMessage;
+    deletedId?: string;
+    readBy?: string;
+    readAt?: string;
+  }) => void;
+  'group:message': (payload: { groupId: string; message?: GroupMessage; deletedId?: string }) => void;
   // Üyesi olduğum grupta yeni mesaj ya da paylaşılan not ("Gruplarım" listesi için).
   'group:activity': (payload: { groupId: string }) => void;
   'presence:changed': (payload: { userId: string }) => void;
@@ -20,7 +31,13 @@ export interface ClientToServerEvents {
   'group:join': (groupId: string, ack?: (res: { ok: boolean }) => void) => void;
   'group:leave': (groupId: string) => void;
   'dm:typing': (conversationId: string) => void;
+  'dm:send': (
+    payload: { conversationId: string; text: string; noteId?: string | null; replyTo?: string | null; clientId: string },
+    ack: (res: DmSendResult) => void
+  ) => void;
 }
+
+export type DmSendResult = { ok: true; message: DirectMessage } | ({ ok: false; status: number } & ApiErrorBody);
 
 export type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 

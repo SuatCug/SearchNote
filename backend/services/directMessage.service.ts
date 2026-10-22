@@ -2,7 +2,7 @@ import ApiError from '../utils/apiError.ts';
 import { User, Note, Conversation, DirectMessage } from '../models/index.ts';
 import { assertNoteVisible } from './note.service.ts';
 import { isBlockedBetween } from './block.service.ts';
-import { emitToUsers } from './realtime.service.ts';
+import { emitToUsers, toPlainJSON } from './realtime.service.ts';
 import { pushDirectMessage } from './push.service.ts';
 import { createLimiter } from '../middlewares/rateLimit.middleware.ts';
 import type { Types } from 'mongoose';
@@ -38,6 +38,7 @@ interface MessageLike {
   note?: unknown;
   reply?: { message: Types.ObjectId; sender: Types.ObjectId; text: string } | null;
   editedAt?: Date | null;
+  clientId?: string | null;
   createdAt: Date;
 }
 
@@ -48,6 +49,8 @@ const toMessageJSON = (m: MessageLike) => ({
   note: m.note ?? null,
   reply: m.reply?.message ? { message: m.reply.message, sender: m.reply.sender, text: m.reply.text } : null,
   editedAt: m.editedAt ?? null,
+  // Gönderenin ekranındaki "gönderiliyor" balonu, kaydedilen mesajla bu kimlikle eşleşir.
+  ...(m.clientId && { clientId: m.clientId }),
   createdAt: m.createdAt,
 });
 
@@ -159,14 +162,20 @@ const saveDirectMessage = async (me: string, conversationId: string, { text, not
     note ? message.populate('note', NOTE_CARD_FIELDS) : null,
   ]);
 
+  const json = toMessageJSON(message);
   // İki tarafın da açık sekmeleri konuşmayı ve okunmamış sayısını anında yeniler.
   // senderId: alıcı tarafta "yazıyor..." göstergesi hemen kalksın.
-  emitToUsers([me, otherId], 'message:changed', { conversationId: String(conversation._id), senderId: me });
+  // message: istemci mesajı yeniden çekmeden doğrudan ekrana ekler (bu alanı tanımayan istemciler yok sayar).
+  emitToUsers([me, otherId], 'message:changed', {
+    conversationId: String(conversation._id),
+    senderId: me,
+    message: toPlainJSON(json),
+  });
   // Uygulaması kapalıysa telefonuna bildirim (beklenmez; hata gönderimi bozmaz)
   pushDirectMessage(otherId, me, conversation._id, message.text, Boolean(note)).catch((e) =>
     console.error('Push error:', (e as Error).message)
   );
-  return toMessageJSON(message);
+  return json;
 };
 
 export {

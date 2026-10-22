@@ -28,7 +28,7 @@ const directMessageSchema = new mongoose.Schema(
 );
 
 directMessageSchema.index({ conversation: 1, createdAt: -1 });
-// clientId sadece verildiyse benzersiz olmalı (web istemcisi göndermez).
+// clientId sadece verildiyse benzersiz olmalı (eski istemciler göndermez).
 directMessageSchema.index(
   { sender: 1, clientId: 1 },
   { unique: true, partialFilterExpression: { clientId: { $type: 'string' } } }

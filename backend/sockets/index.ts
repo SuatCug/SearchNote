@@ -57,8 +57,9 @@ const touchActivity = (userId: string) =>
   User.updateOne({ _id: userId }, { $set: { lastActiveAt: new Date() } }).catch(() => {});
 
 // Socket.io sunucusunu HTTP sunucusuna bağlar.
-// Olaylar sadece "bir şey değişti" sinyali taşır; istemci ilgili veriyi REST API'den yeniden çeker.
-// Böylece yetki kontrolleri tek yerde (REST) kalır.
+// Olaylar çoğunlukla "bir şey değişti" sinyali taşır; istemci ilgili veriyi REST API'den yeniden çeker.
+// Böylece yetki kontrolleri tek yerde (REST) kalır. İstisna: mesaj olayları, yetkisi zaten kontrol edilmiş
+// mesajın kendisini de taşır (sadece konuşmanın katılımcılarına / grup odasındaki üyelere gider).
 const initSocket = (httpServer: HttpServer, allowedOrigins: string[] | undefined) => {
   const io = new Server(httpServer, {
     cors: { origin: allowedOrigins?.length ? allowedOrigins : '*' },

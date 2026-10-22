@@ -302,6 +302,8 @@ export interface DirectMessage {
   // Yanıtlanan mesajın gönderildiği andaki özeti.
   reply: { message: ID; sender: ID; text: string } | null;
   editedAt: ISODate | null;
+  // Gönderen istemcinin verdiği kimlik ("gönderiliyor" balonunu kaydedilen mesajla eşlemek için).
+  clientId?: string;
   createdAt: ISODate;
 }
 

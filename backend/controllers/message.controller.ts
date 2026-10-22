@@ -2,7 +2,7 @@ import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
 import { User, Conversation, DirectMessage } from '../models/index.ts';
 import { isBlockedBetween } from '../services/block.service.ts';
-import { emitToUsers, isOnline } from '../services/realtime.service.ts';
+import { emitToUsers, isOnline, toPlainJSON } from '../services/realtime.service.ts';
 import {
   NOTE_CARD_FIELDS,
   findConversationOrFail,
@@ -143,12 +143,14 @@ const getConversation = asyncHandler<AuthedRequest>(async (req, res) => {
 
   const markedRead = unreadFor(conversation, me) > 0;
   if (markedRead) {
+    const readAt = new Date();
     await Conversation.updateOne(
       { _id: conversation._id },
-      { $set: { [`unreadCounts.${me}`]: 0, [`lastReadAt.${me}`]: new Date() } }
+      { $set: { [`unreadCounts.${me}`]: 0, [`lastReadAt.${me}`]: readAt } }
     );
-    // Kullanıcının diğer sekmelerindeki rozet düşsün, karşı taraf da "görüldü" işaretini görsün.
-    emitToUsers([me, otherId], 'message:changed', { conversationId: String(conversation._id) });
+    // Kullanıcının diğer sekmelerindeki rozet düşsün, karşı taraf da "görüldü" işaretini görsün
+    // (readBy/readAt ile konuşmayı yeniden çekmeden).
+    emitToUsers([me, otherId], 'message:changed', { conversationId: String(conversation._id), readBy: me, readAt });
   }
 
   const blockedByMe = hasId(meDoc?.blockedUsers, otherId);
@@ -236,11 +238,12 @@ const editMessage = asyncHandler<AuthedRequest>(async (req, res) => {
       { _id: conversation._id, 'lastMessage.createdAt': message.createdAt, 'lastMessage.sender': message.sender },
       { $set: { 'lastMessage.text': message.text } }
     );
-    emitToUsers([me, otherId], 'message:changed', { conversationId: String(conversation._id) });
   }
 
   await message.populate('note', NOTE_CARD_FIELDS);
-  res.json({ success: true, data: { message: toMessageJSON(message) } });
+  const json = toMessageJSON(message);
+  emitToUsers([me, otherId], 'message:changed', { conversationId: String(conversation._id), message: toPlainJSON(json) });
+  res.json({ success: true, data: { message: json } });
 });
 
 // Mesajı geri alma: sadece gönderen silebilir, iki taraftan da kalkar.
@@ -272,7 +275,7 @@ const deleteMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   const otherUnread = unreadFor(conversation, otherId);
   if (otherUnread > 0) update.$set = { ...update.$set, [`unreadCounts.${otherId}`]: otherUnread - 1 };
   await Conversation.updateOne({ _id: conversation._id }, update);
-  emitToUsers([me, otherId], 'message:changed', { conversationId: String(conversation._id) });
+  emitToUsers([me, otherId], 'message:changed', { conversationId: String(conversation._id), deletedId: String(message._id) });
 
   res.json({ success: true, message: 'Message deleted.' });
 });

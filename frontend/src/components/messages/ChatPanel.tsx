@@ -12,13 +12,14 @@ import {
 } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query/react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useAppSelector } from '@/app/hooks';
+import { useAppDispatch, useAppSelector } from '@/app/hooks';
 import {
   ArrowLeft,
   ArrowUp,
   Check,
   CheckCheck,
   ChevronLeft,
+  Clock3,
   MoreHorizontal,
   MoreVertical,
   Paperclip,
@@ -45,6 +46,7 @@ import {
   useGetConversationQuery,
   useLazyGetOlderMessagesQuery,
   useSendDirectMessageMutation,
+  upsertDirectMessage,
 } from '@/services/messagesApi';
 import { useGetNoteQuery } from '@/services/notesApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
@@ -68,9 +70,22 @@ interface ActionState {
   rect: DOMRect;
 }
 
+// Gönder'e basılınca sunucuyu beklemeden gösterilen mesaj. _id ve clientId aynı geçici kimliktir;
+// sunucu kaydı gelince (aynı clientId ile) yerini gerçek mesaja bırakır.
+interface PendingMessage {
+  conversationId: string;
+  message: DirectMessage;
+  noteId: string | null;
+  failed: boolean;
+}
+
+const newClientId = () =>
+  typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 // Birebir sohbet. ?note=<id> ile açıldıysa ("Ask the author" ya da "+") not, gönderilecek mesaja iliştirilir.
 export default function ChatPanel({ conversationId }: { conversationId: string }) {
   const me = useAppSelector((state) => state.auth.user);
+  const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const attachedNoteId = searchParams.get('note');
@@ -80,7 +95,7 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
     skipPollingIfUnfocused: true,
   });
   const attachedNote = useGetNoteQuery(attachedNoteId || skipToken);
-  const [sendMessage, { isLoading: sending }] = useSendDirectMessageMutation();
+  const [sendMessage] = useSendDirectMessageMutation();
   const [editMessage, { isLoading: savingEdit }] = useEditDirectMessageMutation();
   const [deleteMessage] = useDeleteDirectMessageMutation();
   const [deleteConversation] = useDeleteConversationMutation();
@@ -95,6 +110,7 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
   const [editing, setEditing] = useState<DirectMessage | null>(null);
   const [action, setAction] = useState<ActionState | null>(null);
   const [toast, setToast] = useState('');
+  const [pending, setPending] = useState<PendingMessage[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
@@ -109,11 +125,30 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
 
   const conversation = data?.data?.conversation;
   const latest = data?.data?.messages;
+  // Bu konuşmada gönderilmekte olan mesajlar; sunucudan kaydı gelenler (aynı clientId) artık gösterilmez.
+  const pendingHere = useMemo(() => {
+    const own = pending.filter((p) => p.conversationId === conversationId);
+    if (!own.length || !latest) return own;
+    const saved = new Set(latest.map((m) => m.clientId).filter(Boolean));
+    return own.filter((p) => !saved.has(p.message.clientId));
+  }, [pending, conversationId, latest]);
+  const pendingById = useMemo(() => new Map(pendingHere.map((p) => [p.message._id, p])), [pendingHere]);
+
+  // Sunucuya ulaşan mesajlar bekleyenlerden çıkarılır. Bağlantı geri gelince socket'in bekletilen gönderimi
+  // mesajı iletmiş olabilir: "gönderilemedi" denmiş mesaj da kaydedildiyse hata uyarısı kalkar.
+  useEffect(() => {
+    if (!latest || !pending.length) return;
+    const saved = new Set(latest.map((m) => m.clientId).filter(Boolean));
+    const landed = pending.filter((p) => saved.has(p.message.clientId));
+    if (!landed.length) return;
+    setPending((list) => list.filter((p) => !saved.has(p.message.clientId)));
+    if (landed.some((p) => p.failed)) setSendError('');
+  }, [latest, pending]);
   const messages = useMemo(() => {
-    if (!latest || !olderMessages.length) return latest;
+    if (!latest) return latest;
     const ids = new Set(latest.map((m) => m._id));
-    return [...olderMessages.filter((m) => !ids.has(m._id)), ...latest];
-  }, [latest, olderMessages]);
+    return [...olderMessages.filter((m) => !ids.has(m._id)), ...latest, ...pendingHere.map((p) => p.message)];
+  }, [latest, olderMessages, pendingHere]);
   const hasMore = olderMessages.length ? Boolean(older?.hasMore) : Boolean(data?.data?.hasMore);
   const lastId = messages?.at(-1)?._id;
   const other = conversation?.otherUser;
@@ -194,27 +229,81 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
     setText('');
   };
 
+  // Mesajı sunucuya iletir. Başarısız olursa balon "gönderilemedi" olarak kalır, aynı clientId ile tekrar denenebilir
+  // (sunucu aynı mesajı iki kez kaydetmez).
+  const deliver = async (item: PendingMessage) => {
+    const { message } = item;
+    try {
+      const { data: saved } = await sendMessage({
+        id: item.conversationId,
+        text: message.text,
+        noteId: item.noteId,
+        replyTo: message.reply?.message,
+        clientId: message.clientId,
+      }).unwrap();
+      dispatch(upsertDirectMessage(item.conversationId, saved.message));
+      setPending((list) => list.filter((p) => p.message._id !== message._id));
+    } catch (err) {
+      setPending((list) => list.map((p) => (p.message._id === message._id ? { ...p, failed: true } : p)));
+      setSendError(getErrorMessage(err));
+    }
+  };
+
+  const retrySend = (item: PendingMessage) => {
+    setSendError('');
+    setPending((list) => list.map((p) => (p.message._id === item.message._id ? { ...p, failed: false } : p)));
+    deliver({ ...item, failed: false });
+  };
+
+  const discardPending = (item: PendingMessage) =>
+    setPending((list) => list.filter((p) => p.message._id !== item.message._id));
+
   const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || sending || savingEdit) return;
+    if (!trimmed || savingEdit || !me) return;
     setSendError('');
-    try {
-      if (editing) {
+
+    if (editing) {
+      try {
         const { data: edited } = await editMessage({ id: conversationId, messageId: editing._id, text: trimmed }).unwrap();
         patchOlder((list) => list.map((m) => (m._id === edited.message._id ? edited.message : m)));
         setEditing(null);
-      } else {
-        await sendMessage({ id: conversationId, text: trimmed, noteId: attachedNoteId, replyTo: replyTo?._id }).unwrap();
-        setReplyTo(null);
-        resetTypingThrottle(conversationId);
-        if (attachedNoteId) removeAttachment();
+        setText('');
+        setEmojiOpen(false);
+      } catch (err) {
+        setSendError(getErrorMessage(err));
       }
-      setText('');
-      setEmojiOpen(false);
-    } catch (err) {
-      setSendError(getErrorMessage(err));
+      return;
     }
+
+    // Yeni mesaj: hemen ekranda gösterilir, yazma kutusu boşalır; gönderim arka planda sürer.
+    const clientId = newClientId();
+    const note = attachedNoteId ? attachedNote.data?.data?.note : undefined;
+    const item: PendingMessage = {
+      conversationId,
+      noteId: attachedNoteId,
+      failed: false,
+      message: {
+        _id: clientId,
+        clientId,
+        sender: me.id,
+        text: trimmed,
+        note: note
+          ? { _id: note._id, title: note.title, courseCode: note.courseCode, courseName: note.courseName, fileType: note.fileType }
+          : null,
+        reply: replyTo ? { message: replyTo._id, sender: replyTo.sender, text: replyTo.text } : null,
+        editedAt: null,
+        createdAt: new Date().toISOString(),
+      },
+    };
+    setPending((list) => [...list, item]);
+    setText('');
+    setEmojiOpen(false);
+    setReplyTo(null);
+    resetTypingThrottle(conversationId);
+    if (attachedNoteId) removeAttachment();
+    deliver(item);
   };
 
   // Masaüstünde Enter gönderir, Shift+Enter yeni satır. Telefonda Enter yeni satırdır (gönder düğmesi var).
@@ -243,7 +332,11 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
     });
   };
 
+  // Gönderilmekte olan mesajda işlem menüsü açılmaz (sunucuda henüz yok).
+  const pendingIdsRef = useRef(pendingById);
+  pendingIdsRef.current = pendingById;
   const openActions = useCallback((message: DirectMessage, target: HTMLElement) => {
+    if (pendingIdsRef.current.has(message._id)) return;
     navigator.vibrate?.(10);
     setEmojiOpen(false);
     setAction({ message, rect: target.getBoundingClientRect() });
@@ -482,6 +575,7 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
                 new Date(next.createdAt).getTime() - time < GROUP_WINDOW_MS;
               const mine = m.sender === me?.id;
               const seen = mine && otherReadAt >= time;
+              const sendState = pendingById.get(m._id);
 
               return (
                 <Fragment key={m._id}>
@@ -500,14 +594,27 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
                     onQuoteClick={jumpToMessage}
                     onOpenActions={openActions}
                   />
-                  {!joinsNext && (
+                  {sendState?.failed ? (
+                    <div className="mt-1 flex items-center justify-end gap-1.5 px-1 text-xs">
+                      <span className="font-medium text-rose-600">Not sent</span>·
+                      <button type="button" onClick={() => retrySend(sendState)} className="font-semibold text-navy-700 hover:underline">
+                        Retry
+                      </button>
+                      ·
+                      <button type="button" onClick={() => discardPending(sendState)} className="font-semibold text-gray-500 hover:underline">
+                        Remove
+                      </button>
+                    </div>
+                  ) : (!joinsNext || sendState) && (
                     <div
                       className={`mt-1 flex items-center gap-1 px-1 text-xs text-gray-500 ${mine ? 'justify-end' : 'justify-start'}`}
                     >
                       {m.editedAt && <span>Edited ·</span>}
                       <time dateTime={m.createdAt}>{clockTime(m.createdAt)}</time>
                       {mine &&
-                        (seen ? (
+                        (sendState ? (
+                          <Clock3 size={14} className="text-gray-400" aria-label="Sending" />
+                        ) : seen ? (
                           <CheckCheck size={16} className="text-sky-600" aria-label="Seen" />
                         ) : (
                           <Check size={16} className="text-gray-400" aria-label="Sent" />
@@ -629,7 +736,7 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
 
             <button
               type="submit"
-              disabled={sending || savingEdit || !text.trim()}
+              disabled={savingEdit || !text.trim()}
               className="w-11 h-11 shrink-0 rounded-full bg-navy-800 text-white hover:bg-navy-900 disabled:bg-navy-800/80 disabled:opacity-70 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2"
               aria-label={editing ? 'Save edit' : 'Send'}
             >

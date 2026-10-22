@@ -1,5 +1,12 @@
+import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import { baseApi } from './baseApi';
+import { getSocket } from '@/lib/socket';
 import type { ApiResponse, ConversationDetail, ConversationSummary, DirectMessage } from '@/types/api';
+
+// Socket'ten bu sürede yanıt gelmezse mesaj REST ile tekrar gönderilir (aynı clientId: sunucu tek kayıt tutar).
+const SOCKET_SEND_TIMEOUT_MS = 8000;
+
+type SendArgs = { id: string; text: string; noteId?: string | null; replyTo?: string | null; clientId?: string };
 
 export const messagesApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -36,16 +43,41 @@ export const messagesApi = baseApi.injectEndpoints({
     startConversation: builder.mutation<ApiResponse<{ conversationId: string }>, string>({
       query: (userId) => ({ url: '/messages/conversations', method: 'POST', body: { userId } }),
     }),
-    sendDirectMessage: builder.mutation<
-      ApiResponse<{ message: DirectMessage }>,
-      { id: string; text: string; noteId?: string | null; replyTo?: string | null }
-    >({
-      query: ({ id, text, noteId, replyTo }) => ({
-        url: `/messages/conversations/${id}/messages`,
-        method: 'POST',
-        body: { text, ...(noteId && { noteId }), ...(replyTo && { replyTo }) },
-      }),
-      invalidatesTags: (_result, _error, { id }) => [{ type: 'Conversation', id }, 'Conversations'],
+    // Bağlantı açıksa mesaj socket üzerinden gider (yeni HTTP isteği kurulmaz), yoksa REST ile.
+    // Kaydedilen mesaj açık konuşmaya doğrudan eklenir; konuşma yeniden çekilmez.
+    sendDirectMessage: builder.mutation<ApiResponse<{ message: DirectMessage }>, SendArgs>({
+      queryFn: async ({ id, text, noteId, replyTo, clientId }, _api, _extra, baseQuery) => {
+        const socket = getSocket();
+        if (socket?.connected && clientId) {
+          try {
+            const res = await socket
+              .timeout(SOCKET_SEND_TIMEOUT_MS)
+              .emitWithAck('dm:send', { conversationId: id, text, noteId, replyTo, clientId });
+            if (res.ok) return { data: { success: true, data: { message: res.message } } };
+            const { ok: _ok, status, ...body } = res;
+            return { error: { status, data: body } };
+          } catch {
+            // Zaman aşımı / bağlantı koptu: aşağıda REST ile denenir.
+          }
+        }
+        const result = await baseQuery({
+          url: `/messages/conversations/${id}/messages`,
+          method: 'POST',
+          body: { text, ...(noteId && { noteId }), ...(replyTo && { replyTo }), ...(clientId && { clientId }) },
+        });
+        return result.error
+          ? { error: result.error as FetchBaseQueryError }
+          : { data: result.data as ApiResponse<{ message: DirectMessage }> };
+      },
+      onQueryStarted: async ({ id }, { dispatch, queryFulfilled }) => {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(upsertDirectMessage(id, data.data.message));
+        } catch {
+          // Hata bileşen tarafında gösterilir.
+        }
+      },
+      invalidatesTags: ['Conversations'],
     }),
     // Sadece kendi mesajını düzenleyebilir.
     editDirectMessage: builder.mutation<
@@ -57,11 +89,27 @@ export const messagesApi = baseApi.injectEndpoints({
         method: 'PATCH',
         body: { text },
       }),
-      invalidatesTags: (_result, _error, { id }) => [{ type: 'Conversation', id }, 'Conversations'],
+      onQueryStarted: async ({ id }, { dispatch, queryFulfilled }) => {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(upsertDirectMessage(id, data.data.message));
+        } catch {
+          // Hata bileşen tarafında gösterilir.
+        }
+      },
+      invalidatesTags: ['Conversations'],
     }),
     deleteDirectMessage: builder.mutation<ApiResponse, { id: string; messageId: string }>({
       query: ({ id, messageId }) => ({ url: `/messages/conversations/${id}/messages/${messageId}`, method: 'DELETE' }),
-      invalidatesTags: (_result, _error, { id }) => [{ type: 'Conversation', id }, 'Conversations'],
+      onQueryStarted: async ({ id, messageId }, { dispatch, queryFulfilled }) => {
+        try {
+          await queryFulfilled;
+          dispatch(removeDirectMessage(id, messageId));
+        } catch {
+          // Hata bileşen tarafında gösterilir.
+        }
+      },
+      invalidatesTags: ['Conversations'],
     }),
     // Konuşmayı sadece kendi tarafında siler.
     deleteConversation: builder.mutation<ApiResponse, string>({
@@ -70,6 +118,35 @@ export const messagesApi = baseApi.injectEndpoints({
     }),
   }),
 });
+
+// --- Açık konuşmanın önbelleğini yeniden çekmeden güncelleme (gönderim sonucu ve socket olayları) ---
+// Konuşma önbellekte yoksa (açılmamışsa) hiçbir şey yapılmaz.
+
+// Mesajı ekler ya da (aynı id'liyse) günceller; liste tarih sırasında kalır.
+export const upsertDirectMessage = (conversationId: string, message: DirectMessage) =>
+  messagesApi.util.updateQueryData('getConversation', conversationId, (draft) => {
+    const list = draft.data.messages;
+    const index = list.findIndex((m) => m._id === message._id);
+    if (index >= 0) {
+      list[index] = message;
+      return;
+    }
+    list.push(message);
+    if (list.length > 1 && list[list.length - 2].createdAt > message.createdAt) {
+      list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    }
+  });
+
+export const removeDirectMessage = (conversationId: string, messageId: string) =>
+  messagesApi.util.updateQueryData('getConversation', conversationId, (draft) => {
+    draft.data.messages = draft.data.messages.filter((m) => m._id !== messageId);
+  });
+
+// Karşı taraf konuşmayı okudu: "görüldü" işaretleri için.
+export const setOtherLastReadAt = (conversationId: string, readAt: string) =>
+  messagesApi.util.updateQueryData('getConversation', conversationId, (draft) => {
+    draft.data.conversation.otherLastReadAt = readAt;
+  });
 
 export const {
   useGetUnreadCountQuery,

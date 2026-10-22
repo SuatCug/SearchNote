@@ -15,7 +15,7 @@ import {
 } from '../services/group.service.ts';
 import { assertNoteVisible, listNotes } from '../services/note.service.ts';
 import { notify } from '../services/notification.service.ts';
-import { emitToGroup } from '../services/realtime.service.ts';
+import { emitToGroup, toPlainJSON } from '../services/realtime.service.ts';
 import { pushGroupMessage } from '../services/push.service.ts';
 import { buildPagination, parsePagination } from '../utils/pagination.util.ts';
 import { exactRegex, toTurkishInsensitive, wordSearchMatch } from '../utils/regex.util.ts';
@@ -437,7 +437,8 @@ const sendMessage = asyncHandler<AuthedRequest>(async (req, res) => {
     { path: 'user', select: 'fullName avatarUrl' },
     { path: 'note', select: MESSAGE_NOTE_FIELDS },
   ]);
-  emitToGroup(group._id, 'group:message', { groupId: String(group._id) });
+  // message: açık sohbetler mesajı yeniden çekmeden ekler (bu alanı tanımayan istemciler yok sayar).
+  emitToGroup(group._id, 'group:message', { groupId: String(group._id), message: toPlainJSON(message) });
   await recordGroupActivity(group._id, req.user.id, message.createdAt);
   // Uygulaması kapalı üyelere telefon bildirimi (beklenmez)
   pushGroupMessage(group, req.user.id, message.text).catch((e) => console.error('Push error:', (e as Error).message));
@@ -456,7 +457,7 @@ const deleteMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   }
 
   await message.deleteOne();
-  emitToGroup(group._id, 'group:message', { groupId: String(group._id) });
+  emitToGroup(group._id, 'group:message', { groupId: String(group._id), deletedId: String(message._id) });
   res.json({ success: true, message: 'Message deleted.' });
 });
 
@@ -475,7 +476,7 @@ const editMessage = asyncHandler<AuthedRequest>(async (req, res) => {
     { path: 'user', select: 'fullName avatarUrl' },
     { path: 'note', select: MESSAGE_NOTE_FIELDS },
   ]);
-  emitToGroup(group._id, 'group:message', { groupId: String(group._id) });
+  emitToGroup(group._id, 'group:message', { groupId: String(group._id), message: toPlainJSON(message) });
   res.json({ success: true, data: { message } });
 });
 

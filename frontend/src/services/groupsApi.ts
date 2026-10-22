@@ -152,16 +152,39 @@ export const groupsApi = baseApi.injectEndpoints({
         method: 'POST',
         body: { text, ...(noteId && { noteId }), ...(replyTo && { replyTo }) },
       }),
-      invalidatesTags: (_result, _error, { id }) => [{ type: 'GroupMessages', id }],
+      // Sunucunun döndürdüğü mesaj sohbete doğrudan eklenir; sohbet yeniden çekilmez.
+      onQueryStarted: async ({ id }, { dispatch, queryFulfilled }) => {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(upsertGroupMessage(id, data.data.message));
+        } catch {
+          // Hata sohbet bileşeninde gösterilir.
+        }
+      },
     }),
     // Kendi mesajını düzenleme.
     editGroupMessage: builder.mutation<ApiResponse<{ message: GroupMessage }>, { id: string; messageId: string; text: string }>({
       query: ({ id, messageId, text }) => ({ url: `/groups/${id}/messages/${messageId}`, method: 'PATCH', body: { text } }),
-      invalidatesTags: (_result, _error, { id }) => [{ type: 'GroupMessages', id }],
+      onQueryStarted: async ({ id }, { dispatch, queryFulfilled }) => {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(upsertGroupMessage(id, data.data.message));
+        } catch {
+          // Hata sohbet bileşeninde gösterilir.
+        }
+      },
     }),
     deleteGroupMessage: builder.mutation<ApiResponse, { id: string; messageId: string }>({
       query: ({ id, messageId }) => ({ url: `/groups/${id}/messages/${messageId}`, method: 'DELETE' }),
-      invalidatesTags: (_result, _error, { id }) => [{ type: 'GroupMessages', id }, 'GroupActivity'],
+      onQueryStarted: async ({ id, messageId }, { dispatch, queryFulfilled }) => {
+        try {
+          await queryFulfilled;
+          dispatch(removeGroupMessage(id, messageId));
+        } catch {
+          // Hata sohbet bileşeninde gösterilir.
+        }
+      },
+      invalidatesTags: ['GroupActivity'],
     }),
     removeGroupMember: builder.mutation<ApiResponse<{ membersCount: number }>, { id: string; userId: string }>({
       query: ({ id, userId }) => ({ url: `/groups/${id}/members/${userId}`, method: 'DELETE' }),
@@ -173,6 +196,27 @@ export const groupsApi = baseApi.injectEndpoints({
     }),
   }),
 });
+
+// Açık grup sohbetinin önbelleğini yeniden çekmeden güncelleme (gönderim sonucu ve socket olayları).
+// Sohbet önbellekte yoksa (açılmamışsa) hiçbir şey yapılmaz.
+export const upsertGroupMessage = (groupId: string, message: GroupMessage) =>
+  groupsApi.util.updateQueryData('getGroupMessages', groupId, (draft) => {
+    const list = draft.data.messages;
+    const index = list.findIndex((m) => m._id === message._id);
+    if (index >= 0) {
+      list[index] = message;
+      return;
+    }
+    list.push(message);
+    if (list.length > 1 && list[list.length - 2].createdAt > message.createdAt) {
+      list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    }
+  });
+
+export const removeGroupMessage = (groupId: string, messageId: string) =>
+  groupsApi.util.updateQueryData('getGroupMessages', groupId, (draft) => {
+    draft.data.messages = draft.data.messages.filter((m) => m._id !== messageId);
+  });
 
 export const {
   useGetGroupsQuery,

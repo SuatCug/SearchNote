@@ -33,7 +33,7 @@ export default function GroupChat({ groupId, isOwner }: { groupId: string; isOwn
     pollingInterval: useFallbackPolling(POLL_INTERVAL_MS),
     skipPollingIfUnfocused: true,
   });
-  const [sendMessage, { isLoading: sending }] = useSendGroupMessageMutation();
+  const [sendMessage] = useSendGroupMessageMutation();
   const [editMessage, { isLoading: savingEdit }] = useEditGroupMessageMutation();
   const [deleteMessage] = useDeleteGroupMessageMutation();
   const [text, setText] = useState('');
@@ -69,19 +69,31 @@ export default function GroupChat({ groupId, isOwner }: { groupId: string; isOwn
   const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || sending || savingEdit) return;
+    if (!trimmed || savingEdit) return;
     setSendError('');
-    try {
-      if (editing) {
+    if (editing) {
+      try {
         await editMessage({ id: groupId, messageId: editing._id, text: trimmed }).unwrap();
         setEditing(null);
-      } else {
-        await sendMessage({ id: groupId, text: trimmed, noteId, replyTo: replyTo?._id }).unwrap();
-        setReplyTo(null);
-        setNoteId(null);
+        setText('');
+      } catch (err) {
+        setSendError(getErrorMessage(err));
       }
-      setText('');
+      return;
+    }
+
+    // Yazma kutusu hemen boşalır (sıradaki mesaj beklemeden yazılabilir); gönderilemezse metin, yanıt ve not geri gelir.
+    const sentReply = replyTo;
+    const sentNoteId = noteId;
+    setText('');
+    setReplyTo(null);
+    setNoteId(null);
+    try {
+      await sendMessage({ id: groupId, text: trimmed, noteId: sentNoteId, replyTo: sentReply?._id }).unwrap();
     } catch (err) {
+      setText((current) => current || trimmed);
+      setReplyTo((current) => current ?? sentReply);
+      setNoteId((current) => current ?? sentNoteId);
       setSendError(getErrorMessage(err));
     }
   };
@@ -264,7 +276,7 @@ export default function GroupChat({ groupId, isOwner }: { groupId: string; isOwn
           />
           <button
             type="submit"
-            disabled={sending || savingEdit || !text.trim()}
+            disabled={savingEdit || !text.trim()}
             className="btn-primary px-3.5 shrink-0"
             aria-label={editing ? 'Save' : 'Send'}
           >

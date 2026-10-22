@@ -15,6 +15,10 @@ const setIo = (instance: Server) => {
 const userRoom = (userId: IdLike) => `user:${userId}`;
 const groupRoom = (groupId: IdLike) => `group:${groupId}`;
 
+// Olayla gönderilen Mongoose belgesi / ObjectId alanları REST yanıtındaki gibi düz JSON'a çevrilir
+// (ObjectId içindeki Buffer, socket.io'da ikili veri sanılmasın).
+const toPlainJSON = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
+
 // Bir ya da birden fazla kullanıcının tüm açık bağlantılarına olay gönderir.
 const emitToUsers = (userIds: IdLike | null | undefined | (IdLike | null | undefined)[], event: string, payload: object = {}) => {
   if (!io) return;
@@ -55,6 +59,7 @@ const disconnectUser = (userId: IdLike) => {
 };
 
 export {
+  toPlainJSON,
   disconnectUser,
   setIo,
   userRoom,
