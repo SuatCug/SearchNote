@@ -79,7 +79,8 @@ export default function GroupMemberList({ groupId, users, isLoading, isOwner, is
   const others = rest.filter((u) => !(u.isFollowing && u._id !== myId));
 
   return (
-    <div className="card overflow-hidden">
+    // overflow-hidden yok: satırdaki "⋯" menüsü kartın dışına taşabilmeli (yoksa alt satırlarda kesiliyordu).
+    <div className="card">
       <div className="px-4 pt-4 pb-3 sm:px-5">
         <h2 className="text-[17px] font-bold text-gray-900">
           Members <span className="font-normal text-gray-500">· {users.length}</span>
@@ -274,8 +275,14 @@ function MemberRow({
           </button>
           {open && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-              <div className="sheet-up absolute right-0 top-full mt-1.5 z-20 w-56 rounded-2xl bg-white shadow-xl ring-1 ring-black/5 py-1.5">
+              {/* Telefonda alttan açılan sayfa (karartılmış zemin, alt sekme çubuğunun üstünde); sm+ butonun altında açılır menü. */}
+              <div className="fixed inset-0 z-[60] bg-black/40 sm:z-10 sm:bg-transparent" onClick={() => setOpen(false)} />
+              <div
+                role="menu"
+                className="sheet-up fixed inset-x-0 bottom-0 z-[61] rounded-t-2xl bg-white pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:top-full sm:z-20 sm:mt-1.5 sm:w-56 sm:rounded-2xl sm:py-1.5 sm:ring-1 sm:ring-black/5"
+              >
+                <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-gray-300 sm:hidden" aria-hidden="true" />
+                <p className="truncate border-b border-gray-100 px-4 pt-1 pb-2.5 text-sm font-semibold text-gray-900 sm:hidden">{u.fullName}</p>
                 {viewerIsOwner && !u.isOwner && (
                   <>
                     {u.isAdmin ? (
