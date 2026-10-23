@@ -18,7 +18,7 @@ export default function GroupCard({ group, index = 0 }: { group: GroupCardData; 
       style={{ animationDelay: `${Math.min(index, 12) * 60}ms` }}
     >
       <div className="flex items-start justify-between gap-3">
-        <GroupIcon name={group.name} color={group.color} courseCode={group.courseCode} />
+        <GroupIcon name={group.name} color={group.color} courseCode={group.courseCode} avatarUrl={group.avatarUrl} />
         <span className="flex items-center gap-1.5">
           {group.isPrivate && (
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-600 bg-gray-100 rounded-md px-2 py-0.5">

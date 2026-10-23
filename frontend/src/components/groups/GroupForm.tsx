@@ -1,18 +1,25 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Camera } from 'lucide-react';
 import Alert from '@/components/common/Alert';
+import FieldError from '@/components/common/FieldError';
 import RadioCard from '@/components/common/RadioCard';
 import TextField from '@/components/common/TextField';
 import { UniversityField } from '@/components/common/SchoolFields';
+import GroupIcon from '@/components/groups/GroupIcon';
 import { GROUP_COLOR_IDS, groupCode, groupColor } from '@/lib/groupStyle';
 import type { GroupInput } from '@/types/api';
 
 interface GroupFormProps {
   initialValues?: Partial<GroupInput>;
-  onSubmit: (values: GroupInput) => void;
+  // Fotoğraf seçimi sadece grup kurarken; düzenlemede fotoğraf grup sayfasındaki ikondan değiştirilir.
+  withPhoto?: boolean;
+  onSubmit: (values: GroupInput, photo: File | null) => void;
   isLoading: boolean;
   submitLabel: string;
   error?: string;
 }
+
+const MAX_PHOTO_SIZE = 2 * 1024 * 1024;
 
 const JOIN_OPTIONS = [
   { value: false, title: 'Anyone can join', text: 'Students join with a single tap' },
@@ -23,9 +30,28 @@ const EMPTY: GroupInput = { name: '', description: '', isPrivate: false, color: 
 
 // Grup kurma ve düzenleme formu: mobil uygulamadaki GroupForm ile aynı sıra ve metinler
 // (ad, ders kodu, üniversite, açıklama, "Who can join?", grup rengi). Renk + ders kodu grubun ikonunu belirler.
-export default function GroupForm({ initialValues, onSubmit, isLoading, submitLabel, error }: GroupFormProps) {
+export default function GroupForm({ initialValues, withPhoto = false, onSubmit, isLoading, submitLabel, error }: GroupFormProps) {
   const [values, setValues] = useState<GroupInput>(() => ({ ...EMPTY, ...initialValues }));
   const [nameError, setNameError] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoError, setPhotoError] = useState('');
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const photoPreview = useMemo(() => (photo ? URL.createObjectURL(photo) : ''), [photo]);
+  useEffect(() => () => URL.revokeObjectURL(photoPreview), [photoPreview]);
+
+  const handlePhoto = (file: File | undefined) => {
+    if (!file) return;
+    if (!/\.(jpe?g|png)$/i.test(file.name)) {
+      setPhotoError('Group photo must be a JPG or PNG.');
+      return;
+    }
+    if (file.size > MAX_PHOTO_SIZE) {
+      setPhotoError('Group photo can be at most 2 MB.');
+      return;
+    }
+    setPhotoError('');
+    setPhoto(file);
+  };
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -40,7 +66,7 @@ export default function GroupForm({ initialValues, onSubmit, isLoading, submitLa
       description: values.description.trim(),
       courseCode: values.courseCode.replace(/\s+/g, '').toLocaleUpperCase('tr'),
       university: values.university.trim(),
-    });
+    }, photo);
   };
 
   // Renk kutularındaki kısa kod: ad / ders kodu yazılınca grubun gerçek kodu, yoksa "ABC"
@@ -48,6 +74,53 @@ export default function GroupForm({ initialValues, onSubmit, isLoading, submitLa
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      {withPhoto && (
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => photoInputRef.current?.click()}
+            aria-label={photo ? 'Change group photo' : 'Add group photo'}
+            className="group/photo relative shrink-0 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2"
+          >
+            {/* Fotoğraf seçilmezse grubun renkli ikonu kullanılır; önizleme ad / ders kodu / renkle birlikte değişir */}
+            <GroupIcon name={values.name.trim() || 'ABC'} color={values.color} courseCode={values.courseCode} avatarUrl={photoPreview} size="lg" />
+            <span className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-gray-700 shadow ring-1 ring-black/10 group-hover/photo:text-navy-600">
+              <Camera size={14} />
+            </span>
+          </button>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-800">
+              Group photo <span className="text-gray-400 font-normal">(optional)</span>
+            </p>
+            {photoError ? (
+              <FieldError id="group-photo-error">{photoError}</FieldError>
+            ) : (
+              <p className="mt-0.5 text-xs text-gray-400">JPG or PNG, up to 2 MB. Without a photo, the colored icon is used.</p>
+            )}
+            <div className="mt-1.5 flex gap-4 text-sm font-semibold">
+              <button type="button" onClick={() => photoInputRef.current?.click()} className="text-navy-700 hover:text-navy-900">
+                {photo ? 'Change photo' : 'Choose photo'}
+              </button>
+              {photo && (
+                <button type="button" onClick={() => setPhoto(null)} className="text-rose-600 hover:text-rose-700">
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png"
+            className="hidden"
+            onChange={(e) => {
+              handlePhoto(e.target.files?.[0]);
+              e.target.value = '';
+            }}
+          />
+        </div>
+      )}
+
       <TextField
         id="name"
         name="name"

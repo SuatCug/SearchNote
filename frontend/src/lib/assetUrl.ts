@@ -5,6 +5,7 @@ const API_ORIGIN = new URL(API_URL).origin;
 
 export const assetUrl = (path?: string | null) => {
   if (!path) return '';
-  if (/^https?:\/\//.test(path)) return path;
+  // Tam adresler ve seçilen dosyanın yerel önizlemesi (blob:) olduğu gibi kullanılır.
+  if (/^(https?:\/\/|blob:)/.test(path)) return path;
   return `${API_ORIGIN}${path}`;
 };

@@ -14,7 +14,10 @@
     "seed": "node scripts/seed.ts",
     "seed:clear": "node scripts/seed.ts --clear",
     "sync:universities": "node scripts/syncUniversities.ts",
-    "migrate:cloudinary": "node scripts/migrateToCloudinary.ts"
+    "migrate:cloudinary": "node scripts/migrateToCloudinary.ts",
+    "clean:orphans": "node scripts/cleanOrphanRefs.ts",
+    "seed:people": "node scripts/seedPeople.ts",
+    "seed:people:clear": "node scripts/seedPeople.ts --clear"
   },
   "keywords": [],
   "author": "",

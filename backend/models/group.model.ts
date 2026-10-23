@@ -17,6 +17,7 @@ export interface IGroup {
   color: GroupColor;
   courseCode?: string;
   university?: string;
+  avatarUrl?: string;
   lastReadAt: Map<string, Date>;
   lastActivityAt?: Date;
   createdAt: Date;
@@ -63,6 +64,8 @@ const groupSchema = new Schema<IGroup, GroupModel, IGroupMethods>(
     color: { type: String, enum: GROUP_COLORS, default: 'navy' },
     // Grubun dersi (örn. CENG213); mobilde ders filtresi ve grup ikonundaki kısa kod için.
     courseCode: { type: String, trim: true, uppercase: true, maxlength: 12 },
+    // Grup fotoğrafı (kurucu veya yönetici yükler). Yoksa renk + ders kodlu ikon gösterilir.
+    avatarUrl: { type: String, default: '' },
     // Grubun üniversitesi (mobil "My university" filtresi). Alanı olmayan eski gruplarda kurucunun okulu sayılır.
     university: { type: String, trim: true, maxlength: 200, index: true },
     // userId -> grup sohbetini en son açtığı an; bundan sonraki başkalarının mesajları "okunmamış" sayılır.

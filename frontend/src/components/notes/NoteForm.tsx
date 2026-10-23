@@ -34,7 +34,7 @@ const getExtension = (name: string) => name.slice(name.lastIndexOf('.')).toLower
 interface NoteFormProps {
   initialValues?: Partial<NoteInput>;
   withFile?: boolean;
-  groups?: { _id: string; name: string; color?: GroupColor; courseCode?: string }[];
+  groups?: { _id: string; name: string; color?: GroupColor; courseCode?: string; avatarUrl?: string }[];
   allowVisibility?: boolean;
   onSubmit: (values: NoteInput, file: File | null) => void;
   isLoading: boolean;
@@ -285,7 +285,7 @@ export default function NoteForm({
                         onClick={() => setField('group', selected ? '' : g._id)}
                         className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50"
                       >
-                        <GroupIcon name={g.name} color={g.color} courseCode={g.courseCode} size="sm" />
+                        <GroupIcon name={g.name} color={g.color} courseCode={g.courseCode} avatarUrl={g.avatarUrl} size="sm" />
                         <span className={`min-w-0 flex-1 truncate text-[15px] ${selected ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                           {groupTitle(g.name, g.courseCode)}
                         </span>

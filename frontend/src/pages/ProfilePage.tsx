@@ -544,7 +544,7 @@ function GroupsCard({ onSeeAll }: { onSeeAll: () => void }) {
         {groups.map((g) => (
           <li key={g._id}>
             <Link to={`/groups/${g._id}`} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-gray-50">
-              <GroupIcon name={g.name} color={g.color} courseCode={g.courseCode} size="sm" />
+              <GroupIcon name={g.name} color={g.color} courseCode={g.courseCode} avatarUrl={g.avatarUrl} size="sm" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-bold text-gray-900">{g.name}</span>
                 <span className="block truncate text-xs text-gray-500">

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as groupController from '../controllers/group.controller.ts';
 import authenticate, { optionalAuth } from '../middlewares/auth.middleware.ts';
 import requireVerified from '../middlewares/verified.middleware.ts';
+import { uploadAvatar } from '../middlewares/upload.middleware.ts';
 import validate from '../middlewares/validate.middleware.ts';
 import { idParamRules } from '../validations/common.validation.ts';
 import {
@@ -35,6 +36,10 @@ router.get('/:id/notes', idParamRules, validate, optionalAuth, groupController.g
 router.post('/', verifiedOnly, createGroupRules, validate, groupController.createGroup);
 router.patch('/:id', idParamRules, updateGroupRules, validate, verifiedOnly, groupController.updateGroup);
 router.delete('/:id', idParamRules, validate, authenticate, groupController.deleteGroup);
+
+// Grup fotoğrafı (kurucu veya yönetici); form alanı 'avatar', JPG/PNG, en fazla 2 MB
+router.put('/:id/avatar', idParamRules, validate, verifiedOnly, uploadAvatar, groupController.updateGroupAvatar);
+router.delete('/:id/avatar', idParamRules, validate, authenticate, groupController.removeGroupAvatar);
 
 // Katılma / ayrılma (özel grupta katılma = istek gönderme, ayrılma = isteği geri çekme)
 router.post('/:id/join', idParamRules, validate, verifiedOnly, groupController.joinGroup);

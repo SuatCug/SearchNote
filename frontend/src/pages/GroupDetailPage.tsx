@@ -24,6 +24,7 @@ import NoteGrid from '@/components/notes/NoteGrid';
 import UserAvatar from '@/components/users/UserAvatar';
 import PeopleModal from '@/components/users/PeopleModal';
 import GroupIcon from '@/components/groups/GroupIcon';
+import GroupPhotoEditor from '@/components/groups/GroupPhotoEditor';
 import FavoriteButton from '@/components/groups/FavoriteButton';
 import FollowedMembers from '@/components/groups/FollowedMembers';
 import JoinGroupButton from '@/components/groups/JoinGroupButton';
@@ -128,7 +129,11 @@ export default function GroupDetailPage() {
     <PageLayout>
       <section className="card p-6 sm:p-8">
         <div className="flex flex-col sm:flex-row sm:items-start gap-5">
-          <GroupIcon name={group.name} color={group.color} courseCode={group.courseCode} size="xl" />
+          {group.isOwner || group.isAdmin ? (
+            <GroupPhotoEditor group={group} />
+          ) : (
+            <GroupIcon name={group.name} color={group.color} courseCode={group.courseCode} avatarUrl={group.avatarUrl} size="profile" />
+          )}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold text-gray-900 break-words">{groupTitle(group.name, group.courseCode)}</h1>
@@ -166,7 +171,8 @@ export default function GroupDetailPage() {
               {formatCount(group.notesCount)} notes
             </p>
           </div>
-          <div className="shrink-0 flex flex-wrap items-center gap-2">
+          {/* Başlık butonları profildeki Following / Message butonlarıyla aynı boyutta (36px yükseklik, 13px kalın yazı) */}
+          <div className="shrink-0 flex flex-wrap items-center gap-2 [&_:is(.btn-primary,.btn-secondary)]:h-9 [&_:is(.btn-primary,.btn-secondary)]:py-0 [&_:is(.btn-primary,.btn-secondary)]:px-3 [&_:is(.btn-primary,.btn-secondary)]:text-[13px] [&_:is(.btn-primary,.btn-secondary)]:font-bold [&_.btn-secondary.px-2\.5]:w-9 [&_.btn-secondary.px-2\.5]:px-0">
             {group.isMember && shareLink}
             {group.isMember && (
               <button type="button" onClick={() => setInviteOpen(true)} className="btn-secondary">

@@ -24,7 +24,7 @@ export default function GroupActivityCard({ group, index = 0 }: { group: GroupAc
     >
       <div className="flex items-start justify-between gap-3">
         <span className="relative">
-          <GroupIcon name={group.name} color={group.color} courseCode={group.courseCode} />
+          <GroupIcon name={group.name} color={group.color} courseCode={group.courseCode} avatarUrl={group.avatarUrl} />
           {unread && (
             <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-navy-800 px-1 text-[11px] font-bold text-white ring-2 ring-white">
               {group.unreadCount}

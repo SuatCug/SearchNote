@@ -223,58 +223,64 @@ export default function NoteDetailPage() {
               </span>
               <LikesLink count={note.likesCount} onOpen={openLikes} />
             </div>
-            {/* Telefonda indirme butonu tam genişlik, altında beğen / gönder / kaydet / paylaş eşit genişlikte. */}
-            <div className={`grid w-full gap-2 sm:flex sm:w-auto sm:items-center ${token ? 'grid-cols-4' : 'grid-cols-3'}`}>
+            {/* Telefonda indirme butonu tam genişlik; altında solda beğen / gönder, sağda kaydet / paylaş.
+                Geniş ekranda tek satır: indir / beğen / gönder solda, kaydet / paylaş en sağda. */}
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
               <button
                 type="button"
                 onClick={handleDownload}
                 disabled={downloading}
-                className="btn-primary col-span-full bg-navy-800 hover:bg-navy-900"
+                className="btn-primary bg-navy-800 hover:bg-navy-900"
               >
                 <Download size={16} />
                 {downloading ? 'Downloading...' : token ? 'Free Download' : 'Log in to download'}
               </button>
-              <button
-                type="button"
-                onClick={handleLike}
-                aria-pressed={note.isLiked}
-                className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors ${
-                  note.isLiked
-                    ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <Heart size={16} className={note.isLiked ? 'fill-rose-500 text-rose-500' : ''} />
-                {formatCount(note.likesCount)}
-              </button>
-              {/* Notu mesajla arkadaşlara gönderir. */}
-              {token && (
+              <div className="flex items-center gap-2 sm:flex-1">
                 <button
                   type="button"
-                  onClick={() => setShowSend(true)}
-                  disabled={!canInteract}
-                  title={canInteract ? 'Send in a message' : 'Verify your email to do this'}
-                  aria-label="Send in a message"
-                  className={OUTLINE_BUTTON}
+                  onClick={handleLike}
+                  aria-pressed={note.isLiked}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors ${
+                    note.isLiked
+                      ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
                 >
-                  <Send size={16} />
-                  <span className="hidden sm:inline">Send</span>
+                  <Heart size={16} className={note.isLiked ? 'fill-rose-500 text-rose-500' : ''} />
+                  {formatCount(note.likesCount)}
                 </button>
-              )}
-              {/* Kaydedilen notlar akıştaki "Saved" sekmesinde ve profildeki Saved sekmesinde görünür. */}
-              <button
-                type="button"
-                onClick={handleSave}
-                aria-pressed={note.isSaved}
-                title={note.isSaved ? 'Remove from saved' : 'Save'}
-                aria-label={note.isSaved ? 'Remove from saved' : 'Save'}
-                className={`${OUTLINE_BUTTON} ${note.isSaved ? '!border-navy-200 !bg-navy-50 !text-navy-700' : ''}`}
-              >
-                <Bookmark size={16} className={note.isSaved ? 'fill-navy-600 text-navy-600' : ''} />
-              </button>
-              <button type="button" onClick={handleShare} title="Share" aria-label="Share" className={OUTLINE_BUTTON}>
-                {copied ? <Check size={16} className="text-emerald-600" /> : <Share2 size={16} />}
-              </button>
+                {/* Notu mesajla arkadaşlara gönderir. */}
+                {token && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSend(true)}
+                    disabled={!canInteract}
+                    title={canInteract ? 'Send in a message' : 'Verify your email to do this'}
+                    aria-label="Send in a message"
+                    className={OUTLINE_BUTTON}
+                  >
+                    <Send size={16} />
+                    Send
+                  </button>
+                )}
+                {/* Kaydet / paylaş satırın en sağında */}
+                <div className="ml-auto flex items-center gap-2">
+                  {/* Kaydedilen notlar akıştaki "Saved" sekmesinde ve profildeki Saved sekmesinde görünür. */}
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    aria-pressed={note.isSaved}
+                    title={note.isSaved ? 'Remove from saved' : 'Save'}
+                    aria-label={note.isSaved ? 'Remove from saved' : 'Save'}
+                    className={`${OUTLINE_BUTTON} ${note.isSaved ? '!border-navy-200 !bg-navy-50 !text-navy-700' : ''}`}
+                  >
+                    <Bookmark size={16} className={note.isSaved ? 'fill-navy-600 text-navy-600' : ''} />
+                  </button>
+                  <button type="button" onClick={handleShare} title="Share" aria-label="Share" className={OUTLINE_BUTTON}>
+                    {copied ? <Check size={16} className="text-emerald-600" /> : <Share2 size={16} />}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
           {actionError && <Alert className="mx-5 mb-4">{actionError}</Alert>}

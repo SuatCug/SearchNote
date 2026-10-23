@@ -17,6 +17,8 @@ import { assertNoteVisible, listNotes } from '../services/note.service.ts';
 import { notify } from '../services/notification.service.ts';
 import { emitToGroup, toPlainJSON } from '../services/realtime.service.ts';
 import { pushGroupMessage } from '../services/push.service.ts';
+import { saveAvatar, removeFile } from '../services/storage.service.ts';
+import { getExtension, matchesSignature } from '../utils/fileTypes.util.ts';
 import { buildPagination, parsePagination } from '../utils/pagination.util.ts';
 import { exactRegex, toTurkishInsensitive, wordSearchMatch } from '../utils/regex.util.ts';
 import type { GroupDocument } from '../models/group.model.ts';
@@ -69,6 +71,7 @@ const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined)
   return {
     ...rest,
     color: rest.color ?? 'navy',
+    avatarUrl: rest.avatarUrl ?? '',
     isFavorite: favorites.some((id) => id.equals(group._id)),
     membersCount: members.length,
     notesCount,
@@ -208,6 +211,36 @@ const updateGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   await group.save();
 
   res.json({ success: true, message: 'Group updated.', data: { group: await toGroupDetail(group, req.user.id) } });
+});
+
+// Grup fotoğrafı: kurucu veya yönetici yükler / değiştirir.
+const updateGroupAvatar = asyncHandler<AuthedRequest>(async (req, res) => {
+  if (!req.file) throw new ApiError(400, 'A group photo is required.');
+  const ext = getExtension(req.file.originalname);
+  if (!matchesSignature(req.file.buffer, ext)) {
+    throw new ApiError(415, 'The file content does not match its extension.');
+  }
+
+  const group = await findGroupOrFail(req.params.id);
+  assertManager(group, req.user.id);
+  const oldAvatar = group.avatarUrl;
+  group.avatarUrl = await saveAvatar(req.file.buffer, ext);
+  await group.save();
+  await removeFile(oldAvatar);
+
+  res.json({ success: true, message: 'Group photo updated.', data: { group: await toGroupDetail(group, req.user.id) } });
+});
+
+// Grup fotoğrafını kaldırır (renkli ikon gösterilir).
+const removeGroupAvatar = asyncHandler<AuthedRequest>(async (req, res) => {
+  const group = await findGroupOrFail(req.params.id);
+  assertManager(group, req.user.id);
+  const oldAvatar = group.avatarUrl;
+  group.avatarUrl = '';
+  await group.save();
+  await removeFile(oldAvatar);
+
+  res.json({ success: true, message: 'Group photo removed.', data: { group: await toGroupDetail(group, req.user.id) } });
 });
 
 // Grup silinince gruba paylaşılan notlar (dosyalarıyla) ve sohbet mesajları da silinir.
@@ -578,6 +611,8 @@ export {
   getGroup,
   createGroup,
   updateGroup,
+  updateGroupAvatar,
+  removeGroupAvatar,
   deleteGroup,
   joinGroup,
   leaveGroup,

@@ -60,6 +60,7 @@ const cardProjection = (viewerId: string | undefined, favorites: unknown[]) => {
     // Son hareket zamanı (içerik değil): kartlarda 'Active 2 h ago'
     lastActivityAt: 1,
     color: { $ifNull: ['$color', 'navy'] },
+    avatarUrl: { $ifNull: ['$avatarUrl', ''] },
     membersCount: 1,
     notesCount: { $ifNull: [{ $arrayElemAt: ['$notes.count', 0] }, 0] },
     // Grubun son notu (adı dahil) sadece üyelere görünür; grup herkese açık olsa da
@@ -144,7 +145,7 @@ const UNREAD_CAP = 99;
 const listMyGroupActivity = async (userId: string) => {
   const me = new mongoose.Types.ObjectId(userId);
   const groups = await Group.find({ members: me })
-    .select('name isPrivate owner admins members lastReadAt lastActivityAt createdAt color courseCode')
+    .select('name isPrivate owner admins members lastReadAt lastActivityAt createdAt color courseCode avatarUrl')
     .lean();
   if (!groups.length) return [];
   const favorites = new Set((await favoriteGroupIds(userId)).map(String));
@@ -208,6 +209,7 @@ const listMyGroupActivity = async (userId: string) => {
       isPrivate: g.isPrivate,
       color: g.color ?? 'navy',
       courseCode: g.courseCode,
+      avatarUrl: g.avatarUrl ?? '',
       isFavorite: favorites.has(id),
       isOwner: String(g.owner) === userId,
       isAdmin: (g.admins ?? []).some((id) => String(id) === userId),
@@ -250,11 +252,19 @@ const requestInfoOf = (g: { requestInfo?: unknown }, userId: string) => {
   return { message: info?.message ?? '', createdAt: info?.createdAt ?? null };
 };
 
-const groupSummary = (g: { _id: unknown; name: string; color?: string; courseCode?: string; isPrivate: boolean }) => ({
+const groupSummary = (g: {
+  _id: unknown;
+  name: string;
+  color?: string;
+  courseCode?: string;
+  avatarUrl?: string;
+  isPrivate: boolean;
+}) => ({
   _id: g._id,
   name: g.name,
   color: g.color ?? 'navy',
   courseCode: g.courseCode,
+  avatarUrl: g.avatarUrl ?? '',
   isPrivate: g.isPrivate,
 });
 
@@ -264,7 +274,7 @@ const newestFirst = (a: { createdAt: Date | null }, b: { createdAt: Date | null 
 // Kurucusu veya yöneticisi olduğum gruplara gelen bekleyen katılma istekleri, en yenisi üstte.
 const listIncomingRequests = async (userId: string) => {
   const groups = await Group.find({ $or: [{ owner: userId }, { admins: userId }], 'joinRequests.0': { $exists: true } })
-    .select('name color courseCode isPrivate joinRequests requestInfo')
+    .select('name color courseCode avatarUrl isPrivate joinRequests requestInfo')
     .populate<{ joinRequests: { _id: unknown; fullName: string }[] }>('joinRequests', REQUEST_USER_FIELDS)
     .lean();
   return groups
@@ -275,7 +285,7 @@ const listIncomingRequests = async (userId: string) => {
 // Benim gönderdiğim, hâlâ bekleyen katılma istekleri.
 const listSentRequests = async (userId: string) => {
   const groups = await Group.find({ joinRequests: new mongoose.Types.ObjectId(userId) })
-    .select('name color courseCode isPrivate members requestInfo')
+    .select('name color courseCode avatarUrl isPrivate members requestInfo')
     .lean();
   return groups
     .map((g) => ({ group: { ...groupSummary(g), membersCount: g.members?.length ?? 0 }, ...requestInfoOf(g, userId) }))
@@ -300,7 +310,7 @@ const deleteGroupWithContent = async (group: GroupDocument) => {
   ]);
 
   // Dosya silme hataları grubun silinmesini engellemez (removeFile sadece loglar)
-  await Promise.all(notes.map((n) => removeFile(n.fileUrl)));
+  await Promise.all([removeFile(group.avatarUrl), ...notes.map((n) => removeFile(n.fileUrl))]);
 };
 
 export {

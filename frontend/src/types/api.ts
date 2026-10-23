@@ -188,6 +188,8 @@ export interface GroupCard {
   // Eski gruplarda gelmeyebilir (lacivert sayılır)
   color?: GroupColor;
   courseCode?: string;
+  // Grup fotoğrafı; '' / yok = renkli ikon
+  avatarUrl?: string;
   // Grubun üniversitesi; '' = hiçbir okula bağlı değil, yok = eski grup
   university?: string;
   isFavorite?: boolean;
@@ -212,6 +214,7 @@ export interface GroupActivity {
   isPrivate: boolean;
   color?: GroupColor;
   courseCode?: string;
+  avatarUrl?: string;
   isFavorite?: boolean;
   isOwner: boolean;
   isAdmin?: boolean;
@@ -234,6 +237,7 @@ export interface GroupSummary {
   name: string;
   color?: GroupColor;
   courseCode?: string;
+  avatarUrl?: string;
   isPrivate: boolean;
   membersCount?: number;
 }

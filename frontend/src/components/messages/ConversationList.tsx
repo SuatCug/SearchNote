@@ -6,6 +6,7 @@ import NewMessageModal from './NewMessageModal';
 import Spinner from '@/components/common/Spinner';
 import Alert from '@/components/common/Alert';
 import { useGetMyGroupsQuery } from '@/services/groupsApi';
+import { assetUrl } from '@/lib/assetUrl';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { listTime } from '@/lib/chatTime';
 import { useTypingConversations } from '@/lib/socket';
@@ -243,9 +244,13 @@ function GroupItem({ group }: { group: GroupCard }) {
       to={`/groups/${group._id}?tab=chat`}
       className="flex items-center gap-3.5 px-4 lg:px-5 py-3 hover:bg-gray-50 active:bg-gray-50 transition-colors"
     >
-      <span className="w-[52px] h-[52px] shrink-0 rounded-2xl bg-navy-100 text-navy-800 font-bold flex items-center justify-center">
-        {initials || <Users size={20} />}
-      </span>
+      {group.avatarUrl ? (
+        <img src={assetUrl(group.avatarUrl)} alt="" className="w-[52px] h-[52px] shrink-0 rounded-2xl object-cover bg-gray-100" />
+      ) : (
+        <span className="w-[52px] h-[52px] shrink-0 rounded-2xl bg-navy-100 text-navy-800 font-bold flex items-center justify-center">
+          {initials || <Users size={20} />}
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-[15px] font-semibold text-gray-900">
           <span className="truncate">{group.name}</span>

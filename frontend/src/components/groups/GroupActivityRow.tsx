@@ -20,7 +20,7 @@ export default function GroupActivityRow({ group }: { group: GroupActivity }) {
       className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
     >
       <span className="relative shrink-0">
-        <GroupIcon name={group.name} color={group.color} courseCode={group.courseCode} />
+        <GroupIcon name={group.name} color={group.color} courseCode={group.courseCode} avatarUrl={group.avatarUrl} />
         {unread && (
           <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-navy-800 text-white text-[11px] font-bold flex items-center justify-center ring-2 ring-white">
             {group.unreadCount}

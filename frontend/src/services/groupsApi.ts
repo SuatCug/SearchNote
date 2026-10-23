@@ -91,6 +91,15 @@ export const groupsApi = baseApi.injectEndpoints({
       query: ({ id, ...body }) => ({ url: `/groups/${id}`, method: 'PATCH', body }),
       invalidatesTags: (_result, _error, { id }) => [{ type: 'Group', id }, ...GROUP_LISTS],
     }),
+    // Grup fotoğrafı (kurucu veya yönetici); body: FormData (dosya alanı "avatar")
+    updateGroupAvatar: builder.mutation<GroupResponse, { id: string; formData: FormData }>({
+      query: ({ id, formData }) => ({ url: `/groups/${id}/avatar`, method: 'PUT', body: formData }),
+      invalidatesTags: (_result, _error, { id }) => [{ type: 'Group', id }, ...GROUP_LISTS, 'GroupRequests'],
+    }),
+    removeGroupAvatar: builder.mutation<GroupResponse, string>({
+      query: (id) => ({ url: `/groups/${id}/avatar`, method: 'DELETE' }),
+      invalidatesTags: (_result, _error, id) => [{ type: 'Group', id }, ...GROUP_LISTS, 'GroupRequests'],
+    }),
     deleteGroup: builder.mutation<ApiResponse, string>({
       query: (id) => ({ url: `/groups/${id}`, method: 'DELETE' }),
       invalidatesTags: [...GROUP_LISTS, 'GroupRequests', 'NoteList', 'Note'],
@@ -236,6 +245,8 @@ export const {
   useGetGroupNotesQuery,
   useCreateGroupMutation,
   useUpdateGroupMutation,
+  useUpdateGroupAvatarMutation,
+  useRemoveGroupAvatarMutation,
   useDeleteGroupMutation,
   useToggleFavoriteMutation,
   useToggleMembershipMutation,

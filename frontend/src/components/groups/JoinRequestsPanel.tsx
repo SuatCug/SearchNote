@@ -118,7 +118,7 @@ export default function JoinRequestsPanel() {
             {mine.map((r) => (
               <li key={r.group._id} className="flex items-center gap-3 p-4">
                 <Link to={`/groups/${r.group._id}`} className="flex min-w-0 flex-1 items-center gap-3 group">
-                  <GroupIcon name={r.group.name} color={r.group.color} courseCode={r.group.courseCode} />
+                  <GroupIcon name={r.group.name} color={r.group.color} courseCode={r.group.courseCode} avatarUrl={r.group.avatarUrl} />
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold text-gray-900 group-hover:text-navy-600">
                       {groupTitle(r.group.name, r.group.courseCode)}
