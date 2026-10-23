@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
 import { Note, User } from '../models/index.ts';
-import { listNotes, assertNoteVisible, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
+import { listNotes, loadNoteViewer, assertNoteVisible, PUBLIC_NOTES_MATCH } from '../services/note.service.ts';
 import { assertMember, recordGroupActivity } from '../services/group.service.ts';
 import { notify, removeNotification } from '../services/notification.service.ts';
 import { pushGroupNote } from '../services/push.service.ts';
@@ -121,7 +121,7 @@ const searchNotes = asyncHandler(async (req, res) => {
 
 // Takip edilen kullanıcıların notlarından oluşan akış.
 const getFeed = asyncHandler<AuthedRequest>(async (req, res) => {
-  const me = await User.findById(req.user.id).select('following');
+  const me = await loadNoteViewer(req.user.id);
   if (!me) throw new ApiError(404, 'User not found.');
 
   const data = await listNotes({
@@ -129,6 +129,7 @@ const getFeed = asyncHandler<AuthedRequest>(async (req, res) => {
     sort: 'newest',
     ...parsePagination(req.query),
     viewerId: req.user.id,
+    viewer: me,
   });
 
   res.json({ success: true, data });

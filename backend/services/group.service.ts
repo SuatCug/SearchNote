@@ -16,7 +16,8 @@ const GROUP_SORT_OPTIONS: Record<string, SortSpec> = {
 // Kullanıcının favori grupları (alan yoksa boş).
 const favoriteGroupIds = async (userId: string | undefined) => {
   if (!userId) return [];
-  const user = await User.findById(userId).select('+favoriteGroups').lean();
+  // Sadece bu alan okunur ('+favoriteGroups' tüm kaydı, takipçi listeleriyle birlikte getirirdi).
+  const user = await User.findById(userId).select('favoriteGroups').lean();
   return user?.favoriteGroups ?? [];
 };
 

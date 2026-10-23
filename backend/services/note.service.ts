@@ -85,16 +85,21 @@ const assertNoteVisible = async (
 // Filtre + sıralama + sayfalama ile not kartlarını ve toplam sayıyı döndürür.
 // includeGroupNotes: grup sayfası için (üyelik kontrolü önceden yapılır); aksi halde izleyicinin görebileceği
 // grupsuz notlar listelenir (herkese açık + takip ettiklerinin "sadece takipçiler" notları + kendi notları).
+// Kartlardaki yer imi durumu ve takipçi görünürlüğü için izleyicinin kaydettikleri ve takip ettikleri.
+const loadNoteViewer = (viewerId: string) => User.findById(viewerId).select('savedNotes following').lean();
+type NoteViewer = Awaited<ReturnType<typeof loadNoteViewer>>;
+
 interface ListNotesOptions extends PaginationParams {
   match?: MatchFilter;
   sort?: unknown;
   viewerId?: string;
+  // Çağıran izleyiciyi zaten okuduysa (örn. akış, takip listesi için) tekrar okunmaz.
+  viewer?: NoteViewer;
   includeGroupNotes?: boolean;
 }
 
-const listNotes = async ({ match = {}, sort = 'newest', page, limit, skip, viewerId, includeGroupNotes = false }: ListNotesOptions) => {
-  // Kartlardaki yer imi durumu ve takipçi görünürlüğü için izleyicinin kaydettikleri ve takip ettikleri.
-  const viewer = viewerId ? await User.findById(viewerId).select('savedNotes following').lean() : null;
+const listNotes = async ({ match = {}, sort = 'newest', page, limit, skip, viewerId, viewer: knownViewer, includeGroupNotes = false }: ListNotesOptions) => {
+  const viewer = knownViewer !== undefined ? knownViewer : viewerId ? await loadNoteViewer(viewerId) : null;
   const savedIds = viewer?.savedNotes ?? [];
   const fullMatch = includeGroupNotes ? match : { $and: [match, visibleNotesMatch(viewerId, viewer?.following)] };
   const [result] = await Note.aggregate([
@@ -153,4 +158,4 @@ const listUserCourses = async (authorId: string, viewerId?: string) => {
   return courses;
 };
 
-export { listNotes, listUserCourses, assertNoteVisible, PUBLIC_NOTES_MATCH, SORT_OPTIONS };
+export { listNotes, loadNoteViewer, listUserCourses, assertNoteVisible, PUBLIC_NOTES_MATCH, SORT_OPTIONS };
