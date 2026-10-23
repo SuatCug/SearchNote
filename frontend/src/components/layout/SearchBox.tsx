@@ -173,6 +173,7 @@ export default function SearchBox({ value, onChange, onSearch, placeholder, inpu
 
   return (
     <div
+      role="search"
       className="relative"
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) close();
@@ -181,8 +182,12 @@ export default function SearchBox({ value, onChange, onSearch, placeholder, inpu
       <label className="relative block">
         <span className="sr-only">Search notes and people</span>
         <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/60 pointer-events-none" />
+        {/* Chrome autocomplete="off"u yok sayıp kayıtlı kartları önerebiliyor; id/name'deki "search"
+            alanı arama kutusu olarak sınıflandırtıp otomatik doldurmayı kapatır. */}
         <input
           ref={inputRef}
+          id={`site-search${listId}`}
+          name="search"
           type="search"
           autoComplete="off"
           role="combobox"
