@@ -184,6 +184,7 @@ export default function SearchBox({ value, onChange, onSearch, placeholder, inpu
         <input
           ref={inputRef}
           type="search"
+          autoComplete="off"
           role="combobox"
           aria-expanded={showPanel}
           aria-controls={listId}

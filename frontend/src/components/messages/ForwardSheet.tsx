@@ -142,6 +142,7 @@ export default function ForwardSheet({
           <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
           <input
             type="search"
+            autoComplete="off"
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}

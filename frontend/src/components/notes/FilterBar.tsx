@@ -100,6 +100,7 @@ export default function FilterBar({ values, onChange, onReset }: FilterBarProps)
                 // Her tuşta istek atmamak için değer odak kaybında / Enter'da uygulanır.
                 key={values[f.key] || ''}
                 defaultValue={values[f.key] || ''}
+                autoComplete="off"
                 onBlur={(e) => e.target.value.trim() !== (values[f.key] || '') && set(f.key, e.target.value.trim())}
                 onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                 placeholder={f.placeholder}

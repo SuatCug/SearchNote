@@ -90,6 +90,7 @@ export default function GroupMemberList({ groupId, users, isLoading, isOwner, is
           <input
             id="group-member-search"
             type="search"
+            autoComplete="off"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Find a member"
