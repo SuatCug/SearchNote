@@ -8,9 +8,16 @@ import { notify, removeNotification } from '../services/notification.service.ts'
 import { pushGroupNote } from '../services/push.service.ts';
 import { saveNoteFile, readNoteFile, removeFile } from '../services/storage.service.ts';
 import { parsePagination, buildPagination } from '../utils/pagination.util.ts';
-import { containsRegex, exactRegex, splitSearchWords, wordSearchMatch } from '../utils/regex.util.ts';
+import { containsRegex, exactRegex, splitSearchWords, toTurkishInsensitive, wordSearchMatch } from '../utils/regex.util.ts';
 import { NOTE_FILE_TYPES, getExtension, matchesSignature } from '../utils/fileTypes.util.ts';
+import { createCache } from '../utils/memoryCache.util.ts';
 import type { NoteDocument } from '../models/note.model.ts';
+
+// Filtre seçenekleri ve popüler dersler her istekte tüm genel notları tarar ama nadiren değişir:
+// sonuç birkaç dakika bellekte tutulur (yeni bir okul / ders en geç bu süre sonunda listelerde görünür).
+const SUMMARY_CACHE_TTL_MS = 5 * 60 * 1000;
+const filterOptionsCache = createCache<object>({ ttlMs: SUMMARY_CACHE_TTL_MS });
+const trendingCoursesCache = createCache<object[]>({ ttlMs: SUMMARY_CACHE_TTL_MS, maxEntries: 1 });
 
 const USER_CARD_FIELDS = 'fullName avatarUrl university department';
 const EDITABLE_FIELDS = [
@@ -129,30 +136,33 @@ const getFeed = asyncHandler<AuthedRequest>(async (req, res) => {
 
 // Arama sayfasındaki filtre açılır listeleri için mevcut değerler.
 const getFilterOptions = asyncHandler(async (req, res) => {
-  // Filtre seçenekleri sadece genel (grupsuz) notlardan üretilir.
-  const departmentFilter = {
-    ...PUBLIC_NOTES_MATCH,
-    ...(req.query.university && { university: exactRegex(String(req.query.university)) }),
-  };
+  const university = req.query.university ? String(req.query.university) : '';
+  // Bölüm listesi seçilen okula göre değişir; aynı okulun farklı yazımları (büyük/küçük harf, İ/i, ı/I) aynı anahtara düşer.
+  const data = await filterOptionsCache(toTurkishInsensitive(university.toLocaleLowerCase('tr')), async () => {
+    // Filtre seçenekleri sadece genel (grupsuz) notlardan üretilir.
+    const departmentFilter = {
+      ...PUBLIC_NOTES_MATCH,
+      ...(university && { university: exactRegex(university) }),
+    };
 
-  const [universities, departments, semesters] = await Promise.all([
-    Note.distinct('university', PUBLIC_NOTES_MATCH),
-    Note.distinct('department', departmentFilter),
-    Note.distinct('semester', PUBLIC_NOTES_MATCH),
-  ]);
+    const [universities, departments, semesters] = await Promise.all([
+      Note.distinct('university', PUBLIC_NOTES_MATCH),
+      Note.distinct('department', departmentFilter),
+      Note.distinct('semester', PUBLIC_NOTES_MATCH),
+    ]);
 
-  const sortTr = (arr: (string | null | undefined)[]) =>
-    arr.filter((v): v is string => Boolean(v)).sort((a, b) => a.localeCompare(b, 'tr'));
+    const sortTr = (arr: (string | null | undefined)[]) =>
+      arr.filter((v): v is string => Boolean(v)).sort((a, b) => a.localeCompare(b, 'tr'));
 
-  res.json({
-    success: true,
-    data: {
+    return {
       universities: sortTr(universities),
       departments: sortTr(departments),
       semesters: sortTr(semesters).reverse(),
       fileTypes: ['pdf', 'docx', 'image', 'archive'],
-    },
+    };
   });
+
+  res.json({ success: true, data });
 });
 
 const getNote = asyncHandler(async (req, res) => {
@@ -370,22 +380,24 @@ const getSavedNotes = asyncHandler<AuthedRequest>(async (req, res) => {
 
 // Akıştaki "Popular courses" etiketleri: ders kodu (yoksa ders adı) bazında not sayısı + beğeniye göre sıralanır.
 const getTrendingCourses = asyncHandler(async (_req, res) => {
-  const courses = await Note.aggregate([
-    { $match: PUBLIC_NOTES_MATCH },
-    {
-      $group: {
-        _id: { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ['$courseCode', ''] } }, 0] }, '$courseCode', '$courseName'] },
-        courseCode: { $first: '$courseCode' },
-        courseName: { $first: '$courseName' },
-        notesCount: { $sum: 1 },
-        likesCount: { $sum: { $size: '$likes' } },
+  const courses = await trendingCoursesCache('all', () =>
+    Note.aggregate([
+      { $match: PUBLIC_NOTES_MATCH },
+      {
+        $group: {
+          _id: { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ['$courseCode', ''] } }, 0] }, '$courseCode', '$courseName'] },
+          courseCode: { $first: '$courseCode' },
+          courseName: { $first: '$courseName' },
+          notesCount: { $sum: 1 },
+          likesCount: { $sum: { $size: '$likes' } },
+        },
       },
-    },
-    { $addFields: { score: { $add: [{ $multiply: ['$notesCount', 3] }, '$likesCount'] } } },
-    { $sort: { score: -1, _id: 1 } },
-    { $limit: 10 },
-    { $project: { _id: 0, courseCode: 1, courseName: 1, notesCount: 1 } },
-  ]);
+      { $addFields: { score: { $add: [{ $multiply: ['$notesCount', 3] }, '$likesCount'] } } },
+      { $sort: { score: -1, _id: 1 } },
+      { $limit: 10 },
+      { $project: { _id: 0, courseCode: 1, courseName: 1, notesCount: 1 } },
+    ])
+  );
 
   res.json({ success: true, data: { courses } });
 });
