@@ -45,6 +45,11 @@ export const groupsApi = baseApi.injectEndpoints({
       query: (params) => ({ url: '/groups/mine', params: cleanParams(params) }),
       providesTags: ['GroupList'],
     }),
+    // Bir kullanıcının üyesi olduğu gruplar (profildeki Groups; özel gruplar dahil herkes görür).
+    getUserGroups: builder.query<GroupListResponse, { id: string; page?: number; limit?: number }>({
+      query: ({ id, ...params }) => ({ url: `/users/${id}/groups`, params: cleanParams(params) }),
+      providesTags: ['GroupList'],
+    }),
     // Gruplarım: son hareket (mesaj / not) + okunmamış mesaj sayısı, en son hareket eden üstte.
     getMyGroupActivity: builder.query<ApiResponse<{ groups: GroupActivity[] }>, void>({
       query: () => '/groups/mine/activity',
@@ -236,6 +241,7 @@ export const {
   useGetGroupsQuery,
   useGetMyGroupsQuery,
   useGetMyGroupActivityQuery,
+  useGetUserGroupsQuery,
   useGetFavoriteGroupsQuery,
   useGetIncomingRequestsQuery,
   useGetSentRequestsQuery,

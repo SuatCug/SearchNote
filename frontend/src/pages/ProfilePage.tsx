@@ -11,6 +11,7 @@ import {
   Flag,
   Heart,
   Link as LinkIcon,
+  Lock,
   Monitor,
   MoreHorizontal,
   Pencil,
@@ -43,7 +44,7 @@ import {
   type ConnectionType,
 } from '@/services/usersApi';
 import { useGetSavedNotesQuery } from '@/services/notesApi';
-import { useGetMyGroupActivityQuery, useGetMyGroupsQuery } from '@/services/groupsApi';
+import { useGetMyGroupActivityQuery, useGetUserGroupsQuery } from '@/services/groupsApi';
 import { FILE_TYPES } from '@/lib/constants';
 import { DESKTOP_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import { useKeepInViewOnChange } from '@/hooks/useKeepInViewOnChange';
@@ -94,7 +95,7 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
   const isMe = data?.data?.isMe ?? false;
   const requested = searchParams.get('tab');
   const tab: ProfileTab =
-    requested === 'notes' || (isMe && (requested === 'saved' || requested === 'groups')) ? requested : 'all';
+    requested === 'notes' || requested === 'groups' || (isMe && requested === 'saved') ? requested : 'all';
   // Aşağıdayken sekme değişirse notların / sekmenin başı en üste gelir (kısa sekmede sayfa dibine sıkışmasın).
   useKeepInViewOnChange(tab, contentRef);
 
@@ -112,12 +113,9 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
   const tabs: { key: ProfileTab; label: string }[] = [
     { key: 'all', label: 'All' },
     { key: 'notes', label: 'Notes' },
-    ...(isMe
-      ? [
-          { key: 'saved' as const, label: 'Saved' },
-          { key: 'groups' as const, label: 'Groups' },
-        ]
-      : []),
+    // Kaydedilenler sadece kişinin kendisine; gruplar herkese açık (özel gruplar dahil)
+    ...(isMe ? [{ key: 'saved' as const, label: 'Saved' }] : []),
+    { key: 'groups', label: 'Groups' },
   ];
   // Varsayılan sekme (All) adreste yazılmaz.
   const changeTab = (next: ProfileTab) => setSearchParams(next === 'all' ? {} : { tab: next });
@@ -189,7 +187,8 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
           <aside className="hidden lg:block space-y-4">
             <IntroCard profile={data.data} />
             <CoursesCard userId={user.id} onCourse={openCourse} />
-            {isMe ? <GroupsCard onSeeAll={() => changeTab('groups')} /> : <PopularNotesCard userId={user.id} />}
+            <GroupsCard userId={user.id} onSeeAll={() => changeTab('groups')} />
+            {!isMe && <PopularNotesCard userId={user.id} />}
           </aside>
 
           <div ref={isDesktop ? contentRef : undefined} className="min-h-[calc(100vh-10rem)] min-w-0 scroll-mt-24">
@@ -204,7 +203,7 @@ export default function ProfilePage({ list }: { list?: ConnectionType }) {
             )}
             {tab === 'notes' && <NotesTab userId={user.id} isMe={isMe} total={data.data.stats.notesCount} />}
             {tab === 'saved' && <SavedTab />}
-            {tab === 'groups' && <GroupsTab />}
+            {tab === 'groups' && (isMe ? <GroupsTab /> : <UserGroupsTab userId={user.id} name={user.fullName} />)}
           </div>
         </div>
       </div>
@@ -521,10 +520,9 @@ function CoursesCard({ userId, onCourse }: { userId: string; onCourse: (code: st
 
 const SIDE_GROUPS = 5;
 
-// Kendi profilimde üyesi olduğum gruplar (ilk 5); "See all" Groups sekmesini açar.
-// Başkasının grupları için sunucuda uç nokta yok, bu yüzden kart sadece kendi profilimde görünür.
-function GroupsCard({ onSeeAll }: { onSeeAll: () => void }) {
-  const { data } = useGetMyGroupsQuery({ limit: SIDE_GROUPS });
+// Kişinin üyesi olduğu gruplar (ilk 5, özel gruplar dahil herkes görür); "See all" Groups sekmesini açar.
+function GroupsCard({ userId, onSeeAll }: { userId: string; onSeeAll: () => void }) {
+  const { data } = useGetUserGroupsQuery({ id: userId, limit: SIDE_GROUPS });
   const groups = data?.data?.items ?? [];
   const total = data?.data?.pagination?.total ?? groups.length;
   if (!groups.length) return null;
@@ -870,9 +868,10 @@ function AllTab({
       </div>
       <NoteCards notes={notes.data?.data?.items} isLoading={notes.isLoading} empty={<NotesEmpty isMe={isMe} />} preview />
 
-      {/* Geniş ekranın sol sütunundaki son kart: kendi profilimde gruplarım, başkasınınkinde en beğenilen notları. */}
-      <div className="mt-6 lg:hidden">
-        {isMe ? <GroupsCard onSeeAll={onGroups} /> : <PopularNotesCard userId={user.id} />}
+      {/* Geniş ekranın sol sütunundaki son kartlar: kişinin grupları, başkasının profilinde ayrıca en beğenilen notları. */}
+      <div className="mt-6 space-y-4 lg:hidden">
+        <GroupsCard userId={user.id} onSeeAll={onGroups} />
+        {!isMe && <PopularNotesCard userId={user.id} />}
       </div>
     </>
   );
@@ -1056,6 +1055,47 @@ function GroupsTab() {
         <GroupActivityRow key={g._id} group={g} />
       ))}
     </div>
+  );
+}
+
+// Başkasının profilinde: üyesi olduğu bütün gruplar (özel gruplar dahil). Grubun içeriği yine sadece üyelere açık.
+function UserGroupsTab({ userId, name }: { userId: string; name: string }) {
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useGetUserGroupsQuery({ id: userId, page, limit: PAGE_SIZE });
+  const groups = data?.data?.items;
+  if (isLoading) return <Spinner />;
+  if (!groups?.length) {
+    return <EmptyState icon={Users} title="No groups yet" text={`${name.split(' ')[0] || name} isn't in any groups yet.`} />;
+  }
+  return (
+    <>
+      <ul className="card divide-y divide-gray-100 overflow-hidden">
+        {groups.map((g) => (
+          <li key={g._id}>
+            <Link to={`/groups/${g._id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
+              <GroupIcon name={g.name} color={g.color} courseCode={g.courseCode} avatarUrl={g.avatarUrl} />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-[15px] font-bold text-gray-900">{g.name}</span>
+                  {g.isPrivate && <Lock size={13} className="shrink-0 text-gray-500" aria-label="Approval needed" />}
+                </span>
+                <span className="block truncate text-[13px] text-gray-500">
+                  {pluralize(g.membersCount, 'member')} · {pluralize(g.notesCount, 'note')}
+                </span>
+              </span>
+              {g.isMember ? (
+                <span className="shrink-0 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Joined</span>
+              ) : (
+                g.isPending && (
+                  <span className="shrink-0 rounded-md bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600">Requested</span>
+                )
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <Pagination pagination={data?.data?.pagination} onPageChange={setPage} />
+    </>
   );
 }
 

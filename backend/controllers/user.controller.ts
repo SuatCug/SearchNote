@@ -14,6 +14,7 @@ import { parsePagination, buildPagination } from '../utils/pagination.util.ts';
 import { exactRegex, wordSearchMatch } from '../utils/regex.util.ts';
 import { getExtension, matchesSignature } from '../utils/fileTypes.util.ts';
 import { isBlockedBetween } from '../services/block.service.ts';
+import { listGroups } from '../services/group.service.ts';
 import { notify, removeNotification } from '../services/notification.service.ts';
 import { getOnlineUserIds } from '../services/realtime.service.ts';
 
@@ -283,6 +284,19 @@ const getUserCourses = asyncHandler(async (req, res) => {
   if (!(await User.exists({ _id: req.params.id }))) throw new ApiError(404, 'User not found.');
   const courses = await listUserCourses(req.params.id, req.user?.id);
   res.json({ success: true, data: { courses } });
+});
+
+// Kullanıcının üyesi olduğu gruplar (profildeki "Groups"): özel gruplar dahil herkes görür.
+// Kart bilgisi izleyiciye göredir (isMember, isPending, favori); grubun notları ve sohbeti yine sadece üyelere açıktır.
+const getUserGroups = asyncHandler(async (req, res) => {
+  if (!(await User.exists({ _id: req.params.id }))) throw new ApiError(404, 'User not found.');
+  const data = await listGroups({
+    match: { members: new mongoose.Types.ObjectId(req.params.id) },
+    sort: 'newest',
+    ...parsePagination(req.query),
+    viewerId: req.user?.id,
+  });
+  res.json({ success: true, data });
 });
 
 const follow = asyncHandler<AuthedRequest>(async (req, res) => {
@@ -565,6 +579,7 @@ export {
   getFollowing,
   getMutualFollowers,
   getUserCourses,
+  getUserGroups,
   follow,
   unfollow,
   block,
