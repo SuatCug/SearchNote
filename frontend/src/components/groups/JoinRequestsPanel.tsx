@@ -20,8 +20,8 @@ import { useDialog } from '@/components/common/DialogProvider';
 export default function JoinRequestsPanel() {
   const incoming = useGetIncomingRequestsQuery();
   const sent = useGetSentRequestsQuery();
-  const [respond, { isLoading: responding }] = useRespondJoinRequestMutation();
-  const [toggleMembership, { isLoading: cancelling }] = useToggleMembershipMutation();
+  const [respond] = useRespondJoinRequestMutation();
+  const [toggleMembership] = useToggleMembershipMutation();
   const dialog = useDialog();
 
   if (incoming.isLoading || sent.isLoading) return <Spinner />;
@@ -85,7 +85,6 @@ export default function JoinRequestsPanel() {
                 <div className="flex items-center gap-1.5 shrink-0 sm:self-center self-end">
                   <button
                     type="button"
-                    disabled={responding}
                     onClick={() => handleRespond(r.group._id, r.user._id, true)}
                     className="btn-primary px-3 py-2"
                   >
@@ -93,7 +92,6 @@ export default function JoinRequestsPanel() {
                   </button>
                   <button
                     type="button"
-                    disabled={responding}
                     onClick={() => handleRespond(r.group._id, r.user._id, false)}
                     className="btn-secondary px-3 py-2"
                     aria-label={`Reject ${r.user.fullName}`}
@@ -131,7 +129,6 @@ export default function JoinRequestsPanel() {
                 </Link>
                 <button
                   type="button"
-                  disabled={cancelling}
                   onClick={() => handleCancel(r.group._id, r.group.name)}
                   className="btn-secondary shrink-0 px-3 py-1.5 text-sm"
                 >

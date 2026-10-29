@@ -6,7 +6,6 @@ import { useToggleMembershipMutation } from '@/services/groupsApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { useDialog } from '@/components/common/DialogProvider';
 import Modal from '@/components/common/Modal';
-import Alert from '@/components/common/Alert';
 import type { GroupCard } from '@/types/api';
 
 const REQUEST_MESSAGE_MAX = 300;
@@ -99,26 +98,41 @@ export default function JoinGroupButton({
         {icon}
         {label}
       </button>
-      {requestOpen && <JoinRequestModal groupId={id} groupName={group.name} onClose={() => setRequestOpen(false)} />}
+      {requestOpen && (
+        <JoinRequestModal
+          groupName={group.name}
+          onClose={() => setRequestOpen(false)}
+          onSend={async (message) => {
+            setRequestOpen(false);
+            setOptimistic({ isMember: false, isPending: true });
+            try {
+              await toggleMembership({ id, leave: false, message }).unwrap();
+            } catch (err) {
+              setOptimistic(null);
+              dialog.alert({ message: getErrorMessage(err) });
+            }
+          }}
+        />
+      )}
     </>
   );
 }
 
 // Özel gruba katılma isteği: kurucuya isteğe bağlı kısa bir not ("CENG213'ü bu dönem alıyorum").
-function JoinRequestModal({ groupId, groupName, onClose }: { groupId: string; groupName?: string; onClose: () => void }) {
-  const [toggleMembership, { isLoading }] = useToggleMembershipMutation();
+function JoinRequestModal({
+  groupName,
+  onClose,
+  onSend,
+}: {
+  groupName?: string;
+  onClose: () => void;
+  onSend: (message?: string) => void;
+}) {
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError('');
-    try {
-      await toggleMembership({ id: groupId, leave: false, message: message.trim() || undefined }).unwrap();
-      onClose();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
+    onSend(message.trim() || undefined);
   };
 
   return (
@@ -153,13 +167,12 @@ function JoinRequestModal({ groupId, groupName, onClose }: { groupId: string; gr
             {message.length}/{REQUEST_MESSAGE_MAX}
           </p>
         </div>
-        <Alert>{error}</Alert>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={onClose} className="btn-secondary">
             Cancel
           </button>
-          <button type="submit" disabled={isLoading} className="btn-primary">
-            {isLoading ? 'Sending...' : 'Send request'}
+          <button type="submit" className="btn-primary">
+            Send request
           </button>
         </div>
       </form>

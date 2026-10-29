@@ -34,7 +34,7 @@ const findGroupOrFail = async (id: string) => {
 };
 
 const assertOwner = (group: GroupDocument, userId: string) => {
-  if (!group.owner.equals(userId)) {
+  if (!group.isFounder(userId)) {
     throw new ApiError(403, 'Only the group founder can do this.');
   }
 };
@@ -63,9 +63,10 @@ const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined)
     favoriteGroupIds(viewer),
   ]);
   // lastReadAt üyelerin okuma zamanları, requestInfo istek mesajlarıdır; kimseye gösterilmez.
-  const { members, joinRequests, admins: _admins, lastReadAt: _lastReadAt, requestInfo: _requestInfo, __v, ...rest } =
+  const { members, joinRequests, admins: _admins, founders: _founders, lastReadAt: _lastReadAt, requestInfo: _requestInfo, __v, ...rest } =
     group.toObject();
-  const isOwner = viewerId ? group.owner._id.equals(viewerId) : false;
+  // Birden fazla kurucu olabilir: isOwner = izleyici kuruculardan biri (mobil uygulama da bu alanı kullanır).
+  const isOwner = group.isFounder(viewerId);
   const isAdmin = group.isAdmin(viewerId);
   const mine = followed.get(String(group._id));
   return {
@@ -269,7 +270,8 @@ const joinGroup = asyncHandler<AuthedRequest>(async (req, res) => {
     } else group.members.addToSet(userId);
     await group.save();
     // Kurucuya: açık grupta yeni üye bildirimi. Özel grupta onay bekleyen istek kurucuya ve yöneticilere gider.
-    const recipients = group.isPrivate ? [group.owner, ...group.admins] : [group.owner];
+    const founders = [group.owner, ...group.founders];
+    const recipients = group.isPrivate ? [...founders, ...group.admins] : founders;
     await Promise.all(
       recipients.map((recipient) =>
         notify({ recipient, actor: userId, type: group.isPrivate ? 'group_request' : 'group_join', group: group._id })
@@ -286,7 +288,7 @@ const joinGroup = asyncHandler<AuthedRequest>(async (req, res) => {
 });
 
 // Üye gruptan ayrılır; onay bekleyen kullanıcı ise isteğini geri çeker.
-// Kurucu gruptan ayrılamaz: önce kuruculuğu devretmeli ya da grubu silmelidir.
+// Tek kurucu gruptan ayrılamaz: önce kuruculuğu devretmeli ya da grubu silmelidir. Başka kurucu varsa ayrılabilir.
 const leaveGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   const userId = req.user.id;
@@ -302,9 +304,7 @@ const leaveGroup = asyncHandler<AuthedRequest>(async (req, res) => {
     });
   }
 
-  if (group.owner.equals(userId)) {
-    throw new ApiError(400, 'The founder cannot leave the group. Transfer ownership or delete the group instead.');
-  }
+  if (group.isFounder(userId)) dropFounder(group, userId);
 
   group.members.pull(userId);
   group.admins.pull(userId);
@@ -332,7 +332,7 @@ const getMembers = asyncHandler(async (req, res) => {
     .reverse()
     .map((u) => ({
       ...u.toObject(),
-      isOwner: u._id.equals(group.owner),
+      isOwner: group.isFounder(u._id),
       isAdmin: group.isAdmin(u._id),
       isFollowing: following.has(String(u._id)),
     }))
@@ -345,7 +345,7 @@ const getMembers = asyncHandler(async (req, res) => {
 // Grup detayı bu kişilerin ilk 3'ünü özel gruplarda da gösterdiği için üye olmayana da açıktır.
 const getFollowedMembers = asyncHandler<AuthedRequest>(async (req, res) => {
   const [group, viewer] = await Promise.all([
-    Group.findById(req.params.id).select('owner members').lean(),
+    Group.findById(req.params.id).select('owner founders members').lean(),
     User.findById(req.user.id).select('following').lean(),
   ]);
   if (!group) throw new ApiError(404, 'Group not found.');
@@ -356,7 +356,8 @@ const getFollowedMembers = asyncHandler<AuthedRequest>(async (req, res) => {
   const byId = new Map(cards.map((u) => [String(u._id), u]));
   const users = ids.flatMap((id) => {
     const card = byId.get(String(id));
-    return card ? [{ ...card, isFollowing: true, isOwner: group.owner.equals(id) }] : [];
+    const isOwner = group.owner.equals(id) || (group.founders ?? []).some((f) => f.equals(id));
+    return card ? [{ ...card, isFollowing: true, isOwner }] : [];
   });
 
   res.json({ success: true, data: { users } });
@@ -366,9 +367,9 @@ const getFollowedMembers = asyncHandler<AuthedRequest>(async (req, res) => {
 const removeMember = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   assertManager(group, req.user.id);
-  if (group.owner.equals(req.params.userId)) throw new ApiError(400, 'The founder cannot be removed.');
+  if (group.isFounder(req.params.userId)) throw new ApiError(400, 'A founder cannot be removed. Remove them as founder first.');
   if (!group.hasMember(req.params.userId)) throw new ApiError(404, 'User is not a member.');
-  if (!group.owner.equals(req.user.id) && group.isAdmin(req.params.userId)) {
+  if (!group.isFounder(req.user.id) && group.isAdmin(req.params.userId)) {
     throw new ApiError(403, 'Only the founder can remove an admin.');
   }
 
@@ -383,7 +384,7 @@ const removeMember = asyncHandler<AuthedRequest>(async (req, res) => {
 const addAdmin = asyncHandler<AuthedRequest>(async (req, res) => {
   const group = await findGroupOrFail(req.params.id);
   assertOwner(group, req.user.id);
-  if (group.owner.equals(req.params.userId)) throw new ApiError(400, 'The founder already manages the group.');
+  if (group.isFounder(req.params.userId)) throw new ApiError(400, 'Founders already manage the group.');
   if (!group.hasMember(req.params.userId)) throw new ApiError(400, 'Only group members can be made admins.');
 
   group.admins.addToSet(req.params.userId);
@@ -413,10 +414,54 @@ const transferOwnership = asyncHandler<AuthedRequest>(async (req, res) => {
   }
 
   group.owner = new mongoose.Types.ObjectId(req.params.userId);
+  group.founders.pull(req.params.userId);
   group.admins.pull(req.params.userId);
   await group.save();
 
   res.json({ success: true, message: 'Ownership transferred.', data: { group: await toGroupDetail(group, req.user.id) } });
+});
+
+// Kurucu listesinden çıkarır. Asıl kurucu (owner) çıkarsa ilk eklenen kurucu onun yerine geçer.
+// Grubun en az bir kurucusu kalmalıdır.
+const dropFounder = (group: GroupDocument, userId: string) => {
+  if (!group.founders.length) {
+    throw new ApiError(400, 'You are the only founder. Make someone else a founder or delete the group instead.');
+  }
+  if (group.owner.equals(userId)) {
+    group.owner = group.founders[0];
+    group.founders.pull(group.owner);
+  } else group.founders.pull(userId);
+};
+
+// Kurucu bir üyeyi de kurucu yapar; kendisi kurucu olarak kalır (grubun birden fazla kurucusu olabilir).
+const addFounder = asyncHandler<AuthedRequest>(async (req, res) => {
+  const group = await findGroupOrFail(req.params.id);
+  assertOwner(group, req.user.id);
+  if (!group.hasMember(req.params.userId)) throw new ApiError(400, 'Only group members can be made founders.');
+  if (group.isFounder(req.params.userId)) throw new ApiError(400, 'This member is already a founder.');
+
+  group.founders.addToSet(req.params.userId);
+  group.admins.pull(req.params.userId);
+  await group.save();
+
+  res.json({ success: true, message: 'Founder added.', data: { isOwner: true } });
+});
+
+// Kurucu kendi kuruculuğunu bırakabilir ya da sonradan eklenen bir kurucuyu çıkarabilir;
+// grubu açan asıl kurucuyu sadece kendisi bırakabilir. Kuruculuğu biten kişi normal üye olarak kalır.
+const removeFounder = asyncHandler<AuthedRequest>(async (req, res) => {
+  const group = await findGroupOrFail(req.params.id);
+  const { userId } = req.params;
+  assertOwner(group, req.user.id);
+  if (!group.isFounder(userId)) throw new ApiError(404, 'User is not a founder.');
+  if (userId !== req.user.id && group.owner.equals(userId)) {
+    throw new ApiError(403, 'Only the person who created the group can remove themselves as founder.');
+  }
+
+  dropFounder(group, userId);
+  await group.save();
+
+  res.json({ success: true, message: 'Founder removed.', data: { isOwner: false } });
 });
 
 // Özel grubun bekleyen katılma istekleri (kurucu ve yöneticiler).
@@ -622,6 +667,8 @@ export {
   addAdmin,
   removeAdmin,
   transferOwnership,
+  addFounder,
+  removeFounder,
   getJoinRequests,
   approveJoinRequest,
   rejectJoinRequest,

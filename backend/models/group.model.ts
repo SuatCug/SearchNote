@@ -9,6 +9,7 @@ export interface IGroup {
   name: string;
   description: string;
   owner: Types.ObjectId;
+  founders: Types.ObjectId[];
   members: Types.ObjectId[];
   admins: Types.ObjectId[];
   isPrivate: boolean;
@@ -28,12 +29,14 @@ interface IGroupMethods {
   hasMember(userId: IdLike | undefined): boolean;
   hasPendingRequest(userId: IdLike | undefined): boolean;
   isAdmin(userId: IdLike | undefined): boolean;
+  isFounder(userId: IdLike | undefined): boolean;
   canManage(userId: IdLike | undefined): boolean;
 }
 
 // Dokümanda dizi alanları Mongoose dizisidir (addToSet / pull kullanılabilir).
 type GroupDocumentOverrides = {
   members: Types.Array<Types.ObjectId>;
+  founders: Types.Array<Types.ObjectId>;
   admins: Types.Array<Types.ObjectId>;
   joinRequests: Types.Array<Types.ObjectId>;
 };
@@ -47,6 +50,8 @@ const groupSchema = new Schema<IGroup, GroupModel, IGroupMethods>(
     description: { type: String, default: '', trim: true, maxlength: 1000 },
     // Grubun kurucusu: grubu düzenleyebilir, silebilir ve üyeleri çıkarabilir. Kurucu da members içindedir.
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    // Kurucunun eklediği diğer kurucular: kurucuyla aynı yetkiler (owner bunlara dahil değildir). Kurucular da members içindedir.
+    founders: [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
     members: [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
     // Kurucunun yönetici yaptığı üyeler: üye çıkarabilir, katılma isteklerini yönetir, sohbetten mesaj silebilir.
     // Grubu düzenlemek, silmek ve yönetici atamak sadece kurucuya aittir. Yöneticiler de members içindedir.
@@ -85,9 +90,13 @@ const groupSchema = new Schema<IGroup, GroupModel, IGroupMethods>(
       isAdmin(userId) {
         return Boolean(userId) && this.admins.some((id) => id.equals(userId));
       },
+      // Asıl kurucu (owner) veya sonradan eklenen kuruculardan biri
+      isFounder(userId) {
+        return Boolean(userId) && (this.owner._id.equals(String(userId)) || (this.founders ?? []).some((id) => id.equals(userId)));
+      },
       // Kurucu veya yönetici
       canManage(userId) {
-        return Boolean(userId) && (this.owner.equals(String(userId)) || this.admins.some((id) => id.equals(userId)));
+        return Boolean(userId) && (this.isFounder(userId) || this.admins.some((id) => id.equals(userId)));
       },
     },
   }

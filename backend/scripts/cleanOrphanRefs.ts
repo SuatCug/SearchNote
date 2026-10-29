@@ -17,8 +17,8 @@ const clean = async () => {
       { $pull: { followers: missing, following: missing, blockedUsers: missing } }
     ),
     Group.updateMany(
-      { $or: [{ members: missing }, { admins: missing }, { joinRequests: missing }] },
-      { $pull: { members: missing, admins: missing, joinRequests: missing } }
+      { $or: [{ members: missing }, { admins: missing }, { founders: missing }, { joinRequests: missing }] },
+      { $pull: { members: missing, admins: missing, founders: missing, joinRequests: missing } }
     ),
     Note.updateMany({ likes: missing }, { $pull: { likes: missing } }),
   ]);

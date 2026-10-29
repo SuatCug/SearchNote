@@ -48,6 +48,9 @@ router.delete('/:id/join', idParamRules, validate, authenticate, groupController
 // Üye yönetimi (sadece kurucu)
 router.delete('/:id/members/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.removeMember);
 router.post('/:id/owner/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.transferOwnership);
+// Birden fazla kurucu: kurucu ekleme / kuruculuktan çıkarma (kendi kuruculuğunu bırakma dahil)
+router.post('/:id/founders/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.addFounder);
+router.delete('/:id/founders/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.removeFounder);
 router.post('/:id/admins/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.addAdmin);
 router.delete('/:id/admins/:userId', idParamRules, memberParamRules, validate, authenticate, groupController.removeAdmin);
 

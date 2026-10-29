@@ -35,6 +35,15 @@ export interface GroupListParams {
 
 const GROUP_LISTS = ['GroupList', 'GroupActivity'] as const;
 
+// İyimser güncelleme: önbellek hemen değişir, sunucu hata verirse yamalar geri alınır (hata bileşende gösterilir).
+const optimistic = async (queryFulfilled: Promise<unknown>, patches: { undo: () => void }[]) => {
+  try {
+    await queryFulfilled;
+  } catch {
+    patches.forEach((p) => p.undo());
+  }
+};
+
 export const groupsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getGroups: builder.query<GroupListResponse, GroupListParams>({
@@ -129,6 +138,17 @@ export const groupsApi = baseApi.injectEndpoints({
         'GroupRequests',
         'NoteList',
       ],
+      // Geri çekilen istek "Sent by you" listesinden hemen düşer.
+      onQueryStarted: async ({ id, leave }, { dispatch, queryFulfilled }) => {
+        if (!leave) return;
+        await optimistic(queryFulfilled, [
+          dispatch(
+            groupsApi.util.updateQueryData('getSentRequests', undefined, (draft) => {
+              draft.data.requests = draft.data.requests.filter((r) => r.group._id !== id);
+            })
+          ),
+        ]);
+      },
     }),
     getJoinRequests: builder.query<UsersResponse, string>({
       query: (id) => `/groups/${id}/requests`,
@@ -142,6 +162,23 @@ export const groupsApi = baseApi.injectEndpoints({
         'GroupRequests',
         ...GROUP_LISTS,
       ],
+      // Butonlar sunucuyu beklemesin: istek listeden hemen düşer, onaylanırsa üye sayısı artar; hata olursa geri alınır.
+      onQueryStarted: async ({ id, userId, approve }, { dispatch, queryFulfilled }) => {
+        const patches = [
+          dispatch(
+            groupsApi.util.updateQueryData('getIncomingRequests', undefined, (draft) => {
+              draft.data.requests = draft.data.requests.filter((r) => !(r.group._id === id && r.user._id === userId));
+            })
+          ),
+          dispatch(
+            groupsApi.util.updateQueryData('getJoinRequests', id, (draft) => {
+              draft.data.users = draft.data.users.filter((u) => u._id !== userId);
+            })
+          ),
+        ];
+        if (approve) patches.push(dispatch(patchMembersCount(id, 1)));
+        await optimistic(queryFulfilled, patches);
+      },
     }),
     getGroupMessages: builder.query<ApiResponse<{ messages: GroupMessage[] }>, string>({
       query: (id) => `/groups/${id}/messages`,
@@ -203,11 +240,48 @@ export const groupsApi = baseApi.injectEndpoints({
     removeGroupMember: builder.mutation<ApiResponse<{ membersCount: number }>, { id: string; userId: string }>({
       query: ({ id, userId }) => ({ url: `/groups/${id}/members/${userId}`, method: 'DELETE' }),
       invalidatesTags: (_result, _error, { id }) => [{ type: 'Group', id }, { type: 'GroupMembers', id }, ...GROUP_LISTS],
+      onQueryStarted: async ({ id, userId }, { dispatch, queryFulfilled }) => {
+        await optimistic(queryFulfilled, [
+          dispatch(
+            groupsApi.util.updateQueryData('getGroupMembers', id, (draft) => {
+              draft.data.users = draft.data.users.filter((u) => u._id !== userId);
+            })
+          ),
+          dispatch(patchMembersCount(id, -1)),
+        ]);
+      },
     }),
     // Yönetici yapma / yöneticiliği geri alma (yönetici kendi yöneticiliğini de bırakabilir).
     setGroupAdmin: builder.mutation<ApiResponse<{ isAdmin: boolean }>, { id: string; userId: string; isAdmin: boolean }>({
       query: ({ id, userId, isAdmin }) => ({ url: `/groups/${id}/admins/${userId}`, method: isAdmin ? 'POST' : 'DELETE' }),
       invalidatesTags: (_result, _error, { id }) => [{ type: 'Group', id }, { type: 'GroupMembers', id }, ...GROUP_LISTS],
+      onQueryStarted: async ({ id, userId, isAdmin }, { dispatch, queryFulfilled }) => {
+        await optimistic(queryFulfilled, [
+          dispatch(
+            groupsApi.util.updateQueryData('getGroupMembers', id, (draft) => {
+              const user = draft.data.users.find((u) => u._id === userId);
+              if (user) user.isAdmin = isAdmin;
+            })
+          ),
+        ]);
+      },
+    }),
+    // Birden fazla kurucu: üyeyi kurucu yapma / kuruculuktan çıkarma (kendi kuruculuğunu bırakma dahil).
+    setGroupFounder: builder.mutation<ApiResponse<{ isOwner: boolean }>, { id: string; userId: string; isFounder: boolean }>({
+      query: ({ id, userId, isFounder }) => ({ url: `/groups/${id}/founders/${userId}`, method: isFounder ? 'POST' : 'DELETE' }),
+      invalidatesTags: (_result, _error, { id }) => [{ type: 'Group', id }, { type: 'GroupMembers', id }, ...GROUP_LISTS, 'GroupRequests'],
+      onQueryStarted: async ({ id, userId, isFounder }, { dispatch, queryFulfilled }) => {
+        await optimistic(queryFulfilled, [
+          dispatch(
+            groupsApi.util.updateQueryData('getGroupMembers', id, (draft) => {
+              const user = draft.data.users.find((u) => u._id === userId);
+              if (!user) return;
+              user.isOwner = isFounder;
+              user.isAdmin = false;
+            })
+          ),
+        ]);
+      },
     }),
     transferGroupOwnership: builder.mutation<GroupResponse, { id: string; userId: string }>({
       query: ({ id, userId }) => ({ url: `/groups/${id}/owner/${userId}`, method: 'POST' }),
@@ -230,6 +304,11 @@ export const upsertGroupMessage = (groupId: string, message: GroupMessage) =>
     if (list.length > 1 && list[list.length - 2].createdAt > message.createdAt) {
       list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     }
+  });
+
+const patchMembersCount = (groupId: string, delta: number) =>
+  groupsApi.util.updateQueryData('getGroup', groupId, (draft) => {
+    draft.data.group.membersCount = Math.max(0, draft.data.group.membersCount + delta);
   });
 
 export const removeGroupMessage = (groupId: string, messageId: string) =>
@@ -264,5 +343,6 @@ export const {
   useDeleteGroupMessageMutation,
   useRemoveGroupMemberMutation,
   useSetGroupAdminMutation,
+  useSetGroupFounderMutation,
   useTransferGroupOwnershipMutation,
 } = groupsApi;

@@ -9,7 +9,7 @@ import Spinner from '@/components/common/Spinner';
 import {
   useRemoveGroupMemberMutation,
   useSetGroupAdminMutation,
-  useTransferGroupOwnershipMutation,
+  useSetGroupFounderMutation,
 } from '@/services/groupsApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { normalize } from '@/lib/schoolSearch';
@@ -23,6 +23,8 @@ interface GroupMemberListProps {
   // Kurucu: her şey; yönetici: normal üyeleri çıkarabilir ve kendi yöneticiliğini bırakabilir.
   isOwner?: boolean;
   isAdmin?: boolean;
+  // Grubu açan kişi: diğer kurucular onu kuruculuktan çıkaramaz (sadece kendisi bırakabilir).
+  creatorId?: string;
 }
 
 type RunAction = (action: () => { unwrap: () => Promise<unknown> }, options: ConfirmOptions) => Promise<void>;
@@ -31,13 +33,13 @@ const PAGE_SIZE = 20;
 const FOLLOWED_PREVIEW = 5;
 
 // Grup üyeleri (Facebook grup üyeleri sayfası gibi): tek panelde başlık + arama, altında
-// "Founder", "Admins", "People you follow" ve geri kalan üyeler bölümleri. Satırda takip butonu;
-// yönetebilen kişiye ayrıca bir "⋯" menüsü (yönetici yapma, kuruculuğu devretme, gruptan çıkarma).
-export default function GroupMemberList({ groupId, users, isLoading, isOwner, isAdmin }: GroupMemberListProps) {
-  const [removeMember, { isLoading: removing }] = useRemoveGroupMemberMutation();
-  const [setAdmin, { isLoading: settingAdmin }] = useSetGroupAdminMutation();
-  const [transferOwnership, { isLoading: transferring }] = useTransferGroupOwnershipMutation();
-  const busy = removing || settingAdmin || transferring;
+// "Founders", "Admins", "People you follow" ve geri kalan üyeler bölümleri. Satırda takip butonu;
+// yönetebilen kişiye ayrıca bir "⋯" menüsü (yönetici / kurucu yapma, gruptan çıkarma).
+// Grubun birden fazla kurucusu olabilir: birini kurucu yapınca kendisi de kurucu kalır.
+export default function GroupMemberList({ groupId, users, isLoading, isOwner, isAdmin, creatorId }: GroupMemberListProps) {
+  const [removeMember] = useRemoveGroupMemberMutation();
+  const [setAdmin] = useSetGroupAdminMutation();
+  const [setFounder] = useSetGroupFounderMutation();
   const dialog = useDialog();
   const myId = useAppSelector((state) => state.auth.user?.id);
   const [query, setQuery] = useState('');
@@ -59,11 +61,12 @@ export default function GroupMemberList({ groupId, users, isLoading, isOwner, is
     myId,
     viewerIsOwner: isOwner,
     viewerIsAdmin: isAdmin,
-    busy,
     run,
-    transferOwnership,
+    setFounder,
     removeMember,
     setAdmin,
+    creatorId,
+    foundersCount: users.filter((u) => u.isOwner).length,
   };
   const q = normalize(query.trim());
   const matches = q
@@ -110,7 +113,13 @@ export default function GroupMemberList({ groupId, users, isLoading, isOwner, is
       ) : (
         <>
           {owner.length > 0 && (
-            <MemberSection title="Founder" note="Created and manages this group." users={owner} rowProps={rowProps} />
+            <MemberSection
+              title={owner.length > 1 ? 'Founders' : 'Founder'}
+              count={owner.length > 1 ? owner.length : undefined}
+              note={owner.length > 1 ? 'Manage this group together.' : 'Created and manages this group.'}
+              users={owner}
+              rowProps={rowProps}
+            />
           )}
           {admins.length > 0 && (
             <MemberSection
@@ -199,9 +208,10 @@ interface MemberRowProps {
   myId?: string;
   viewerIsOwner?: boolean;
   viewerIsAdmin?: boolean;
-  busy: boolean;
   run: RunAction;
-  transferOwnership: ReturnType<typeof useTransferGroupOwnershipMutation>[0];
+  setFounder: ReturnType<typeof useSetGroupFounderMutation>[0];
+  creatorId?: string;
+  foundersCount: number;
   removeMember: ReturnType<typeof useRemoveGroupMemberMutation>[0];
   setAdmin: ReturnType<typeof useSetGroupAdminMutation>[0];
 }
@@ -213,18 +223,21 @@ function MemberRow({
   myId,
   viewerIsOwner,
   viewerIsAdmin,
-  busy,
   run,
-  transferOwnership,
+  setFounder,
   removeMember,
   setAdmin,
+  creatorId,
+  foundersCount,
 }: MemberRowProps) {
   const [open, setOpen] = useState(false);
   const isMe = u._id === myId;
   // Kurucu kendisi dışında herkesi, yönetici sadece normal üyeleri çıkarabilir; yönetici kendi yöneticiliğini bırakabilir.
   const canRemove = !u.isOwner && !isMe && (viewerIsOwner || (viewerIsAdmin && !u.isAdmin));
   const canStepDown = isMe && u.isAdmin;
-  const hasMenu = (viewerIsOwner && !u.isOwner) || canRemove || canStepDown;
+  // Kurucu başka bir kurucuyu (grubu açan hariç) çıkarabilir; kendi kuruculuğunu başka kurucu varsa bırakabilir.
+  const canDropFounder = viewerIsOwner && u.isOwner && (isMe ? foundersCount > 1 : u._id !== creatorId);
+  const hasMenu = (viewerIsOwner && !u.isOwner) || canRemove || canStepDown || canDropFounder;
 
   const act = (action: () => void) => {
     setOpen(false);
@@ -266,7 +279,6 @@ function MemberRow({
         <div className="relative shrink-0">
           <button
             type="button"
-            disabled={busy}
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
             aria-label={`Manage ${u.fullName}`}
@@ -323,9 +335,9 @@ function MemberRow({
                       type="button"
                       onClick={() =>
                         act(() =>
-                          run(() => transferOwnership({ id: groupId, userId: u._id }), {
-                            title: `Make ${u.fullName} the founder?`,
-                            message: 'They will manage the group. You will stay in it as a regular member.',
+                          run(() => setFounder({ id: groupId, userId: u._id, isFounder: true }), {
+                            title: `Make ${u.fullName} a founder?`,
+                            message: 'They will have the same rights as you: edit or delete the group and manage everyone. You stay a founder too.',
                             confirmLabel: 'Make founder',
                           })
                         )
@@ -335,6 +347,25 @@ function MemberRow({
                       <Crown size={15} className="text-amber-600" /> Make founder
                     </button>
                   </>
+                )}
+                {canDropFounder && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      act(() =>
+                        run(() => setFounder({ id: groupId, userId: u._id, isFounder: false }), {
+                          title: isMe ? 'Step down as founder?' : `Remove ${u.fullName} as founder?`,
+                          message: isMe
+                            ? 'You will stay in the group as a regular member. The other founders keep managing it.'
+                            : 'They will stay in the group as a regular member.',
+                          confirmLabel: isMe ? 'Step down' : 'Remove founder',
+                        })
+                      )
+                    }
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-50"
+                  >
+                    <Crown size={15} className="text-gray-500" /> {isMe ? 'Step down as founder' : 'Remove as founder'}
+                  </button>
                 )}
                 {canStepDown && (
                   <button

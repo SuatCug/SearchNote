@@ -27,11 +27,15 @@ const deleteAccount = async (userId: string) => {
   // Kurucusu olduğu gruplar (notlardan önce: silinen grupların notları burada dosyalarıyla gider)
   const ownedGroups = await Group.find({ owner: id });
   for (const group of ownedGroups) {
-    // Varsa ilk yönetici, yoksa ilk üye yeni kurucu olur
-    const heir = group.admins.find((m) => !m.equals(id)) ?? group.members.find((m) => !m.equals(id));
+    // Varsa diğer kuruculardan ilki, yoksa ilk yönetici, yoksa ilk üye yeni kurucu olur
+    const heir =
+      group.founders.find((m) => !m.equals(id)) ??
+      group.admins.find((m) => !m.equals(id)) ??
+      group.members.find((m) => !m.equals(id));
     if (heir) {
       group.owner = heir;
       group.members.pull(id);
+      group.founders.pull(heir);
       group.admins.pull(heir);
       group.lastReadAt.delete(userId);
       await group.save();
@@ -56,9 +60,9 @@ const deleteAccount = async (userId: string) => {
       { $pull: { followers: id, following: id, blockedUsers: id, savedNotes: { $in: noteIds } } }
     ),
     Group.updateMany(
-      { $or: [{ members: id }, { joinRequests: id }, { admins: id }] },
+      { $or: [{ members: id }, { joinRequests: id }, { admins: id }, { founders: id }] },
       {
-        $pull: { members: id, joinRequests: id, admins: id },
+        $pull: { members: id, joinRequests: id, admins: id, founders: id },
         $unset: { [`lastReadAt.${userId}`]: 1, [`requestInfo.${userId}`]: 1 },
       }
     ),

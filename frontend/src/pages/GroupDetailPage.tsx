@@ -280,6 +280,7 @@ export default function GroupDetailPage() {
                 isLoading={members.isLoading}
                 isOwner={group.isOwner}
                 isAdmin={group.isAdmin}
+                creatorId={group.owner?._id}
               />
             )}
             {tab === 'chat' && <GroupChat groupId={group._id} canModerate={canManage} />}
