@@ -10,6 +10,7 @@ import type {
   NoteSearchParams,
   Paginated,
   TrendingCourse,
+  UserCard,
 } from '@/types/api';
 
 type NoteListResponse = ApiResponse<Paginated<NoteCard>>;
@@ -154,22 +155,38 @@ export const notesApi = baseApi.injectEndpoints({
       // Beğeni ve takip değişince liste (ve "Following" durumu) tazelenir.
       providesTags: (_result, _error, { id }) => [{ type: 'NoteLikes', id }, 'User'],
     }),
-    addComment: builder.mutation<ApiResponse<{ comment: Comment; commentsCount: number }>, { id: string; text: string }>({
+    // user: yorumu yazan (ben). Yorum sunucuyu beklemeden geçici kimlikle (temp-...) listeye eklenir;
+    // cevap gelince sunucunun yorumuyla değiştirilir, hata olursa listeden çıkarılır (hata formda gösterilir).
+    addComment: builder.mutation<
+      ApiResponse<{ comment: Comment; commentsCount: number }>,
+      { id: string; text: string; user?: UserCard }
+    >({
       query: ({ id, text }) => ({ url: `/notes/${id}/comments`, method: 'POST', body: { text } }),
-      // Sunucunun döndürdüğü yorum detaya eklenir, kartlardaki sayı güncellenir (not baştan yüklenmez).
-      async onQueryStarted({ id }, { dispatch, getState, queryFulfilled }) {
+      async onQueryStarted({ id, text, user }, { dispatch, getState, queryFulfilled }) {
+        const tempId = `temp-${Date.now()}`;
+        const pending = user
+          ? dispatch(
+              notesApi.util.updateQueryData('getNote', id, (draft) => {
+                draft.data.note.comments.push({ _id: tempId, user, text, createdAt: new Date().toISOString() });
+                draft.data.note.commentsCount += 1;
+              })
+            )
+          : null;
         try {
           const { data } = await queryFulfilled;
           const { comment, commentsCount } = data.data;
           dispatch(
             notesApi.util.updateQueryData('getNote', id, (draft) => {
-              draft.data.note.comments.push(comment);
+              const list = draft.data.note.comments;
+              const index = list.findIndex((c) => c._id === tempId);
+              if (index >= 0) list[index] = comment;
+              else list.push(comment);
               draft.data.note.commentsCount = commentsCount;
             })
           );
           patchNoteCards(dispatch, getState, id, () => ({ commentsCount }));
         } catch {
-          // Hata formda gösterilir.
+          pending?.undo();
         }
       },
     }),

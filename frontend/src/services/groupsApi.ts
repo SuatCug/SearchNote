@@ -216,12 +216,21 @@ export const groupsApi = baseApi.injectEndpoints({
     // Kendi mesajını düzenleme.
     editGroupMessage: builder.mutation<ApiResponse<{ message: GroupMessage }>, { id: string; messageId: string; text: string }>({
       query: ({ id, messageId, text }) => ({ url: `/groups/${id}/messages/${messageId}`, method: 'PATCH', body: { text } }),
-      onQueryStarted: async ({ id }, { dispatch, queryFulfilled }) => {
+      // Yeni metin sunucuyu beklemeden görünür; hata olursa eski metne döner (hata sohbet bileşeninde gösterilir).
+      onQueryStarted: async ({ id, messageId, text }, { dispatch, queryFulfilled }) => {
+        const patch = dispatch(
+          groupsApi.util.updateQueryData('getGroupMessages', id, (draft) => {
+            const message = draft.data.messages.find((m) => m._id === messageId);
+            if (!message) return;
+            message.text = text;
+            message.editedAt = new Date().toISOString();
+          })
+        );
         try {
           const { data } = await queryFulfilled;
           dispatch(upsertGroupMessage(id, data.data.message));
         } catch {
-          // Hata sohbet bileşeninde gösterilir.
+          patch.undo();
         }
       },
     }),

@@ -95,7 +95,7 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
   });
   const attachedNote = useGetNoteQuery(attachedNoteId || skipToken);
   const [sendMessage] = useSendDirectMessageMutation();
-  const [editMessage, { isLoading: savingEdit }] = useEditDirectMessageMutation();
+  const [editMessage] = useEditDirectMessageMutation();
   const [deleteMessage] = useDeleteDirectMessageMutation();
   const [deleteConversation] = useDeleteConversationMutation();
   const typingNow = useTypingConversations().has(conversationId);
@@ -261,17 +261,25 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
   const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || savingEdit || !me) return;
+    if (!trimmed || !me) return;
     setSendError('');
 
+    // Düzenleme: yeni metin hemen görünür, kutu boşalır; kaydedilemezse eski metin ve düzenleme kutusu geri gelir.
     if (editing) {
+      const original = editing;
+      setEditing(null);
+      setText('');
+      setEmojiOpen(false);
+      patchOlder((list) =>
+        list.map((m) => (m._id === original._id ? { ...m, text: trimmed, editedAt: new Date().toISOString() } : m))
+      );
       try {
-        const { data: edited } = await editMessage({ id: conversationId, messageId: editing._id, text: trimmed }).unwrap();
+        const { data: edited } = await editMessage({ id: conversationId, messageId: original._id, text: trimmed }).unwrap();
         patchOlder((list) => list.map((m) => (m._id === edited.message._id ? edited.message : m)));
-        setEditing(null);
-        setText('');
-        setEmojiOpen(false);
       } catch (err) {
+        patchOlder((list) => list.map((m) => (m._id === original._id ? original : m)));
+        setEditing(original);
+        setText(trimmed);
         setSendError(getErrorMessage(err));
       }
       return;
@@ -739,7 +747,7 @@ export default function ChatPanel({ conversationId }: { conversationId: string }
 
             <button
               type="submit"
-              disabled={savingEdit || !text.trim()}
+              disabled={!text.trim()}
               className="w-11 h-11 shrink-0 rounded-full bg-navy-800 text-white hover:bg-navy-900 disabled:bg-navy-800/80 disabled:opacity-70 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2"
               aria-label={editing ? 'Save edit' : 'Send'}
             >

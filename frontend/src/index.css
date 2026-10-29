@@ -103,9 +103,11 @@ button:not(:disabled),
   cursor: pointer;
 }
 
+/* Pasif butonda "yasak" (🚫) imleci gösterilmez: form gönderilirken kısa süre pasif kalan butonlarda
+   uyarı işareti gibi görünüyordu. Pasif olduğu soluk renginden anlaşılır. */
 button:disabled,
 [role='button'][aria-disabled='true'] {
-  cursor: not-allowed;
+  cursor: default;
 }
 
 html {

@@ -32,10 +32,12 @@ const VARIANT_CLASSES: Record<NonNullable<BlockButtonProps['variant']>, { block:
 
 export default function BlockButton({ userId, isBlocked, name, variant = 'link', onDone, className = '' }: BlockButtonProps) {
   const [toggleBlock, { isLoading }] = useToggleBlockMutation();
+  // Buton istek sırasında pasif yapılmaz (profil zaten iyimser olarak değişir); tekrar tıklama yok sayılır.
   const dialog = useDialog();
 
   const handleClick = async () => {
     onDone?.();
+    if (isLoading) return;
     const ok = await dialog.confirm(
       isBlocked
         ? {
@@ -65,8 +67,7 @@ export default function BlockButton({ userId, isBlocked, name, variant = 'link',
     <button
       type="button"
       onClick={handleClick}
-      disabled={isLoading}
-      className={`transition-colors disabled:opacity-60 ${VARIANT_CLASSES[variant][isBlocked ? 'unblock' : 'block']} ${className}`}
+      className={`transition-colors ${VARIANT_CLASSES[variant][isBlocked ? 'unblock' : 'block']} ${className}`}
     >
       <Icon size={15} className="shrink-0" />
       {variant === 'menu' ? <span className="truncate">{`${label} ${name}`}</span> : label}

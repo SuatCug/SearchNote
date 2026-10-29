@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { SITE_URL } from '@/lib/constants';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import { Bookmark, Check, Download, Heart, MessageCircle, Pencil, Send, Share2, Trash2, UserRound, Users } from 'lucide-react';
@@ -132,7 +133,7 @@ export default function NoteDetailPage() {
 
   // Telefonda paylaşım penceresi, masaüstünde bağlantıyı kopyalar (akıştaki kart gibi). Ziyaretçi de paylaşabilir.
   const handleShare = async () => {
-    const url = `${window.location.origin}/notes/${note._id}`;
+    const url = `${SITE_URL}/notes/${note._id}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: note.title, url });

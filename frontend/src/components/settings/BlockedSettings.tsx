@@ -10,7 +10,7 @@ import SettingsCard from './SettingsCard';
 // Engellediğim kişiler, en son engellenen önce. Engeli buradan kaldırılabilir.
 export default function BlockedSettings() {
   const { data, isLoading } = useGetBlockedUsersQuery();
-  const [toggleBlock, { isLoading: unblocking }] = useToggleBlockMutation();
+  const [toggleBlock] = useToggleBlockMutation();
   const dialog = useDialog();
   const users = data?.data?.users;
 
@@ -55,9 +55,8 @@ export default function BlockedSettings() {
             </Link>
             <button
               type="button"
-              disabled={unblocking}
               onClick={() => handleUnblock(u._id, u.fullName)}
-              className="inline-flex h-8 shrink-0 items-center rounded-lg bg-gray-100 px-4 text-sm font-semibold text-gray-900 hover:bg-gray-200 disabled:opacity-60"
+              className="inline-flex h-8 shrink-0 items-center rounded-lg bg-gray-100 px-4 text-sm font-semibold text-gray-900 hover:bg-gray-200"
             >
               Unblock
             </button>

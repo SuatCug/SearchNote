@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { SITE_URL } from '@/lib/constants';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -76,7 +77,7 @@ export default function SettingsNav({ active }: { active?: SettingsSection }) {
   };
 
   const handleShare = async () => {
-    const url = `${window.location.origin}/users/${user.id}`;
+    const url = `${SITE_URL}/users/${user.id}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: `${user.fullName} on SearchNote`, url });

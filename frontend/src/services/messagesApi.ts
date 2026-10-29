@@ -89,12 +89,21 @@ export const messagesApi = baseApi.injectEndpoints({
         method: 'PATCH',
         body: { text },
       }),
-      onQueryStarted: async ({ id }, { dispatch, queryFulfilled }) => {
+      // Yeni metin sunucuyu beklemeden görünür; hata olursa eski metne döner (hata bileşende gösterilir).
+      onQueryStarted: async ({ id, messageId, text }, { dispatch, queryFulfilled }) => {
+        const patch = dispatch(
+          messagesApi.util.updateQueryData('getConversation', id, (draft) => {
+            const message = draft.data.messages.find((m) => m._id === messageId);
+            if (!message) return;
+            message.text = text;
+            message.editedAt = new Date().toISOString();
+          })
+        );
         try {
           const { data } = await queryFulfilled;
           dispatch(upsertDirectMessage(id, data.data.message));
         } catch {
-          // Hata bileşen tarafında gösterilir.
+          patch.undo();
         }
       },
       invalidatesTags: ['Conversations'],

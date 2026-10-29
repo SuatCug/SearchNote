@@ -126,6 +126,31 @@ export const usersApi = baseApi.injectEndpoints({
     // blocked: şu anki durum (true ise engel kaldırılır).
     toggleBlock: builder.mutation<ApiResponse<{ isBlocked: boolean }>, { id: string; blocked: boolean }>({
       query: ({ id, blocked }) => ({ url: `/users/${id}/block`, method: blocked ? 'DELETE' : 'POST' }),
+      // Profil başlığı ve engellenenler listesi sunucuyu beklemeden değişir; hata olursa geri alınır.
+      async onQueryStarted({ id, blocked }, { dispatch, queryFulfilled }) {
+        const patches = [
+          dispatch(
+            usersApi.util.updateQueryData('getProfile', id, (draft) => {
+              draft.data.isBlocked = !blocked;
+              if (!blocked) draft.data.isFollowing = false;
+            })
+          ),
+        ];
+        if (blocked) {
+          patches.push(
+            dispatch(
+              usersApi.util.updateQueryData('getBlockedUsers', undefined, (draft) => {
+                draft.data.users = draft.data.users.filter((u) => u._id !== id);
+              })
+            )
+          );
+        }
+        try {
+          await queryFulfilled;
+        } catch {
+          patches.forEach((p) => p.undo());
+        }
+      },
       invalidatesTags: ['User', 'FollowList', 'Conversation', 'Conversations'],
     }),
     getNotificationSettings: builder.query<NotificationSettingsResponse, void>({

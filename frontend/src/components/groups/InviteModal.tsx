@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SITE_URL } from '@/lib/constants';
 import { Check, Link as LinkIcon, Loader2, Search, UserPlus } from 'lucide-react';
 import Modal from '@/components/common/Modal';
 import UserAvatar from '@/components/users/UserAvatar';
@@ -18,7 +19,7 @@ export default function InviteModal({ group, onClose }: { group: GroupDetail; on
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [copied, setCopied] = useState(false);
-  const url = `${window.location.origin}/groups/${group._id}`;
+  const url = `${SITE_URL}/groups/${group._id}`;
   const text = `Join "${groupTitle(group.name, group.courseCode)}" on SearchNote\n${url}`;
 
   useEffect(() => {
@@ -98,23 +99,24 @@ export default function InviteModal({ group, onClose }: { group: GroupDetail; on
   );
 }
 
-// Tek kişi: "Send" → konuşmayı açar (yoksa oluşturur) ve davet mesajını gönderir; sonra "Sent" olur.
+// Tek kişi: "Send" → buton hemen "Sent" olur; arka planda konuşma açılır (yoksa oluşturulur) ve davet
+// mesajı gönderilir. Gönderilemezse buton geri gelir ve hata satırda gösterilir.
 function InviteRow({ user, text }: { user: UserCard; text: string }) {
   const [startConversation] = useStartConversationMutation();
   const [sendMessage] = useSendDirectMessageMutation();
-  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
 
   const send = async () => {
-    setState('sending');
+    if (sent) return;
+    setSent(true);
     setError('');
     try {
       const { data } = await startConversation(user._id).unwrap();
       await sendMessage({ id: data.conversationId, text }).unwrap();
-      setState('sent');
     } catch (err) {
       setError(getErrorMessage(err));
-      setState('idle');
+      setSent(false);
     }
   };
 
@@ -130,12 +132,11 @@ function InviteRow({ user, text }: { user: UserCard; text: string }) {
       <button
         type="button"
         onClick={send}
-        disabled={state !== 'idle'}
         className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
-          state === 'sent' ? 'bg-gray-100 text-gray-500' : 'bg-navy-900 text-white hover:bg-navy-950 disabled:opacity-60'
+          sent ? 'bg-gray-100 text-gray-500' : 'bg-navy-900 text-white hover:bg-navy-950'
         }`}
       >
-        {state === 'sent' ? 'Sent' : state === 'sending' ? 'Sending...' : 'Send'}
+        {sent ? 'Sent' : 'Send'}
       </button>
     </li>
   );

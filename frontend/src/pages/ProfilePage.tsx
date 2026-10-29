@@ -45,7 +45,7 @@ import {
 } from '@/services/usersApi';
 import { useGetSavedNotesQuery } from '@/services/notesApi';
 import { useGetMyGroupActivityQuery, useGetUserGroupsQuery } from '@/services/groupsApi';
-import { FILE_TYPES } from '@/lib/constants';
+import { FILE_TYPES, SITE_URL } from '@/lib/constants';
 import { DESKTOP_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import { useKeepInViewOnChange } from '@/hooks/useKeepInViewOnChange';
 import logo from '@/assets/logo.png';
@@ -623,7 +623,7 @@ function Stat({ value, label, to, onClick }: { value: number; label: string; to?
 function ShareProfileButton({ userId, name, className = '' }: { userId: string; name: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   const share = async () => {
-    const url = `${window.location.origin}/users/${userId}`;
+    const url = `${SITE_URL}/users/${userId}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: `${name} on SearchNote`, url });
@@ -656,7 +656,7 @@ function ProfileMenu({ userId, name, isBlocked }: { userId: string; name: string
 
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/users/${userId}`);
+      await navigator.clipboard.writeText(`${SITE_URL}/users/${userId}`);
       setCopied(true);
       setTimeout(() => {
         setCopied(false);

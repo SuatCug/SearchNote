@@ -32,6 +32,9 @@ import { useGetNoteQuery } from '@/services/notesApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { clockTime, dayLabel, isSameDay } from '@/lib/chatTime';
 import { joinGroupRoom, leaveGroupRoom, useFallbackPolling } from '@/lib/socket';
+import LinkifiedText from '@/components/messages/LinkifiedText';
+import { groupLinkInText } from '@/lib/links';
+import GroupInviteCard from '@/components/messages/GroupInviteCard';
 import type { GroupMessage } from '@/types/api';
 
 // Yeni mesajlar Socket.io grup odasından anında gelir; bağlantı yoksa sunucu bu aralıkla yoklanır.
@@ -60,7 +63,7 @@ export default function GroupChat({ groupId, canModerate }: { groupId: string; c
     skipPollingIfUnfocused: true,
   });
   const [sendMessage] = useSendGroupMessageMutation();
-  const [editMessage, { isLoading: savingEdit }] = useEditGroupMessageMutation();
+  const [editMessage] = useEditGroupMessageMutation();
   const [deleteMessage] = useDeleteGroupMessageMutation();
   const [text, setText] = useState('');
   const [sendError, setSendError] = useState('');
@@ -124,14 +127,18 @@ export default function GroupChat({ groupId, canModerate }: { groupId: string; c
   const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || savingEdit) return;
+    if (!trimmed) return;
     setSendError('');
+    // Düzenleme: yeni metin hemen görünür, kutu boşalır; kaydedilemezse düzenleme kutusu geri gelir.
     if (editing) {
+      const original = editing;
+      setEditing(null);
+      setText('');
       try {
-        await editMessage({ id: groupId, messageId: editing._id, text: trimmed }).unwrap();
-        setEditing(null);
-        setText('');
+        await editMessage({ id: groupId, messageId: original._id, text: trimmed }).unwrap();
       } catch (err) {
+        setEditing(original);
+        setText(trimmed);
         setSendError(getErrorMessage(err));
       }
       return;
@@ -360,7 +367,7 @@ export default function GroupChat({ groupId, canModerate }: { groupId: string; c
           </div>
           <button
             type="submit"
-            disabled={savingEdit || !text.trim()}
+            disabled={!text.trim()}
             className="w-11 h-11 shrink-0 rounded-full bg-navy-800 text-white hover:bg-navy-900 disabled:bg-navy-800/80 disabled:opacity-70 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2"
             aria-label={editing ? 'Save edit' : 'Send'}
           >
@@ -539,7 +546,10 @@ interface GroupBubbleProps {
 
 // Mesaj balonu. Aynı bloktaki balonların birbirine bakan köşeleri daha az yuvarlak (Messenger gibi).
 function GroupBubble({ message: m, mine, joinsPrev = false, joinsNext = false, replyAuthor, onQuoteClick, inert = false }: GroupBubbleProps) {
-  const hasExtras = Boolean(m.reply || m.note);
+  // Grup bağlantısı (davet) metinden çıkar, yerine grubun kartı gösterilir.
+  const invite = groupLinkInText(m.text);
+  const text = invite ? m.text.replace(invite.url, '').trim() : m.text;
+  const hasExtras = Boolean(m.reply || m.note || invite);
   const corners = mine
     ? `${joinsPrev ? 'rounded-tr-md' : ''} ${joinsNext ? 'rounded-br-md' : ''}`
     : `${joinsPrev ? 'rounded-tl-md' : ''} ${joinsNext ? 'rounded-bl-md' : ''}`;
@@ -566,7 +576,12 @@ function GroupBubble({ message: m, mine, joinsPrev = false, joinsNext = false, r
         </button>
       )}
       {m.note && <NoteAttachment note={m.note} mine={mine} inert={inert} />}
-      <p className={`whitespace-pre-line break-words ${hasExtras ? 'px-1.5 pb-0.5' : ''}`}>{m.text}</p>
+      {text && (
+        <p className={`whitespace-pre-line break-words ${hasExtras ? 'px-1.5 pb-0.5' : ''}`}>
+          <LinkifiedText text={text} inert={inert} />
+        </p>
+      )}
+      {invite && <GroupInviteCard groupId={invite.id} mine={mine} inert={inert} />}
     </div>
   );
 }

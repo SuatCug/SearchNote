@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { SITE_URL } from '@/lib/constants';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Check,
@@ -331,7 +332,7 @@ function GroupMenu({ group, onInvite }: { group: GroupDetail; onInvite: () => vo
   const [deleteGroup] = useDeleteGroupMutation();
 
   const share = async () => {
-    const url = `${window.location.origin}/groups/${group._id}`;
+    const url = `${SITE_URL}/groups/${group._id}`;
     if (navigator.share) {
       setOpen(false);
       try {

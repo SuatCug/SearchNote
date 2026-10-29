@@ -43,3 +43,7 @@ export const UNREAD_POLL_INTERVAL_MS = 30000;
 
 // "Continue with Google" için OAuth Client ID (frontend/.env: VITE_GOOGLE_CLIENT_ID). Boşsa Google butonu gizlenir.
 export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+// Paylaşılan / davet bağlantılarının adresi: yerelde (localhost) çalışırken gönderilen bağlantılar da
+// başkasında açılsın. Mobil uygulama da bu adresteki grup / not / profil bağlantılarını uygulamada açar.
+export const SITE_URL = 'https://searchnote.netlify.app';

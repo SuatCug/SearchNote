@@ -207,7 +207,7 @@ function emptyText(type: ConnectionType, isMe: boolean) {
 // Kendi takipçi listemde, geri takip etmediğim kişinin adının yanındaki "· Follow".
 function FollowBackLink({ user }: { user: UserCard }) {
   const dialog = useDialog();
-  const [toggleFollow, { isLoading }] = useToggleFollowMutation();
+  const [toggleFollow] = useToggleFollowMutation();
   // Takip edince bağlantı sunucuyu beklemeden kaybolur; hata olursa geri gelir.
   const [followed, setFollowed] = useState(false);
   if (followed) return null;
@@ -218,7 +218,6 @@ function FollowBackLink({ user }: { user: UserCard }) {
       </span>
       <button
         type="button"
-        disabled={isLoading}
         onClick={async () => {
           setFollowed(true);
           try {
@@ -228,7 +227,7 @@ function FollowBackLink({ user }: { user: UserCard }) {
             dialog.alert({ message: getErrorMessage(err) });
           }
         }}
-        className="shrink-0 font-semibold text-navy-600 hover:text-navy-800 disabled:opacity-60"
+        className="shrink-0 font-semibold text-navy-600 hover:text-navy-800"
       >
         Follow
       </button>
@@ -237,8 +236,10 @@ function FollowBackLink({ user }: { user: UserCard }) {
 }
 
 // Instagram'daki "Remove": kişi takipçilerimden çıkar, ona bildirim gitmez.
+// Onaydan sonra buton sunucuyu beklemeden "Removed" olur; hata olursa geri döner.
 function RemoveButton({ user }: { user: UserCard }) {
-  const [removeFollower, { isLoading }] = useRemoveFollowerMutation();
+  const [removeFollower] = useRemoveFollowerMutation();
+  const [removed, setRemoved] = useState(false);
   const dialog = useDialog();
 
   const handleClick = async () => {
@@ -249,19 +250,25 @@ function RemoveButton({ user }: { user: UserCard }) {
       tone: 'danger',
     });
     if (!ok) return;
+    setRemoved(true);
     try {
       await removeFollower(user._id).unwrap();
     } catch (err) {
+      setRemoved(false);
       dialog.alert({ message: getErrorMessage(err) });
     }
   };
 
+  if (removed) {
+    return (
+      <span className="inline-flex h-8 shrink-0 items-center rounded-lg px-4 text-sm font-semibold text-gray-400">Removed</span>
+    );
+  }
   return (
     <button
       type="button"
       onClick={handleClick}
-      disabled={isLoading}
-      className="inline-flex h-8 shrink-0 items-center rounded-lg bg-gray-100 px-4 text-sm font-semibold text-gray-900 hover:bg-gray-200 disabled:opacity-60"
+      className="inline-flex h-8 shrink-0 items-center rounded-lg bg-gray-100 px-4 text-sm font-semibold text-gray-900 hover:bg-gray-200"
     >
       Remove
     </button>

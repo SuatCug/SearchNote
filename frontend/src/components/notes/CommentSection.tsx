@@ -31,7 +31,7 @@ export default function CommentSection({ note }: { note: NoteDetail }) {
 // Giriş / doğrulama durumuna göre tek satırlık yorum kutusu: Enter gönderir, Shift+Enter yeni satır.
 export function CommentForm({ note, autoFocus = false }: { note: NoteDetail; autoFocus?: boolean }) {
   const user = useAppSelector((state) => state.auth.user);
-  const [addComment, { isLoading: adding }] = useAddCommentMutation();
+  const [addComment] = useAddCommentMutation();
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -43,13 +43,20 @@ export function CommentForm({ note, autoFocus = false }: { note: NoteDetail; aut
     return () => cancelAnimationFrame(frame);
   }, [autoFocus]);
 
+  // Yorum hemen listede görünür ve kutu boşalır; gönderilemezse yazı kutuya geri konur.
   const submit = async () => {
-    if (!text.trim() || adding) return;
+    const value = text.trim();
+    if (!value || !user) return;
     setError('');
+    setText('');
     try {
-      await addComment({ id: note._id, text: text.trim() }).unwrap();
-      setText('');
+      await addComment({
+        id: note._id,
+        text: value,
+        user: { _id: user.id, fullName: user.fullName, avatarUrl: user.avatarUrl },
+      }).unwrap();
     } catch (err) {
+      setText((current) => current || value);
       setError(getErrorMessage(err));
     }
   };
@@ -97,10 +104,10 @@ export function CommentForm({ note, autoFocus = false }: { note: NoteDetail; aut
         />
         <button
           type="submit"
-          disabled={adding || !text.trim()}
+          disabled={!text.trim()}
           className="shrink-0 text-sm font-bold text-navy-600 hover:text-navy-800 disabled:opacity-40"
         >
-          {adding ? 'Posting...' : 'Post'}
+          Post
         </button>
       </form>
       <Alert className="mt-3">{error}</Alert>
@@ -153,8 +160,10 @@ export function CommentList({ note, className = '' }: { note: NoteDetail; classN
     }
   };
 
-  // Yorumu, yorumun sahibi veya notun sahibi silebilir (backend ile aynı kural).
-  const canDelete = (comment: Comment) => Boolean(user && (comment.user?._id === user.id || note.isOwner));
+  // Yorumu, yorumun sahibi veya notun sahibi silebilir (backend ile aynı kural). Henüz gönderilmekte olan
+  // (geçici kimlikli) yorum silinemez.
+  const canDelete = (comment: Comment) =>
+    !comment._id.startsWith('temp-') && Boolean(user && (comment.user?._id === user.id || note.isOwner));
 
   return (
     <div ref={listRef} className={className}>

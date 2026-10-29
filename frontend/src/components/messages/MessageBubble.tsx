@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import type { DirectMessage, MessageNote } from '@/types/api';
+import { groupLinkInText } from '@/lib/links';
+import LinkifiedText from './LinkifiedText';
+import GroupInviteCard from './GroupInviteCard';
 
 interface MessageBubbleProps {
   message: DirectMessage;
@@ -13,12 +16,16 @@ interface MessageBubbleProps {
 }
 
 // Tek bir mesaj balonu: varsa yanıt alıntısı ve eklenmiş not, ardından metin.
+// Metinde grup bağlantısı varsa (davet) uzun bağlantı metinden çıkar, yerine grubun kartı gösterilir.
 export default function MessageBubble({ message: m, mine, replyAuthor, onQuoteClick, inert = false }: MessageBubbleProps) {
+  const invite = groupLinkInText(m.text);
+  const text = invite ? m.text.replace(invite.url, '').trim() : m.text;
+  const hasExtras = Boolean(m.reply || m.note || invite);
   return (
     <div
       className={`rounded-[20px] px-3.5 py-2.5 text-[15px] leading-snug ${
         mine ? 'bg-navy-800 text-white' : 'bg-navy-100/70 text-gray-900'
-      } ${m.reply || m.note ? 'pt-2 px-2' : ''}`}
+      } ${hasExtras ? 'pt-2 px-2' : ''}`}
     >
       {m.reply && (
         <button
@@ -36,7 +43,12 @@ export default function MessageBubble({ message: m, mine, replyAuthor, onQuoteCl
         </button>
       )}
       {m.note && <NoteAttachment note={m.note} mine={mine} inert={inert} />}
-      <p className={`whitespace-pre-line break-words ${m.reply || m.note ? 'px-1.5 pb-0.5' : ''}`}>{m.text}</p>
+      {text && (
+        <p className={`whitespace-pre-line break-words ${hasExtras ? 'px-1.5 pb-0.5' : ''}`}>
+          <LinkifiedText text={text} inert={inert} />
+        </p>
+      )}
+      {invite && <GroupInviteCard groupId={invite.id} mine={mine} inert={inert} />}
     </div>
   );
 }

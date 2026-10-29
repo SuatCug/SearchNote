@@ -53,7 +53,7 @@ export default function NotificationBell() {
     skipPollingIfUnfocused: true,
   });
   const { data, isLoading } = useGetNotificationsQuery({ limit: LIST_LIMIT }, { skip: !open });
-  const [markAllRead, { isLoading: markingAll }] = useMarkAllNotificationsReadMutation();
+  const [markAllRead] = useMarkAllNotificationsReadMutation();
   const [markRead] = useMarkNotificationReadMutation();
 
   const unread = countData?.data?.count ?? 0;
@@ -91,8 +91,7 @@ export default function NotificationBell() {
                 <button
                   type="button"
                   onClick={() => markAllRead()}
-                  disabled={markingAll}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-navy-600 hover:text-navy-800 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-navy-600 hover:text-navy-800"
                 >
                   <CheckCheck size={14} /> Mark all as read
                 </button>

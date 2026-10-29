@@ -12,7 +12,7 @@ import { useDialog } from '@/components/common/DialogProvider';
 import { useRegisterDownloadMutation, useToggleLikeMutation, useToggleSaveMutation } from '@/services/notesApi';
 import { downloadNote } from '@/lib/downloadNote';
 import { getErrorMessage } from '@/lib/getErrorMessage';
-import { FILE_TYPES } from '@/lib/constants';
+import { FILE_TYPES, SITE_URL } from '@/lib/constants';
 import { formatCount, formatFileSize, timeAgo } from '@/lib/format';
 import { compact } from '@/lib/compact';
 import type { NoteCard } from '@/types/api';
@@ -85,7 +85,7 @@ export default function NotePostCard({ note, index = 0 }: { note: NoteCard; inde
   };
 
   const handleShare = async () => {
-    const url = `${window.location.origin}${noteUrl}`;
+    const url = `${SITE_URL}${noteUrl}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: note.title, url });
