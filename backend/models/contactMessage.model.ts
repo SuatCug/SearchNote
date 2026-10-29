@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// İletişim formundan gelen mesajlar. Şimdilik veritabanında saklanır (yönetim paneli / e-posta bildirimi yok).
+// İletişim formundan gelen mesajlar. Veritabanında saklanır, ayrıca CONTACT_INBOX adresine e-postayla gönderilir.
 const contactMessageSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 80 },

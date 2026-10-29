@@ -32,9 +32,15 @@ interface MailMessage {
   subject: string;
   text: string;
   html: string;
+  // "Yanıtla" denince yazılacak adres (iletişim formu: formu gönderen kişi).
+  replyTo?: { email: string; name: string };
 }
 
-const sendWithBrevo = async ({ to, toName, subject, text, html }: MailMessage) => {
+// Kullanıcının yazdığı metin HTML maile güvenle konur.
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+const sendWithBrevo = async ({ to, toName, subject, text, html, replyTo }: MailMessage) => {
   const res = await fetch(BREVO_API_URL, {
     method: 'POST',
     headers: { 'api-key': process.env.BREVO_API_KEY ?? '', 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -44,6 +50,7 @@ const sendWithBrevo = async ({ to, toName, subject, text, html }: MailMessage) =
       subject,
       textContent: text,
       htmlContent: html,
+      ...(replyTo && { replyTo }),
     }),
   });
   if (!res.ok) {
@@ -62,6 +69,7 @@ const sendMail = async (message: MailMessage) => {
       subject: message.subject,
       text: message.text,
       html: message.html,
+      ...(message.replyTo && { replyTo: `${message.replyTo.name} <${message.replyTo.email}>` }),
     });
   }
   return null;
@@ -180,7 +188,76 @@ const sendAccountDeletedEmail = async (user: { email: string; fullName: string }
   });
 };
 
+const CONTACT_TOPIC_LABELS: Record<string, string> = {
+  general: 'General question',
+  support: 'Account & technical support',
+  copyright: 'Copyright / report content',
+  privacy: 'Privacy & KVKK request',
+  feedback: 'Feedback & ideas',
+};
+
+interface ContactMail {
+  name: string;
+  email: string;
+  topic: string;
+  message: string;
+  userId?: string;
+}
+
+// İletişim formu mesajı CONTACT_INBOX adresine gider; "Yanıtla" doğrudan formu gönderen kişiye yazar.
+// CONTACT_INBOX boşsa ya da mail servisi kurulu değilse gönderilmez (mesaj yine veritabanında durur).
+const sendContactNotification = async ({ name, email, topic, message, userId }: ContactMail) => {
+  const inbox = process.env.CONTACT_INBOX?.trim();
+  if (!inbox || !isMailConfigured()) {
+    console.log(`📧 [DEV] Contact message from ${email} (${topic}) — not emailed (CONTACT_INBOX or mail service missing).`);
+    return;
+  }
+  const topicLabel = CONTACT_TOPIC_LABELS[topic] ?? topic;
+  const profile = userId ? `${getClientUrl()}/users/${userId}` : '';
+
+  await sendMail({
+    to: inbox,
+    toName: 'SearchNote',
+    replyTo: { email, name },
+    subject: `[SearchNote · ${topicLabel}] ${name}`,
+    text: `${topicLabel}\n\nFrom: ${name} <${email}>${profile ? `\nProfile: ${profile}` : '\n(Not signed in)'}\n\n${message}\n\nReply to this email to answer ${name}.`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#1f2937">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:bold;letter-spacing:.5px;text-transform:uppercase;color:#365188">${escapeHtml(topicLabel)}</p>
+      <h2 style="margin:0 0 16px;color:#1e3050">${escapeHtml(name)}</h2>
+      <p style="margin:0 0 4px"><a href="mailto:${escapeHtml(email)}" style="color:#365188">${escapeHtml(email)}</a></p>
+      <p style="margin:0 0 20px;font-size:13px;color:#6b7280">${
+        profile ? `<a href="${profile}" style="color:#365188">View SearchNote profile</a>` : 'Not signed in'
+      }</p>
+      <div style="white-space:pre-wrap;background:#f3f4f6;border-radius:10px;padding:14px 16px;line-height:1.5">${escapeHtml(message)}</div>
+      <p style="margin-top:20px;font-size:13px;color:#6b7280">Reply to this email to answer ${escapeHtml(name)} directly.</p>
+    </div>`,
+  });
+};
+
+// Formu gönderen kişiye "mesajını aldık" onayı (mesajının bir kopyasıyla).
+const sendContactConfirmation = async ({ name, email, topic, message }: ContactMail) => {
+  const inbox = process.env.CONTACT_INBOX?.trim();
+  if (!inbox || !isMailConfigured()) return;
+  const topicLabel = CONTACT_TOPIC_LABELS[topic] ?? topic;
+
+  await sendMail({
+    to: email,
+    toName: name,
+    replyTo: { email: inbox, name: 'SearchNote' },
+    subject: 'We received your message - SearchNote',
+    text: `Hi ${name},\n\nThanks for contacting SearchNote. We received your message and will get back to you as soon as we can.\n\nTopic: ${topicLabel}\n\n${message}`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1f2937">
+      <h2 style="color:#1e3050">Thanks for reaching out, ${escapeHtml(name)}!</h2>
+      <p>We received your message and will get back to you as soon as we can. You can reply to this email to add anything.</p>
+      <p style="margin:20px 0 6px;font-size:13px;color:#6b7280">Your message · ${escapeHtml(topicLabel)}</p>
+      <div style="white-space:pre-wrap;background:#f3f4f6;border-radius:10px;padding:14px 16px;line-height:1.5">${escapeHtml(message)}</div>
+    </div>`,
+  });
+};
+
 export {
+  sendContactNotification,
+  sendContactConfirmation,
   sendVerificationEmail,
   sendPasswordResetCode,
   sendSignupCode,
