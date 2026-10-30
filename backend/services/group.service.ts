@@ -3,6 +3,7 @@ import { Group, GroupMessage, Note, Notification, User } from '../models/index.t
 import { emitToUsers } from './realtime.service.ts';
 import { removeFile } from './storage.service.ts';
 import type { GroupDocument } from '../models/group.model.ts';
+import { isMuteActive } from '../models/user.model.ts';
 import ApiError from '../utils/apiError.ts';
 import { buildPagination, type PaginationParams } from '../utils/pagination.util.ts';
 import type { IdLike, MatchFilter, SortSpec } from '../types/common.ts';
@@ -19,6 +20,23 @@ const favoriteGroupIds = async (userId: string | undefined) => {
   // Sadece bu alan okunur ('+favoriteGroups' tüm kaydı, takipçi listeleriyle birlikte getirirdi).
   const user = await User.findById(userId).select('favoriteGroups').lean();
   return user?.favoriteGroups ?? [];
+};
+
+// Kullanıcının şu an sessizde olan grupları: grup id → bitiş zamanı (null = süresiz). Süresi dolanlar sayılmaz.
+const mutedGroupsOf = async (userId: string | undefined) => {
+  const muted = new Map<string, Date | null>();
+  if (!userId) return muted;
+  const user = await User.findById(userId).select('mutedGroups').lean();
+  for (const m of user?.mutedGroups ?? []) {
+    if (isMuteActive(m)) muted.set(String(m.group), m.until ?? null);
+  }
+  return muted;
+};
+
+// Grup detayı ve Gruplar listesinde izleyicinin sessize alma durumu
+const muteFields = (muted: Map<string, Date | null>, groupId: IdLike) => {
+  const id = String(groupId);
+  return { isMuted: muted.has(id), mutedUntil: muted.get(id) ?? null };
 };
 
 // Grubun not sayısı ve en son paylaşılan not (kartlarda "Latest: ..." satırı).
@@ -149,7 +167,8 @@ const listMyGroupActivity = async (userId: string) => {
     .select('name isPrivate owner founders admins members lastReadAt lastActivityAt createdAt color courseCode avatarUrl')
     .lean();
   if (!groups.length) return [];
-  const favorites = new Set((await favoriteGroupIds(userId)).map(String));
+  const [favoriteIds, muted] = await Promise.all([favoriteGroupIds(userId), mutedGroupsOf(userId)]);
+  const favorites = new Set(favoriteIds.map(String));
   const ids = groups.map((g) => g._id);
   const readAtOf = (g: (typeof groups)[number]) => {
     const map = g.lastReadAt as unknown as Record<string, Date> | Map<string, Date> | undefined;
@@ -212,6 +231,7 @@ const listMyGroupActivity = async (userId: string) => {
       courseCode: g.courseCode,
       avatarUrl: g.avatarUrl ?? '',
       isFavorite: favorites.has(id),
+      ...muteFields(muted, id),
       isOwner: String(g.owner) === userId || (g.founders ?? []).some((id) => String(id) === userId),
       isAdmin: (g.admins ?? []).some((id) => String(id) === userId),
       membersCount: g.members?.length ?? 0,
@@ -304,8 +324,8 @@ const deleteGroupWithContent = async (group: GroupDocument) => {
     Note.deleteMany({ _id: { $in: noteIds } }),
     GroupMessage.deleteMany({ group: group._id }),
     User.updateMany(
-      { $or: [{ favoriteGroups: group._id }, { savedNotes: { $in: noteIds } }] },
-      { $pull: { favoriteGroups: group._id, savedNotes: { $in: noteIds } } }
+      { $or: [{ favoriteGroups: group._id }, { 'mutedGroups.group': group._id }, { savedNotes: { $in: noteIds } }] },
+      { $pull: { favoriteGroups: group._id, mutedGroups: { group: group._id }, savedNotes: { $in: noteIds } } }
     ),
     Notification.deleteMany({ note: { $in: noteIds } }),
   ]);
@@ -317,6 +337,8 @@ const deleteGroupWithContent = async (group: GroupDocument) => {
 export {
   deleteGroupWithContent,
   favoriteGroupIds,
+  mutedGroupsOf,
+  muteFields,
   listIncomingRequests,
   listSentRequests,
   listGroups,

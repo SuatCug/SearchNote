@@ -3,7 +3,12 @@ import mongoose, { type Types } from 'mongoose';
 import asyncHandler, { type AppRequest, type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
 import { User, Note, Report } from '../models/index.ts';
-import { PUSH_CATEGORIES, type NotificationSettings } from '../models/user.model.ts';
+import {
+  GROUP_PUSH_CATEGORIES,
+  PUSH_CATEGORIES,
+  isPushCategoryOn,
+  type NotificationSettings,
+} from '../models/user.model.ts';
 import { deleteAccount as deleteAccountData } from '../services/account.service.ts';
 import { sendAccountDeletionCode, sendAccountDeletedEmail } from '../services/mail.service.ts';
 import { registerPushToken, removePushToken } from '../services/push.service.ts';
@@ -453,9 +458,11 @@ const deletePushToken = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, message: 'Push notifications disabled.' });
 });
 
-// Ayarlar > Notifications: hangi olaylar telefona bildirim olarak gelsin (kayıt yoksa hepsi açık)
+// Ayarlar > Notifications: hangi olaylar telefona bildirim olarak gelsin (kayıt yoksa hepsi açık).
+// groups: tek "Groups" anahtarı olan eski uygulama sürümü için; grup anahtarlarından biri açıksa açık görünür.
 const toSettingsJSON = (s: NotificationSettings | undefined) => ({
-  ...Object.fromEntries(PUSH_CATEGORIES.map((c) => [c, s?.[c] !== false])),
+  ...Object.fromEntries(PUSH_CATEGORIES.map((c) => [c, isPushCategoryOn(s, c)])),
+  groups: GROUP_PUSH_CATEGORIES.some((c) => isPushCategoryOn(s, c)),
   pausedUntil: s?.pausedUntil && new Date(s.pausedUntil) > new Date() ? s.pausedUntil : null,
 });
 
@@ -465,9 +472,13 @@ const getNotificationSettings = asyncHandler<AuthedRequest>(async (req, res) => 
   res.json({ success: true, data: { settings: toSettingsJSON(user.notificationSettings) } });
 });
 
-// Gövde: { likes?, comments?, follows?, messages?, groups?: boolean, pauseMinutes?: number (0 = devam et) }
+// Gövde: { likes?, comments?, follows?, messages?, groupMessages?, groupNotes?, groupRequests?: boolean,
+// pauseMinutes?: number (0 = devam et) }. Eski uygulamanın gönderdiği groups üç grup anahtarını birden değiştirir.
 const updateNotificationSettings = asyncHandler<AuthedRequest>(async (req, res) => {
   const set: Record<string, unknown> = {};
+  if (typeof req.body.groups === 'boolean') {
+    for (const c of GROUP_PUSH_CATEGORIES) set[`notificationSettings.${c}`] = req.body.groups;
+  }
   for (const c of PUSH_CATEGORIES) {
     if (typeof req.body[c] === 'boolean') set[`notificationSettings.${c}`] = req.body[c];
   }

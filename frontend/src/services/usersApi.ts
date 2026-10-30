@@ -19,7 +19,14 @@ type UserResponse = ApiResponse<{ user: AuthUser }>;
 type UserPageResponse = ApiResponse<{ users: UserCard[]; pagination: Pagination }>;
 
 // Telefon bildirimi ayarları (mobil uygulamayla aynı uç nokta). Uygulama içi bildirim listesi etkilenmez.
-export type PushCategory = 'likes' | 'comments' | 'follows' | 'messages' | 'groups';
+export type PushCategory =
+  | 'likes'
+  | 'comments'
+  | 'follows'
+  | 'messages'
+  | 'groupMessages'
+  | 'groupNotes'
+  | 'groupRequests';
 export type NotificationSettings = Record<PushCategory, boolean> & { pausedUntil: string | null };
 type NotificationSettingsResponse = ApiResponse<{ settings: NotificationSettings }>;
 

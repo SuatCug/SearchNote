@@ -5,9 +5,31 @@ import { requireEmailVerification } from '../config/features.ts';
 export const EDU_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.edu\.tr$/;
 
 // Telefon bildirimi kategorileri (mobil Ayarlar > Notifications). Uygulama içi bildirim listesi etkilenmez.
-export const PUSH_CATEGORIES = ['likes', 'comments', 'follows', 'messages', 'groups'] as const;
+// Grup bildirimleri üçe ayrılır: grup sohbeti, gruba paylaşılan not, katılma istekleri / yeni üye / onay.
+export const PUSH_CATEGORIES = [
+  'likes',
+  'comments',
+  'follows',
+  'messages',
+  'groupMessages',
+  'groupNotes',
+  'groupRequests',
+] as const;
 export type PushCategory = (typeof PUSH_CATEGORIES)[number];
-export type NotificationSettings = Partial<Record<PushCategory, boolean>> & { pausedUntil?: Date | null };
+export const GROUP_PUSH_CATEGORIES: readonly PushCategory[] = ['groupMessages', 'groupNotes', 'groupRequests'];
+// groups: eski tek "Groups" anahtarı. Ayrı grup anahtarı kaydedilmemişse onun değeri geçerlidir.
+export type NotificationSettings = Partial<Record<PushCategory | 'groups', boolean>> & { pausedUntil?: Date | null };
+
+// Sessize alınan grup: until yoksa süresiz ("Always")
+export interface MutedGroup {
+  group: Types.ObjectId;
+  until?: Date | null;
+}
+export const isMuteActive = (m: { until?: Date | null }) => !m.until || new Date(m.until) > new Date();
+
+// Kategori açık mı (kayıt yoksa açık sayılır)
+export const isPushCategoryOn = (settings: NotificationSettings | undefined, category: PushCategory) =>
+  (settings?.[category] ?? (GROUP_PUSH_CATEGORIES.includes(category) ? settings?.groups : undefined)) !== false;
 
 export interface IUser {
   email: string;
@@ -22,6 +44,7 @@ export interface IUser {
   blockedUsers: Types.ObjectId[];
   savedNotes: Types.ObjectId[];
   favoriteGroups?: Types.ObjectId[];
+  mutedGroups?: MutedGroup[];
   lastActiveAt?: Date;
   isVerified: boolean;
   verificationTokenHash?: string;
@@ -75,6 +98,9 @@ const notificationSettingsSchema = new Schema<NotificationSettings>(
     comments: Boolean,
     follows: Boolean,
     messages: Boolean,
+    groupMessages: Boolean,
+    groupNotes: Boolean,
+    groupRequests: Boolean,
     groups: Boolean,
     pausedUntil: Date,
   },
@@ -107,6 +133,17 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     savedNotes: [{ type: Schema.Types.ObjectId, ref: 'Note' }],
     // Favori gruplar (mobil "Favorite groups"): sadece kullanıcının kendisi görür.
     favoriteGroups: { type: [{ type: Schema.Types.ObjectId, ref: 'Group' }], default: undefined, select: false },
+    // Sessize alınan gruplar: bu grupların mesaj ve not bildirimleri telefona gelmez (zil listesi etkilenmez).
+    mutedGroups: {
+      type: [
+        new Schema<MutedGroup>(
+          { group: { type: Schema.Types.ObjectId, ref: 'Group', required: true }, until: Date },
+          { _id: false }
+        ),
+      ],
+      default: undefined,
+      select: false,
+    },
     // Son istek zamanı ("Active now" listesi için; auth middleware'de en fazla dakikada bir güncellenir).
     lastActiveAt: { type: Date, index: true },
     // Kurumsal e-posta doğrulaması: doğrulanmamış kullanıcı giriş yapabilir ama

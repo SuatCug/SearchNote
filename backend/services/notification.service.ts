@@ -60,4 +60,17 @@ const removeNotification = async ({ recipient, actor, type, note, group, text }:
   }
 };
 
-export { notify, removeNotification };
+// Katılma isteği sonuçlandı (onay / ret / geri çekme): kurucu ve yöneticilerdeki "katılmak istiyor" bildirimi silinir
+const removeJoinRequestNotifications = async (group: IdLike, actor: IdLike) => {
+  try {
+    const filter = { type: 'group_request' as NotificationType, group, actor };
+    const recipients = await Notification.distinct('recipient', filter);
+    if (!recipients.length) return;
+    await Notification.deleteMany(filter);
+    emitToUsers(recipients, 'notifications:changed');
+  } catch (error) {
+    console.error('Notification error:', (error as Error).message);
+  }
+};
+
+export { notify, removeNotification, removeJoinRequestNotifications };

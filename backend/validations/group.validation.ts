@@ -49,4 +49,21 @@ const editMessageRules = [messageTextRule()];
 
 const messageParamRules = [param('messageId').isMongoId().withMessage('Invalid message id.')];
 
-export { createGroupRules, updateGroupRules, memberParamRules, messageRules, editMessageRules, messageParamRules };
+// Sessize alma süresi (dakika); gönderilmezse ya da 0 ise süresiz
+const muteRules = [
+  body('minutes')
+    .optional()
+    .isInt({ min: 0, max: 365 * 24 * 60 })
+    .withMessage('Mute duration must be between 0 minutes and 1 year.')
+    .toInt(),
+];
+
+export {
+  createGroupRules,
+  updateGroupRules,
+  memberParamRules,
+  messageRules,
+  editMessageRules,
+  messageParamRules,
+  muteRules,
+};

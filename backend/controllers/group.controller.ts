@@ -6,6 +6,8 @@ import {
   deleteGroupWithContent,
   favoriteGroupIds,
   followedMembersFor,
+  mutedGroupsOf,
+  muteFields,
   listIncomingRequests,
   listSentRequests,
   listGroups,
@@ -14,7 +16,7 @@ import {
   recordGroupActivity,
 } from '../services/group.service.ts';
 import { assertNoteVisible, listNotes } from '../services/note.service.ts';
-import { notify } from '../services/notification.service.ts';
+import { notify, removeJoinRequestNotifications } from '../services/notification.service.ts';
 import { emitToGroup, toPlainJSON } from '../services/realtime.service.ts';
 import { pushGroupMessage } from '../services/push.service.ts';
 import { saveAvatar, removeFile } from '../services/storage.service.ts';
@@ -57,10 +59,11 @@ const assertCanView = (group: GroupDocument, userId: string | undefined) => {
 const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined) => {
   await group.populate('owner', USER_CARD_FIELDS);
   const viewer = viewerId ? String(viewerId) : undefined;
-  const [notesCount, followed, favorites] = await Promise.all([
+  const [notesCount, followed, favorites, muted] = await Promise.all([
     Note.countDocuments({ group: group._id }),
     followedMembersFor(viewer, [group._id]),
     favoriteGroupIds(viewer),
+    mutedGroupsOf(viewer),
   ]);
   // lastReadAt üyelerin okuma zamanları, requestInfo istek mesajlarıdır; kimseye gösterilmez.
   const { members, joinRequests, admins: _admins, founders: _founders, lastReadAt: _lastReadAt, requestInfo: _requestInfo, __v, ...rest } =
@@ -74,6 +77,7 @@ const toGroupDetail = async (group: GroupDocument, viewerId: IdLike | undefined)
     color: rest.color ?? 'navy',
     avatarUrl: rest.avatarUrl ?? '',
     isFavorite: favorites.some((id) => id.equals(group._id)),
+    ...muteFields(muted, group._id),
     membersCount: members.length,
     notesCount,
     // İzleyicinin takip ettiği üyeler ("Ayşe ve Mert üye")
@@ -297,6 +301,7 @@ const leaveGroup = asyncHandler<AuthedRequest>(async (req, res) => {
     group.joinRequests.pull(userId);
     group.requestInfo.delete(userId);
     await group.save();
+    await removeJoinRequestNotifications(group._id, userId);
     return res.json({
       success: true,
       message: 'Join request cancelled.',
@@ -309,6 +314,8 @@ const leaveGroup = asyncHandler<AuthedRequest>(async (req, res) => {
   group.members.pull(userId);
   group.admins.pull(userId);
   await group.save();
+  // Tekrar katılırsa sessiz başlamasın
+  await User.updateOne({ _id: userId }, { $pull: { mutedGroups: { group: group._id } } });
 
   res.json({
     success: true,
@@ -376,6 +383,7 @@ const removeMember = asyncHandler<AuthedRequest>(async (req, res) => {
   group.members.pull(req.params.userId);
   group.admins.pull(req.params.userId);
   await group.save();
+  await User.updateOne({ _id: req.params.userId }, { $pull: { mutedGroups: { group: group._id } } });
 
   res.json({ success: true, message: 'Member removed.', data: { membersCount: group.members.length } });
 });
@@ -482,6 +490,7 @@ const approveJoinRequest = asyncHandler<AuthedRequest>(async (req, res) => {
   group.requestInfo.delete(req.params.userId);
   group.members.addToSet(req.params.userId);
   await group.save();
+  await removeJoinRequestNotifications(group._id, req.params.userId);
   await notify({ recipient: req.params.userId, actor: req.user.id, type: 'group_approved', group: group._id });
 
   res.json({ success: true, message: 'Join request approved.', data: { membersCount: group.members.length } });
@@ -495,6 +504,7 @@ const rejectJoinRequest = asyncHandler<AuthedRequest>(async (req, res) => {
   group.joinRequests.pull(req.params.userId);
   group.requestInfo.delete(req.params.userId);
   await group.save();
+  await removeJoinRequestNotifications(group._id, req.params.userId);
 
   res.json({ success: true, message: 'Join request rejected.' });
 });
@@ -634,6 +644,24 @@ const removeFavorite = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, data: { isFavorite: false } });
 });
 
+// Grubu sessize al: mesaj ve not bildirimleri telefona gelmez. Gövde: { minutes?: number } (yoksa / 0 = süresiz).
+// Katılma istekleri ve uygulama içi bildirim listesi etkilenmez.
+const muteGroup = asyncHandler<AuthedRequest>(async (req, res) => {
+  const group = await findGroupOrFail(req.params.id);
+  if (!group.hasMember(req.user.id)) throw new ApiError(403, 'Only members can mute this group.');
+  const minutes = Number(req.body?.minutes) || 0;
+  const until = minutes > 0 ? new Date(Date.now() + minutes * 60 * 1000) : null;
+  // Önceki kayıt (varsa) yenisiyle değiştirilir
+  await User.updateOne({ _id: req.user.id }, { $pull: { mutedGroups: { group: group._id } } });
+  await User.updateOne({ _id: req.user.id }, { $push: { mutedGroups: { group: group._id, until } } });
+  res.json({ success: true, data: { isMuted: true, mutedUntil: until } });
+});
+
+const unmuteGroup = asyncHandler<AuthedRequest>(async (req, res) => {
+  await User.updateOne({ _id: req.user.id }, { $pull: { mutedGroups: { group: req.params.id } } });
+  res.json({ success: true, data: { isMuted: false, mutedUntil: null } });
+});
+
 // Tüm gruplarıma gelen bekleyen istekler (kurucusu veya yöneticisi olduğum gruplar).
 const getIncomingRequests = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, data: { requests: await listIncomingRequests(req.user.id) } });
@@ -648,6 +676,8 @@ export {
   getFavoriteGroups,
   addFavorite,
   removeFavorite,
+  muteGroup,
+  unmuteGroup,
   getIncomingRequests,
   getSentRequests,
   searchGroups,

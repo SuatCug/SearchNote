@@ -1,5 +1,17 @@
 import { useState } from 'react';
-import { Bell, Heart, MessageCircle, MessageSquare, Moon, Smartphone, UserPlus, Users, type LucideIcon } from 'lucide-react';
+import {
+  Bell,
+  FileText,
+  Heart,
+  MessageCircle,
+  MessageSquare,
+  Moon,
+  Smartphone,
+  UserCheck,
+  UserPlus,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import Spinner from '@/components/common/Spinner';
 import Switch from '@/components/common/Switch';
 import Alert from '@/components/common/Alert';
@@ -18,7 +30,14 @@ const CATEGORIES: { key: PushCategory; label: string; text: string; icon: Lucide
   { key: 'comments', label: 'Comments', text: 'Comments on your notes', icon: MessageSquare },
   { key: 'likes', label: 'Likes', text: 'When someone likes your note', icon: Heart },
   { key: 'follows', label: 'New followers', text: 'When someone starts following you', icon: UserPlus },
-  { key: 'groups', label: 'Groups', text: 'Messages, notes and join requests in your groups', icon: Users },
+  { key: 'groupMessages', label: 'Group messages', text: 'New messages in your groups', icon: Users },
+  { key: 'groupNotes', label: 'Group notes', text: 'When someone shares a note in your groups', icon: FileText },
+  {
+    key: 'groupRequests',
+    label: 'Join requests',
+    text: 'Requests and new members in groups you manage, and when your request is approved',
+    icon: UserCheck,
+  },
 ];
 
 const PAUSE_OPTIONS = [

@@ -12,6 +12,7 @@ import {
   messageRules,
   editMessageRules,
   messageParamRules,
+  muteRules,
 } from '../validations/group.validation.ts';
 
 const router = Router();
@@ -27,6 +28,9 @@ router.get('/requests/incoming', authenticate, groupController.getIncomingReques
 router.get('/requests/sent', authenticate, groupController.getSentRequests);
 router.post('/:id/favorite', idParamRules, validate, authenticate, groupController.addFavorite);
 router.delete('/:id/favorite', idParamRules, validate, authenticate, groupController.removeFavorite);
+// Sessize alma (sadece üyeler): grubun mesaj ve not bildirimleri telefona gelmez
+router.put('/:id/mute', idParamRules, muteRules, validate, authenticate, groupController.muteGroup);
+router.delete('/:id/mute', idParamRules, validate, authenticate, groupController.unmuteGroup);
 router.get('/:id', idParamRules, validate, optionalAuth, groupController.getGroup);
 router.get('/:id/members', idParamRules, validate, optionalAuth, groupController.getMembers);
 router.get('/:id/followed-members', idParamRules, validate, authenticate, groupController.getFollowedMembers);

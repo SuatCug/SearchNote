@@ -1,6 +1,12 @@
 import { User, Note, Group, Conversation, Notification } from '../models/index.ts';
 import type { NotificationType } from '../models/notification.model.ts';
-import type { NotificationSettings, PushCategory } from '../models/user.model.ts';
+import {
+  isMuteActive,
+  isPushCategoryOn,
+  type MutedGroup,
+  type NotificationSettings,
+  type PushCategory,
+} from '../models/user.model.ts';
 import type { IdLike } from '../types/common.ts';
 import { isOnline } from './realtime.service.ts';
 
@@ -22,6 +28,8 @@ interface PushMessage {
   // Aynı etiketli yeni bildirim telefondaki eskisinin yerine geçer (Instagram/WhatsApp gibi:
   // bir sohbetten 10 mesaj gelince 10 ayrı bildirim değil, güncellenen tek bildirim)
   tag?: string;
+  // Grup bildirimi: bu grubu sessize alan kullanıcılara gitmez
+  group?: IdLike;
 }
 
 interface ExpoTicket {
@@ -33,17 +41,20 @@ const truncate = (text: string, max = 120) => (text.length > max ? `${text.slice
 
 // Kullanıcı bu kategoriyi kapattıysa ya da "Pause all" süresi dolmadıysa bildirim gitmez
 const wantsPush = (settings: NotificationSettings | undefined, category: PushCategory) =>
-  settings?.[category] !== false && !(settings?.pausedUntil && new Date(settings.pausedUntil) > new Date());
+  isPushCategoryOn(settings, category) && !(settings?.pausedUntil && new Date(settings.pausedUntil) > new Date());
 
-const sendPush = async (recipients: IdLike[], category: PushCategory, { title, body, url, tag }: PushMessage) => {
+const mutedGroup = (muted: MutedGroup[] | undefined, group: IdLike) =>
+  (muted ?? []).some((m) => String(m.group) === String(group) && isMuteActive(m));
+
+const sendPush = async (recipients: IdLike[], category: PushCategory, { title, body, url, tag, group }: PushMessage) => {
   try {
     const ids = [...new Set(recipients.map(String))].filter((id) => !isOnline(id));
     if (!ids.length) return;
     const users = await User.find({ _id: { $in: ids }, 'pushTokens.0': { $exists: true } })
-      .select('+pushTokens +notificationSettings')
+      .select(`+pushTokens +notificationSettings${group ? ' +mutedGroups' : ''}`)
       .lean();
     const tokens = users
-      .filter((u) => wantsPush(u.notificationSettings, category))
+      .filter((u) => wantsPush(u.notificationSettings, category) && !(group && mutedGroup(u.mutedGroups, group)))
       .flatMap((u) => u.pushTokens ?? []);
     if (!tokens.length) return;
 
@@ -131,12 +142,13 @@ const pushGroupMessage = async (
   const sender = await User.findById(senderId).select('fullName').lean();
   await sendPush(
     group.members.filter((m) => String(m) !== String(senderId)),
-    'groups',
+    'groupMessages',
     {
       title: group.name,
       body: `${firstName(sender?.fullName)}: ${text}`,
       url: `/groups/${group._id}`,
       tag: `group:${group._id}`,
+      group: group._id,
     }
   );
 };
@@ -150,12 +162,13 @@ const pushGroupNote = async (groupId: IdLike, authorId: IdLike, noteTitle: strin
   if (!group) return;
   await sendPush(
     group.members.filter((m) => String(m) !== String(authorId)),
-    'groups',
+    'groupNotes',
     {
       title: group.name,
       body: `${firstName(author?.fullName)} shared a note: ${noteTitle}`,
       url: `/groups/${group._id}`,
       tag: `group:${group._id}`,
+      group: group._id,
     }
   );
 };
@@ -165,9 +178,9 @@ const CATEGORY_OF: Record<NotificationType, PushCategory> = {
   like: 'likes',
   comment: 'comments',
   follow: 'follows',
-  group_join: 'groups',
-  group_request: 'groups',
-  group_approved: 'groups',
+  group_join: 'groupRequests',
+  group_request: 'groupRequests',
+  group_approved: 'groupRequests',
 };
 
 // Bildirimler sayfasındaki olaylar (beğeni, yorum, takip, grup)
