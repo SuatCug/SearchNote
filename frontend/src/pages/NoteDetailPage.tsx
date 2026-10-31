@@ -161,7 +161,9 @@ export default function NoteDetailPage() {
     if (!ok) return;
     try {
       await deleteNote(note._id).unwrap();
-      navigate(user ? `/users/${user.id}` : '/', { replace: true });
+      // Grup notu silinince o grubun not listesine, diğerlerinde profile dönülür.
+      if (note.group) navigate(`/groups/${note.group._id}`, { replace: true });
+      else navigate(user ? `/users/${user.id}` : '/', { replace: true });
     } catch (err) {
       setActionError(getErrorMessage(err));
     }
