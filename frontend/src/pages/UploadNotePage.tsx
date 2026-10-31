@@ -42,7 +42,9 @@ export default function UploadNotePage() {
     if (file) formData.append('file', file);
     try {
       const res = await createNote(formData).unwrap();
-      navigate(`/notes/${res.data.note._id}`);
+      // Grupta paylaşıldıysa grubun not listesine dönülür; replace sayesinde geri tuşu boş forma götürmez.
+      if (values.group) navigate(`/groups/${values.group}`, { replace: true });
+      else navigate(`/notes/${res.data.note._id}`);
     } catch (err) {
       setError(err);
     }

@@ -103,7 +103,8 @@ export const notesApi = baseApi.injectEndpoints({
     createNote: builder.mutation<NoteResponse, FormData>({
       // body: FormData (dosya alanı "file")
       query: (formData) => ({ url: '/notes', method: 'POST', body: formData }),
-      invalidatesTags: ['NoteList', 'Filters', 'User'],
+      // Grupta paylaşılan not grubun not sayısını değiştirir; grup id'si bilinmediği için tüm Group önbelleği yenilenir.
+      invalidatesTags: ['NoteList', 'Filters', 'User', 'Group', 'GroupList', 'GroupActivity'],
     }),
     updateNote: builder.mutation<NoteResponse, Partial<NoteInput> & { id: string }>({
       query: ({ id, ...body }) => ({ url: `/notes/${id}`, method: 'PATCH', body }),
@@ -111,7 +112,7 @@ export const notesApi = baseApi.injectEndpoints({
     }),
     deleteNote: builder.mutation<ApiResponse, string>({
       query: (id) => ({ url: `/notes/${id}`, method: 'DELETE' }),
-      invalidatesTags: ['NoteList', 'Filters', 'User'],
+      invalidatesTags: ['NoteList', 'Filters', 'User', 'Group', 'GroupList', 'GroupActivity'],
     }),
     toggleLike: builder.mutation<ApiResponse<{ isLiked: boolean; likesCount: number }>, { id: string; liked: boolean }>({
       query: ({ id, liked }) => ({ url: `/notes/${id}/like`, method: liked ? 'DELETE' : 'POST' }),
