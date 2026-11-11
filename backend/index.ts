@@ -10,6 +10,7 @@ import routes from './routes/index.ts';
 import initSocket from './sockets/index.ts';
 import { notFound, errorHandler } from './middlewares/error.middleware.ts';
 import { dropLegacyUniversityData } from './services/university.service.ts';
+import { resumePendingIndexing } from './services/noteIndex.service.ts';
 
 const app = express();
 
@@ -51,4 +52,6 @@ connectDB().then(() => {
   });
   // Üniversite listesi artık dosyada (data/universities-tr.json): eski sürümün MongoDB koleksiyonlarını siler
   void dropLegacyUniversityData();
+  // Not içeriği araması: henüz indekslenmemiş / yarıda kalmış notlar arka planda işlenir.
+  resumePendingIndexing().catch((e) => console.error('Indexing resume error:', (e as Error).message));
 });

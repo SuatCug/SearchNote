@@ -1,6 +1,6 @@
 import { useId, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, Clock, Loader2, Search, X } from 'lucide-react';
+import { BookOpen, Clock, FileSearch, Loader2, Search, X } from 'lucide-react';
 import { useAppSelector } from '@/app/hooks';
 import UserAvatar from '@/components/users/UserAvatar';
 import { useSearchUsersQuery } from '@/services/usersApi';
@@ -25,6 +25,8 @@ const COURSES_LIMIT = 3;
 // Açılır listedeki satırlar: klavyeyle gezinmek için tek düz listede tutulur.
 type Option =
   | { kind: 'search'; q: string }
+  // Notların sayfalarının içinde arama + soru sorma (/ask)
+  | { kind: 'inside'; q: string }
   | { kind: 'recent'; item: RecentSearch }
   | { kind: 'user'; id: string; fullName: string; avatarUrl?: string; subtitle: string }
   | { kind: 'course'; code: string; name: string }
@@ -67,6 +69,7 @@ export default function SearchBox({ value, onChange, onSearch, placeholder, inpu
     trimmed.length >= MIN_QUERY
       ? [
           { kind: 'search', q: trimmed },
+          { kind: 'inside', q: trimmed },
           ...(searching
             ? [
                 ...(people.data?.data?.users ?? []).map(
@@ -119,6 +122,11 @@ export default function SearchBox({ value, onChange, onSearch, placeholder, inpu
     switch (option.kind) {
       case 'search':
         return runQuery(option.q);
+      case 'inside':
+        addRecentSearch(userId, { type: 'query', q: option.q });
+        navigate(`/ask?q=${encodeURIComponent(option.q)}`);
+        onChange('');
+        return finish();
       case 'recent': {
         const { item } = option;
         addRecentSearch(userId, item);
@@ -260,7 +268,7 @@ export default function SearchBox({ value, onChange, onSearch, placeholder, inpu
           <ul id={listId} role="listbox" aria-label="Search suggestions">
             {options.map((option, i) => (
               <li key={optionKey(option)} role="presentation">
-                {option.kind !== 'search' && option.kind !== 'recent' && sectionStart(i) && (
+                {option.kind !== 'search' && option.kind !== 'inside' && option.kind !== 'recent' && sectionStart(i) && (
                   <p className="px-3 pb-0.5 pt-2 text-[11px] font-bold uppercase tracking-wide text-gray-400">{SECTION_TITLES[option.kind]}</p>
                 )}
                 <div
@@ -293,7 +301,7 @@ export default function SearchBox({ value, onChange, onSearch, placeholder, inpu
             ))}
           </ul>
 
-          {searching && !loading && options.length === 1 && (
+          {searching && !loading && options.length === 2 && (
             <p className="px-3 py-2 text-[13px] text-gray-500">No people or notes match "{debounced}".</p>
           )}
         </div>
@@ -307,7 +315,8 @@ const SECTION_TITLES = { user: 'People', course: 'Courses', note: 'Notes' } as c
 function optionKey(option: Option) {
   switch (option.kind) {
     case 'search':
-      return 'search';
+    case 'inside':
+      return option.kind;
     case 'recent':
       return `recent-${recentKey(option.item)}`;
     case 'course':
@@ -346,6 +355,22 @@ function OptionContent({ option }: { option: Option }) {
               Search for <span className="text-navy-700">"{option.q}"</span>
             </>
           }
+        />
+      );
+    case 'inside':
+      return (
+        <Row
+          icon={
+            <span className={`${roundIcon} bg-navy-50 text-navy-600`}>
+              <FileSearch size={14} />
+            </span>
+          }
+          title={
+            <>
+              Search inside notes for <span className="text-navy-700">"{option.q}"</span>
+            </>
+          }
+          subtitle="Find the page that explains it"
         />
       );
     case 'user':

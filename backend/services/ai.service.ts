@@ -1,0 +1,425 @@
+import Anthropic from '@anthropic-ai/sdk';
+import ApiError from '../utils/apiError.ts';
+import { AiUsage } from '../models/index.ts';
+
+// Claude API ile yapılan işler: notlardan soru cevaplama (kaynak sayfa gösterimiyle), quiz / flashcard üretimi
+// ve taranmış (el yazısı / fotoğraf) notların metnini okuma.
+// ANTHROPIC_API_KEY tanımlı değilse bu özellikler kapalıdır; içerik araması (kelime bazlı) yine çalışır.
+
+const apiKey = process.env.ANTHROPIC_API_KEY;
+const client = apiKey ? new Anthropic({ apiKey }) : null;
+
+// Yerel deneme modu (AI_MOCK=true): API anahtarı / kredi olmadan arayüzü denemek için Claude'a gidilmez,
+// notun kendi metninden hazırlanan örnek cevap / quiz / flashcard döner. Anahtar tanımlıysa ya da
+// NODE_ENV=production ise kapalıdır. Üretilen setler model: 'mock' ile kaydedilir ve gerçek modda yok sayılır.
+const MOCK = !client && String(process.env.AI_MOCK).toLowerCase() === 'true' && process.env.NODE_ENV !== 'production';
+if (MOCK) console.log('🧪 AI_MOCK is on: AI features return sample output (no API calls).');
+
+const AI_MODEL = MOCK ? 'mock' : process.env.AI_MODEL || 'claude-haiku-5-5';
+
+const isAiEnabled = () => Boolean(client) || MOCK;
+const isMock = () => MOCK;
+// Taranmış notları okumak gerçek API ister (deneme modunda yapılmaz).
+const canOcr = () => Boolean(client);
+
+const requireClient = () => {
+  if (!client) throw new ApiError(503, 'AI features are not configured on this server.');
+  return client;
+};
+
+// ---------- Günlük kullanım sınırı ----------
+
+const limitFromEnv = (name: string, fallback: number) => {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+const DAILY_LIMITS = {
+  ask: limitFromEnv('AI_DAILY_ASKS', 40),
+  study: limitFromEnv('AI_DAILY_STUDY_SETS', 10),
+};
+
+// Kullanıcının bugünkü hakkından bir tane düşer; hak bittiyse 429.
+const consumeQuota = async (userId: string, kind: keyof typeof DAILY_LIMITS) => {
+  if (MOCK) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const usage = await AiUsage.findOneAndUpdate(
+    { user: userId, day },
+    { $inc: { [kind]: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
+  if ((usage?.[kind] ?? 0) > DAILY_LIMITS[kind]) {
+    await AiUsage.updateOne({ user: userId, day }, { $inc: { [kind]: -1 } });
+    throw new ApiError(429, 'You have reached today’s AI limit. Try again tomorrow.');
+  }
+};
+
+// İstek başarısız olursa harcanan hak geri verilir.
+const refundQuota = async (userId: string, kind: keyof typeof DAILY_LIMITS) =>
+  MOCK ||
+  AiUsage.updateOne({ user: userId, day: new Date().toISOString().slice(0, 10) }, { $inc: { [kind]: -1 } });
+
+// ---------- Ortak yardımcılar ----------
+
+const textOf = (message: Anthropic.Message) =>
+  message.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+
+const assertCompleted = (message: Anthropic.Message) => {
+  if (message.stop_reason === 'refusal') throw new ApiError(422, 'The AI declined to process this content.');
+  if (message.stop_reason === 'max_tokens') throw new ApiError(502, 'The AI response was cut off. Please try again.');
+};
+
+// JSON şemalı (structured output) istek: model şemaya uyan JSON döndürür.
+const createJson = async <T>(params: {
+  system: string;
+  content: Anthropic.ContentBlockParam[];
+  schema: Record<string, unknown>;
+  maxTokens: number;
+}): Promise<T> => {
+  const stream = requireClient().messages.stream({
+    model: AI_MODEL,
+    max_tokens: params.maxTokens,
+    system: params.system,
+    messages: [{ role: 'user', content: params.content }],
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: params.schema } },
+  });
+  const message = await stream.finalMessage();
+  assertCompleted(message);
+  try {
+    return JSON.parse(textOf(message)) as T;
+  } catch {
+    throw new ApiError(502, 'The AI returned an unreadable response. Please try again.');
+  }
+};
+
+// ---------- Taranmış notları okuma (OCR) ----------
+
+const OCR_MAX_PAGES = 40;
+const PAGES_SCHEMA = {
+  type: 'object',
+  properties: {
+    pages: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { page: { type: 'integer' }, text: { type: 'string' } },
+        required: ['page', 'text'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['pages'],
+  additionalProperties: false,
+};
+
+type MediaType = 'application/pdf' | 'image/jpeg' | 'image/png';
+
+// Metni çıkarılamayan (taranmış / el yazısı) PDF'leri ve not fotoğraflarını sayfa sayfa yazıya döker.
+const transcribeFile = async (buffer: Buffer, mediaType: MediaType) => {
+  const data = buffer.toString('base64');
+  const source: Anthropic.ContentBlockParam =
+    mediaType === 'application/pdf'
+      ? { type: 'document', source: { type: 'base64', media_type: mediaType, data } }
+      : { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
+
+  const result = await createJson<{ pages: { page: number; text: string }[] }>({
+    system:
+      'You transcribe university lecture notes (often handwritten or scanned) so they can be searched. ' +
+      'Copy the readable text faithfully in its original language; do not translate, summarize or add anything. ' +
+      'Write formulas in plain text (e.g. x^2 + 1, ∫ f(x) dx). Describe a diagram in one short line in square brackets only if it has labels. ' +
+      'Return one entry per page (page numbers start at 1). Use an empty string for a page with no readable text.',
+    content: [
+      source,
+      { type: 'text', text: `Transcribe this note page by page (at most the first ${OCR_MAX_PAGES} pages).` },
+    ],
+    schema: PAGES_SCHEMA,
+    maxTokens: 64000,
+  });
+  return result.pages.filter((p) => Number.isInteger(p.page) && p.page > 0);
+};
+
+// ---------- Notlardan soru cevaplama ----------
+
+export interface AnswerSource {
+  title: string;
+  text: string;
+}
+
+export interface AnswerSegment {
+  text: string;
+  // Cevabın bu kısmının dayandığı kaynakların sırası (sources dizisindeki index).
+  sources: number[];
+}
+
+const ASK_SYSTEM =
+  'You are SearchNote’s study assistant. Students ask questions and you answer ONLY from the provided note excerpts ' +
+  '(each excerpt is a page of a student’s lecture note). Answer in the language of the question, clearly and concisely ' +
+  '(at most about 150 words), like a helpful classmate. Cite the excerpts you rely on. ' +
+  'If the excerpts do not contain the answer, say briefly that the notes don’t cover it — never invent facts.';
+
+// Kaynak parçalar "document" bloğu olarak verilir ve alıntı (citation) açılır; böylece cevabın her cümlesinin
+// hangi notun hangi sayfasından geldiği API tarafından işaretlenir.
+const answerFromSources = async (question: string, sources: AnswerSource[]): Promise<AnswerSegment[]> => {
+  if (MOCK) {
+    // Deneme: ilk iki kaynağın ilk cümlesi, kaynak işaretleriyle.
+    return sources.slice(0, 2).map((s, i) => ({
+      text: `${i ? ' ' : '[Demo answer] '}${firstSentence(s.text)}`,
+      sources: [i],
+    }));
+  }
+  const message = await requireClient().messages.create({
+    model: AI_MODEL,
+    max_tokens: 4000,
+    system: ASK_SYSTEM,
+    output_config: { effort: 'low' },
+    messages: [
+      {
+        role: 'user',
+        content: [
+          ...sources.map(
+            (s): Anthropic.DocumentBlockParam => ({
+              type: 'document',
+              source: { type: 'text', media_type: 'text/plain', data: s.text },
+              title: s.title,
+              citations: { enabled: true },
+            })
+          ),
+          { type: 'text', text: question },
+        ],
+      },
+    ],
+  });
+  assertCompleted(message);
+
+  const segments: AnswerSegment[] = [];
+  for (const block of message.content) {
+    if (block.type !== 'text') continue;
+    const cited = [
+      ...new Set(
+        (block.citations ?? [])
+          .map((c) => ('document_index' in c ? c.document_index : -1))
+          .filter((i) => i >= 0 && i < sources.length)
+      ),
+    ];
+    const last = segments.at(-1);
+    // Alıntısız ardışık metinler tek parçada birleştirilir.
+    if (last && !cited.length && !last.sources.length) last.text += block.text;
+    else segments.push({ text: block.text, sources: cited });
+  }
+  return segments;
+};
+
+// ---------- Quiz / flashcard üretimi ----------
+
+export interface QuizItem {
+  question: string;
+  options: string[];
+  answerIndex: number;
+  explanation: string;
+  page: number | null;
+  // Bilgi haritası için sorunun konusu (topics listesindeki adlardan biri).
+  topic: string;
+}
+
+// Notun konuları ve her birinin ön koşulları (notta geçmeyen temel konular da olabilir).
+export interface TopicInfo {
+  name: string;
+  prerequisites: string[];
+}
+
+export interface FlashcardItem {
+  front: string;
+  back: string;
+  page: number | null;
+}
+
+const QUIZ_SCHEMA = {
+  type: 'object',
+  properties: {
+    topics: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          prerequisites: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['name', 'prerequisites'],
+        additionalProperties: false,
+      },
+    },
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          question: { type: 'string' },
+          options: { type: 'array', items: { type: 'string' } },
+          answerIndex: { type: 'integer' },
+          explanation: { type: 'string' },
+          page: { type: ['integer', 'null'] },
+          topic: { type: 'string' },
+        },
+        required: ['question', 'options', 'answerIndex', 'explanation', 'page', 'topic'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['topics', 'questions'],
+  additionalProperties: false,
+};
+
+const FLASHCARD_SCHEMA = {
+  type: 'object',
+  properties: {
+    cards: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          front: { type: 'string' },
+          back: { type: 'string' },
+          page: { type: ['integer', 'null'] },
+        },
+        required: ['front', 'back', 'page'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['cards'],
+  additionalProperties: false,
+};
+
+const STUDY_SYSTEM =
+  'You create exam-preparation material for university students from their lecture notes. ' +
+  'Use only what is in the note; write in the same language as the note. ' +
+  'Pages are marked like [Page 3]; set "page" to the page an item comes from (null if the note has no page marks). ' +
+  'Prefer the important concepts, definitions, formulas and typical exam topics over trivia.';
+
+const generateQuiz = async (noteTitle: string, noteText: string) => {
+  if (MOCK) return mockQuiz(noteText);
+  const { topics, questions } = await createJson<{ topics: TopicInfo[]; questions: QuizItem[] }>({
+    system: STUDY_SYSTEM,
+    content: [
+      { type: 'text', text: `Note title: ${noteTitle}\n\n${noteText}` },
+      {
+        type: 'text',
+        text:
+          'First list the 3-8 main topics of this note. Topic names are short (1-3 words), general course concepts ' +
+          '(e.g. "Derivatives", "AVL Trees", "Türev"), in the note’s language. For each topic give its prerequisites: ' +
+          'the foundational topics a student must know first (e.g. Derivatives -> Functions, Limits). Prerequisites may be ' +
+          'topics that are not in the note. ' +
+          'Then write 10 multiple-choice questions. Each has exactly 4 options with one correct answer (answerIndex is 0-3), ' +
+          'plausible wrong options, a one or two sentence explanation of why the answer is correct, and "topic" set to ' +
+          'exactly one of the topic names above. Vary the position of the correct answer.',
+      },
+    ],
+    schema: QUIZ_SCHEMA,
+    maxTokens: 16000,
+  });
+  const valid = questions.filter(
+    (q) => q.options.length >= 2 && Number.isInteger(q.answerIndex) && q.answerIndex >= 0 && q.answerIndex < q.options.length
+  );
+  return { topics, questions: valid };
+};
+
+const generateFlashcards = async (noteTitle: string, noteText: string) => {
+  if (MOCK) return mockFlashcards(noteText);
+  const { cards } = await createJson<{ cards: FlashcardItem[] }>({
+    system: STUDY_SYSTEM,
+    content: [
+      { type: 'text', text: `Note title: ${noteTitle}\n\n${noteText}` },
+      {
+        type: 'text',
+        text:
+          'Write 15 flashcards. The front is a short question or term; the back is a concise answer ' +
+          '(at most 2 sentences or a formula).',
+      },
+    ],
+    schema: FLASHCARD_SCHEMA,
+    maxTokens: 12000,
+  });
+  return cards.filter((c) => c.front.trim() && c.back.trim());
+};
+
+// ---------- Deneme modu (AI_MOCK) içerikleri ----------
+// Notun kendi satırlarından hazırlanır; yapay zekâ çıktısı değildir.
+
+function firstSentence(text: string) {
+  const sentence = text.replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s/)[0] ?? '';
+  return sentence.length > 220 ? `${sentence.slice(0, 220)}…` : sentence;
+}
+
+// Notun bilgi satırları: "[Page 2]" işaretlerinden sayfa takip edilir; "4. AVL Trees: rotations" gibi satırlar
+// konu ("AVL Trees") ve içerik ("rotations") olarak ayrılır.
+const noteFacts = (noteText: string) => {
+  const facts: { topic: string; detail: string; line: string; page: number | null }[] = [];
+  let page: number | null = null;
+  // Sayfa metinleri tek satıra birleşmiş olabilir: numaralı maddelerden ("3. ") de bölünür.
+  const lines = noteText.replace(/\s(\d{1,2}\.\s)/g, '\n$1').split(/\n+/);
+  for (const raw of lines) {
+    const marker = raw.trim().match(/^\[Page (\d+)\]$/);
+    if (marker) {
+      page = Number(marker[1]);
+      continue;
+    }
+    const line = raw.replace(/^\s*(\d+[.)]|[-•*])\s*/, '').trim();
+    // Başlık / künye satırları ("CENG213 - Data Structures | Prof. ...") soru olmaz.
+    if (line.length < 12 || line.length > 220 || line.includes('|')) continue;
+    const [head, ...rest] = line.split(':');
+    const topic =
+      rest.length && head.split(/\s+/).length <= 4
+        ? head.trim()
+        : line
+            .split(/\s+/)
+            .slice(0, 3)
+            .join(' ')
+            .replace(/\s+(and|ve|&|of|the|ile)$/i, '');
+    facts.push({ topic, detail: rest.join(':').trim() || line, line, page });
+  }
+  return facts.slice(0, 10);
+};
+
+const mockQuiz = (noteText: string) => {
+  const facts = noteFacts(noteText);
+  const topics: TopicInfo[] = [...new Set(facts.map((f) => f.topic))].map((name, i, all) => ({
+    name,
+    // Deneme: her konu bir öncekine bağlı sayılır (grafiği göstermek için).
+    prerequisites: i ? [all[i - 1]] : [],
+  }));
+  const questions: QuizItem[] = facts.map((fact, i) => {
+    const others = facts.filter((f) => f !== fact).map((f) => f.detail);
+    const wrong = [...others, 'This is not covered in the note', 'None of the above'].slice(0, 3);
+    const answerIndex = i % 4;
+    const options = [...wrong];
+    options.splice(answerIndex, 0, fact.detail);
+    return {
+      question: `[Demo] Which of these does the note say about “${fact.topic}”?`,
+      options,
+      answerIndex,
+      explanation: `The note says: ${fact.line}`,
+      page: fact.page,
+      topic: fact.topic,
+    };
+  });
+  return { topics, questions };
+};
+
+const mockFlashcards = (noteText: string): FlashcardItem[] =>
+  noteFacts(noteText).map((f) => ({ front: `[Demo] ${f.topic}`, back: f.detail, page: f.page }));
+
+export {
+  AI_MODEL,
+  isAiEnabled,
+  isMock,
+  canOcr,
+  consumeQuota,
+  refundQuota,
+  transcribeFile,
+  answerFromSources,
+  generateQuiz,
+  generateFlashcards,
+  OCR_MAX_PAGES,
+};

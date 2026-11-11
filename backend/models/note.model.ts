@@ -37,6 +37,16 @@ const noteSchema = new mongoose.Schema(
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     comments: [commentSchema], // Gömülü (embedded) yorumlar
     downloadsCount: { type: Number, default: 0 },
+    // İçerik araması ve çalışma araçları için metin çıkarma durumu (services/noteIndex.service.ts).
+    // pending/processing: sırada | ready: aranabilir | empty: okunabilir metin yok |
+    // unsupported: dosya türü desteklenmiyor (arşiv) | failed: hata
+    ai: {
+      status: { type: String, enum: ['pending', 'processing', 'ready', 'empty', 'unsupported', 'failed'] },
+      pages: { type: Number },
+      // Metin taranmış sayfalardan yapay zekâyla okunduysa (el yazısı / fotoğraf).
+      ocr: { type: Boolean },
+      indexedAt: { type: Date },
+    },
   },
   { timestamps: true }
 );

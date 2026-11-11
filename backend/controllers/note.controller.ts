@@ -7,6 +7,7 @@ import { assertMember, recordGroupActivity } from '../services/group.service.ts'
 import { notify, removeNotification } from '../services/notification.service.ts';
 import { pushGroupNote } from '../services/push.service.ts';
 import { saveNoteFile, readNoteFile, removeFile } from '../services/storage.service.ts';
+import { enqueueNoteIndex, removeNoteAiData } from '../services/noteIndex.service.ts';
 import { parsePagination, buildPagination } from '../utils/pagination.util.ts';
 import { containsRegex, exactRegex, splitSearchWords, toTurkishInsensitive, wordSearchMatch } from '../utils/regex.util.ts';
 import { NOTE_FILE_TYPES, getExtension, matchesSignature } from '../utils/fileTypes.util.ts';
@@ -218,6 +219,10 @@ const createNote = asyncHandler<AuthedRequest>(async (req, res) => {
     throw error;
   }
 
+  // İçerik araması ve çalışma araçları için metin arka planda çıkarılır (yanıtı bekletmez).
+  enqueueNoteIndex(note._id).catch((e) => console.error('Index queue error:', (e as Error).message));
+  note.set('ai.status', 'pending');
+
   await note.populate([
     { path: 'author', select: USER_CARD_FIELDS },
     { path: 'group', select: 'name isPrivate' },
@@ -261,7 +266,7 @@ const deleteNote = asyncHandler<AuthedRequest>(async (req, res) => {
   assertOwner(note, req.user.id);
 
   await note.deleteOne();
-  await removeFile(note.fileUrl);
+  await Promise.all([removeFile(note.fileUrl), removeNoteAiData([note._id])]);
 
   res.json({ success: true, message: 'Note deleted.' });
 });

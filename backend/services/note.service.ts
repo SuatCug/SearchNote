@@ -158,4 +158,4 @@ const listUserCourses = async (authorId: string, viewerId?: string) => {
   return courses;
 };
 
-export { listNotes, loadNoteViewer, listUserCourses, assertNoteVisible, PUBLIC_NOTES_MATCH, SORT_OPTIONS };
+export { listNotes, loadNoteViewer, listUserCourses, assertNoteVisible, visibleNotesMatch, PUBLIC_NOTES_MATCH, SORT_OPTIONS };

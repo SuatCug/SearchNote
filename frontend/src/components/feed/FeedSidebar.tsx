@@ -1,6 +1,6 @@
 import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
-import { Bookmark, Compass, Home, MessageCircle, UserRound, Users } from 'lucide-react';
+import { Bookmark, Compass, FileSearch, Home, MessageCircle, Network, UserRound, Users } from 'lucide-react';
 import UserAvatar from '@/components/users/UserAvatar';
 import { useGetUnreadCountQuery } from '@/services/messagesApi';
 import { UNREAD_POLL_INTERVAL_MS } from '@/lib/constants';
@@ -45,6 +45,12 @@ export default function FeedSidebar() {
       <Link to="/?all=1" className={itemClass(isExplore)}>
         <Compass size={20} /> Explore
       </Link>
+      <NavLink to="/ask" className={({ isActive }) => itemClass(isActive)}>
+        <FileSearch size={20} /> Search inside notes
+      </NavLink>
+      <NavLink to="/knowledge" className={({ isActive }) => itemClass(isActive)}>
+        <Network size={20} /> Knowledge map
+      </NavLink>
       <NavLink to="/messages" className={({ isActive }) => itemClass(isActive)}>
         <MessageCircle size={20} /> Messages
         {unread > 0 && (

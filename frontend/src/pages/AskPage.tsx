@@ -1,0 +1,234 @@
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { FileSearch, Loader2, Search, X } from 'lucide-react';
+import PageLayout from '@/components/layout/PageLayout';
+import EmptyState from '@/components/common/EmptyState';
+import Alert from '@/components/common/Alert';
+import UserAvatar from '@/components/users/UserAvatar';
+import { useAskNotesQuery } from '@/services/aiApi';
+import { useGetNoteQuery } from '@/services/notesApi';
+import { getErrorMessage } from '@/lib/getErrorMessage';
+import type { AnswerSegment, AskResult, ContentSource } from '@/types/api';
+
+// Notların içinde arama: soru ya da konu yazılır, görülebilen notların sayfalarında aranır.
+// Sunucuda yapay zekâ açıksa bulunan sayfalardan kısa bir cevap yazılır; cevaptaki [1] gibi işaretler
+// cevabın hangi notun hangi sayfasından geldiğini gösterir. Adres: /ask?q=…&course=…&note=…
+export default function AskPage() {
+  const [params, setParams] = useSearchParams();
+  const q = params.get('q')?.trim() ?? '';
+  const course = params.get('course')?.trim() ?? '';
+  const noteId = params.get('note') ?? '';
+
+  const [question, setQuestion] = useState(q);
+  const [courseInput, setCourseInput] = useState(course);
+  // Adres değişince (geri tuşu, arama kutusundan yeni arama) kutular da güncellenir.
+  const [lastParams, setLastParams] = useState({ q, course });
+  if (lastParams.q !== q || lastParams.course !== course) {
+    setLastParams({ q, course });
+    setQuestion(q);
+    setCourseInput(course);
+  }
+
+  const { data, error, isFetching } = useAskNotesQuery(
+    { question: q, courseCode: noteId ? undefined : course || undefined, noteId: noteId || undefined },
+    { skip: q.length < 2 }
+  );
+  const scopedNote = useGetNoteQuery(noteId, { skip: !noteId });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const next = new URLSearchParams();
+    if (question.trim()) next.set('q', question.trim());
+    if (courseInput.trim() && !noteId) next.set('course', courseInput.trim());
+    if (noteId) next.set('note', noteId);
+    setParams(next);
+  };
+
+  const removeScope = () => {
+    const next = new URLSearchParams(params);
+    next.delete('note');
+    setParams(next);
+  };
+
+  const result = data?.data;
+
+  return (
+    <PageLayout narrow>
+      <h1 className="text-2xl font-bold text-gray-900">Search inside notes</h1>
+      <p className="mt-1 text-sm text-gray-600">
+        Ask a question or type a topic. We look through the pages of the notes you can see and show where it’s explained.
+      </p>
+
+      <form onSubmit={submit} className="card mt-5 p-4 space-y-3">
+        <label className="relative block">
+          <span className="sr-only">Question or topic</span>
+          <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            maxLength={300}
+            autoFocus={!q}
+            placeholder="e.g. What is the initial value theorem?"
+            className="form-input pl-10"
+          />
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          {noteId ? (
+            <span className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-navy-50 py-1 pl-2.5 pr-1 text-sm text-navy-800">
+              <span className="truncate">
+                In: <strong>{scopedNote.data?.data.note.title ?? 'this note'}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={removeScope}
+                aria-label="Search all notes instead"
+                className="rounded p-0.5 text-navy-600 hover:bg-navy-100"
+              >
+                <X size={14} />
+              </button>
+            </span>
+          ) : (
+            <input
+              value={courseInput}
+              onChange={(e) => setCourseInput(e.target.value)}
+              maxLength={20}
+              placeholder="Course code"
+              aria-label="Course code (optional)"
+              className="form-input w-36 sm:w-48 py-2 text-sm"
+            />
+          )}
+          <button type="submit" className="btn-primary ml-auto" disabled={question.trim().length < 2}>
+            Search
+          </button>
+        </div>
+      </form>
+
+      <div className="mt-6">
+        {q.length < 2 ? null : isFetching ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-sm text-gray-500">
+            <Loader2 size={18} className="animate-spin" /> Looking through the pages…
+          </div>
+        ) : error ? (
+          <Alert>{getErrorMessage(error)}</Alert>
+        ) : result && result.sources.length ? (
+          <Results result={result} query={q} />
+        ) : (
+          <EmptyState
+            icon={FileSearch}
+            title="No page mentions that"
+            text={
+              <>
+                Try other words, or{' '}
+                <Link to={`/?q=${encodeURIComponent(q)}`} className="font-semibold text-navy-600 hover:underline">
+                  search note titles
+                </Link>{' '}
+                instead.
+              </>
+            }
+          />
+        )}
+      </div>
+    </PageLayout>
+  );
+}
+
+function Results({ result, query }: { result: AskResult; query: string }) {
+  return (
+    <div className="space-y-6">
+      {result.answer && result.answer.length > 0 && (
+        <section className="card p-5" aria-labelledby="answer-title">
+          <h2 id="answer-title" className="text-sm font-bold uppercase tracking-wide text-gray-500">
+            Answer from the notes
+          </h2>
+          <Answer segments={result.answer} />
+          <p className="mt-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
+            Written from the pages below by AI. Numbers point to the page it came from — check it before you rely on it.
+          </p>
+        </section>
+      )}
+      {result.answerError && <p className="text-sm text-gray-500">{result.answerError}</p>}
+
+      <section aria-labelledby="sources-title">
+        <h2 id="sources-title" className="mb-3 text-sm font-bold uppercase tracking-wide text-gray-500">
+          Pages that match
+        </h2>
+        <ol className="space-y-3">
+          {result.sources.map((source, i) => (
+            <SourceCard key={source.chunkId} source={source} number={i + 1} query={query} />
+          ))}
+        </ol>
+      </section>
+    </div>
+  );
+}
+
+// Cevap metni; alıntılı kısımların sonunda kaynak numaraları (tıklanınca o kaynağa kayar).
+function Answer({ segments }: { segments: AnswerSegment[] }) {
+  return (
+    <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-gray-800">
+      {segments.map((segment, i) => (
+        <span key={i}>
+          {segment.text}
+          {segment.sources.map((s) => (
+            <a
+              key={s}
+              href={`#source-${s + 1}`}
+              className="ml-0.5 inline-flex min-w-[18px] -translate-y-1 items-center justify-center rounded bg-navy-50 px-1 text-[11px] font-bold text-navy-700 hover:bg-navy-100"
+              aria-label={`Source ${s + 1}`}
+            >
+              {s + 1}
+            </a>
+          ))}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function SourceCard({ source, number, query }: { source: ContentSource; number: number; query: string }) {
+  const { note, page } = source;
+  const to = `/notes/${note._id}${page ? `?page=${page}` : ''}`;
+  return (
+    <li id={`source-${number}`} className="card scroll-mt-24 p-4">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-navy-50 text-xs font-bold text-navy-700">
+          {number}
+        </span>
+        <div className="min-w-0 flex-1">
+          <Link to={to} className="block font-semibold text-gray-900 hover:text-navy-700">
+            {note.courseCode ? `${note.courseCode} – ` : ''}
+            {note.title}
+          </Link>
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
+            {note.author && (
+              <span className="inline-flex items-center gap-1.5">
+                <UserAvatar user={note.author} size="xs" /> {note.author.fullName}
+              </span>
+            )}
+            {page && <span className="font-semibold text-navy-700">Page {page}</span>}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">{highlight(source.snippet, query)}</p>
+          <Link to={to} className="mt-2 inline-block text-sm font-semibold text-navy-600 hover:underline">
+            {page ? `Open page ${page}` : 'Open note'}
+          </Link>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+const STOP_WORDS = new Set('nedir ne nasıl neden hangi kaç mi mı mu mü what is are how why which the and'.split(' '));
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Alıntıda arama kelimelerinin geçtiği yerleri kalın gösterir (kelime kökü yeterli: "dönüşümünde" -> "dönüş").
+function highlight(text: string, query: string): ReactNode {
+  const stems = query
+    .toLocaleLowerCase('tr')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w))
+    .map((w) => escapeRegex(w.slice(0, Math.min(w.length, 5))));
+  if (!stems.length) return text;
+  const parts = text.split(new RegExp(`(${stems.join('|')})`, 'giu'));
+  return parts.map((part, i) => (i % 2 ? <mark key={i} className="rounded bg-amber-100 px-0.5 text-gray-900">{part}</mark> : part));
+}

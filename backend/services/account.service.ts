@@ -11,6 +11,7 @@ import {
   Report,
 } from '../models/index.ts';
 import { removeFile } from './storage.service.ts';
+import { removeNoteAiData } from './noteIndex.service.ts';
 import { disconnectUser } from './realtime.service.ts';
 import { deleteGroupWithContent } from './group.service.ts';
 
@@ -53,6 +54,7 @@ const deleteAccount = async (userId: string) => {
 
   await Promise.all([
     Note.deleteMany({ author: id }),
+    removeNoteAiData(noteIds),
     Note.updateMany({ likes: id }, { $pull: { likes: id } }),
     Note.updateMany({ 'comments.user': id }, { $pull: { comments: { user: id } } }),
     User.updateMany(

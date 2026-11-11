@@ -21,9 +21,11 @@ interface NotePreviewProps {
   note: Pick<NoteDetail, '_id' | 'title' | 'fileType'>;
   token: string | null;
   canView: boolean;
+  // ?page=7: PDF önizlemesi bu sayfaya kaydırılır (içerik aramasından gelince).
+  page?: number;
 }
 
-export default function NotePreview({ note, token, canView }: NotePreviewProps) {
+export default function NotePreview({ note, token, canView, page }: NotePreviewProps) {
   const previewable = PREVIEWABLE.includes(note.fileType);
   const shouldFetch = previewable && canView;
   const [state, setState] = useState<PreviewState>({ blob: null, url: null, error: '', noteId: null });
@@ -88,7 +90,7 @@ export default function NotePreview({ note, token, canView }: NotePreviewProps) 
   }
 
   return note.fileType === 'pdf' ? (
-    state.blob && <PdfPages blob={state.blob} />
+    state.blob && <PdfPages blob={state.blob} targetPage={page} />
   ) : (
     <div className="flex items-center justify-center max-h-[70vh] overflow-auto">
       <img src={state.url ?? undefined} alt={note.title} className="max-w-full h-auto rounded-lg shadow-sm bg-white" />

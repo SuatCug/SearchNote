@@ -9,6 +9,7 @@ import groupRoutes from './group.routes.ts';
 import messageRoutes from './message.routes.ts';
 import notificationRoutes from './notification.routes.ts';
 import universityRoutes from './university.routes.ts';
+import aiRoutes from './ai.routes.ts';
 
 const router = Router();
 
@@ -25,5 +26,6 @@ router.use('/notes', noteRoutes);
 router.use('/groups', groupRoutes);
 router.use('/messages', messageRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/ai', aiRoutes);
 
 export default router;

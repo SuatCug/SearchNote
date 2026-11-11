@@ -19,10 +19,17 @@ const loadPdfjs = () => {
 
 // PDF sayfalarını canvas'a çizer. Tarayıcının kendi PDF görüntüleyicisine bağlı olmadığı için
 // mobil tarayıcılarda da (Android Chrome iframe içinde PDF göstermez) aynı şekilde çalışır.
-export default function PdfPages({ blob }: { blob: Blob }) {
+// targetPage: içerik aramasından gelinen sayfa; o sayfaya kadar çizilir, kaydırılır ve kısa süre vurgulanır.
+export default function PdfPages({ blob, targetPage }: { blob: Blob; targetPage?: number }) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState('');
-  const [visibleCount, setVisibleCount] = useState(PAGE_BATCH);
+  const [visibleCount, setVisibleCount] = useState(Math.max(PAGE_BATCH, targetPage ?? 0));
+  // Hedef sayfa değişince (örn. quizdeki "see page 4") o sayfaya kadar açılır.
+  const [lastTarget, setLastTarget] = useState(targetPage);
+  if (lastTarget !== targetPage) {
+    setLastTarget(targetPage);
+    if (targetPage && targetPage > visibleCount) setVisibleCount(targetPage);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -54,7 +61,7 @@ export default function PdfPages({ blob }: { blob: Blob }) {
   return (
     <div className="max-h-[75vh] overflow-y-auto space-y-4 px-1 py-1">
       {Array.from({ length: shown }, (_, i) => (
-        <PdfPage key={i + 1} doc={doc} pageNumber={i + 1} />
+        <PdfPage key={i + 1} doc={doc} pageNumber={i + 1} isTarget={targetPage === i + 1} />
       ))}
       <div className="flex flex-col items-center gap-2 pb-2 text-xs text-gray-500">
         <span>
@@ -70,9 +77,15 @@ export default function PdfPages({ blob }: { blob: Blob }) {
   );
 }
 
-function PdfPage({ doc, pageNumber }: { doc: PDFDocumentProxy; pageNumber: number }) {
+function PdfPage({ doc, pageNumber, isTarget }: { doc: PDFDocumentProxy; pageNumber: number; isTarget: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [rendered, setRendered] = useState(false);
+
+  // Hedef sayfa çizilince görünür alana kaydırılır.
+  useEffect(() => {
+    if (isTarget && rendered) wrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [isTarget, rendered]);
 
   useEffect(() => {
     let renderTask: RenderTask | undefined;
@@ -103,7 +116,8 @@ function PdfPage({ doc, pageNumber }: { doc: PDFDocumentProxy; pageNumber: numbe
   return (
     // Çizilene kadar A4 oranında yer tutulur, böylece sayfa yüklenirken zıplamaz.
     <div
-      className="relative mx-auto w-full max-w-[720px] bg-white shadow-md"
+      ref={wrapperRef}
+      className={`relative mx-auto w-full max-w-[720px] scroll-mt-20 bg-white shadow-md ${isTarget ? 'ring-4 ring-amber-300' : ''}`}
       style={rendered ? undefined : { aspectRatio: '1 / 1.414' }}
     >
       <canvas ref={canvasRef} className="block w-full h-auto" aria-label={`Page ${pageNumber}`} />

@@ -7,7 +7,7 @@ interface ModalProps {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
 }
 
 // Telefonda alttan açılan sayfa, büyük ekranda ortada pencere (LikesModal ile aynı görünüm).
@@ -42,7 +42,7 @@ export default function Modal({ title, onClose, children, footer, size = 'md' }:
         aria-modal="true"
         aria-labelledby={titleId}
         className={`relative flex max-h-[85vh] sm:max-h-[min(640px,85vh)] w-full ${
-          size === 'sm' ? 'sm:max-w-sm' : 'sm:max-w-md'
+          size === 'sm' ? 'sm:max-w-sm' : size === 'lg' ? 'sm:max-w-xl' : 'sm:max-w-md'
         } flex-col rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl pb-safe`}
       >
         <header className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-3.5">

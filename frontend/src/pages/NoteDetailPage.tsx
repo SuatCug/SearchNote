@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { SITE_URL } from '@/lib/constants';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import { Bookmark, Check, Download, Heart, MessageCircle, Pencil, Send, Share2, Trash2, UserRound, Users } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
@@ -11,6 +11,7 @@ import FileTypeBadge from '@/components/notes/FileTypeBadge';
 import VisibilityBadge from '@/components/notes/VisibilityBadge';
 import NotePreview from '@/components/notes/NotePreview';
 import CommentSection from '@/components/notes/CommentSection';
+import StudyTools from '@/components/notes/StudyTools';
 import LikesModal from '@/components/notes/LikesModal';
 import UserAvatar from '@/components/users/UserAvatar';
 import MessageButton from '@/components/messages/MessageButton';
@@ -49,6 +50,9 @@ const buildTags = (note: NoteDetail) =>
 
 export default function NoteDetailPage() {
   const { id = '' } = useParams();
+  // ?page=7: içerik aramasından / quizden gelinen sayfa önizlemede açılır.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const targetPage = Number(searchParams.get('page')) || undefined;
   const navigate = useNavigate();
   const { token, user } = useAppSelector((state) => state.auth);
   // Başkalarının beğeni/yorumları önbellekte görünmez; detay sayfası her açılışta tazelenir.
@@ -213,7 +217,7 @@ export default function NoteDetailPage() {
           </div>
 
           <div className="mx-5 rounded-lg bg-gray-200/70 p-3 sm:p-4">
-            <NotePreview note={note} token={token} canView={canInteract} />
+            <NotePreview note={note} token={token} canView={canInteract} page={targetPage} />
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
@@ -353,6 +357,13 @@ export default function NoteDetailPage() {
               )
             )}
           </section>
+
+          {canInteract && (
+            <StudyTools
+              note={note}
+              onOpenPage={(page) => setSearchParams({ page: String(page) }, { replace: true })}
+            />
+          )}
 
           <section className="card p-5" aria-labelledby="desc-title">
             <h2 id="desc-title" className="text-lg font-semibold text-gray-900">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
-import { Bookmark, ChevronDown, FileText, HelpCircle, LogOut, Settings, Users } from 'lucide-react';
+import { Bookmark, ChevronDown, FileSearch, FileText, HelpCircle, LogOut, Network, Settings, Users } from 'lucide-react';
 import { logout } from '@/app/authSlice';
 import { baseApi, SESSION_TAGS } from '@/services/baseApi';
 import UserAvatar from '@/components/users/UserAvatar';
@@ -79,6 +79,12 @@ export default function AvatarMenu() {
             </Link>
             <Link to="/groups?tab=mine" onClick={close} className={itemClass}>
               <Users size={16} className="text-gray-400" /> My Groups
+            </Link>
+            <Link to="/knowledge" onClick={close} className={itemClass}>
+              <Network size={16} className="text-gray-400" /> My Knowledge Map
+            </Link>
+            <Link to="/ask" onClick={close} className={itemClass}>
+              <FileSearch size={16} className="text-gray-400" /> Search Inside Notes
             </Link>
 
             <div className="my-1 border-t border-gray-100" />

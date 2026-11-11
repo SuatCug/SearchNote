@@ -8,3 +8,8 @@ export { DirectMessage } from './directMessage.model.ts';
 export { Notification } from './notification.model.ts';
 export { SignupCode } from './signupCode.model.ts';
 export { Report } from './report.model.ts';
+export { NoteChunk } from './noteChunk.model.ts';
+export { StudySet } from './studySet.model.ts';
+export { AiUsage } from './aiUsage.model.ts';
+export { Topic } from './topic.model.ts';
+export { QuizAttempt } from './quizAttempt.model.ts';

@@ -2,6 +2,7 @@ import mongoose, { type PipelineStage } from 'mongoose';
 import { Group, GroupMessage, Note, Notification, User } from '../models/index.ts';
 import { emitToUsers } from './realtime.service.ts';
 import { removeFile } from './storage.service.ts';
+import { removeNoteAiData } from './noteIndex.service.ts';
 import type { GroupDocument } from '../models/group.model.ts';
 import { isMuteActive } from '../models/user.model.ts';
 import ApiError from '../utils/apiError.ts';
@@ -322,6 +323,7 @@ const deleteGroupWithContent = async (group: GroupDocument) => {
   await group.deleteOne();
   await Promise.all([
     Note.deleteMany({ _id: { $in: noteIds } }),
+    removeNoteAiData(noteIds),
     GroupMessage.deleteMany({ group: group._id }),
     User.updateMany(
       { $or: [{ favoriteGroups: group._id }, { 'mutedGroups.group': group._id }, { savedNotes: { $in: noteIds } }] },

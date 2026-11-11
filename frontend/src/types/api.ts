@@ -146,7 +146,118 @@ export interface NoteDetail extends NoteBase {
   group?: { _id: ID; name: string; isPrivate: boolean } | null;
   isOwner: boolean;
   updatedAt: ISODate;
+  // İçerik araması / çalışma araçları için metin çıkarma durumu (eski kayıtlarda yok).
+  ai?: NoteAiInfo;
 }
+
+// --- Yapay zekâ: notların içinde arama, soru cevaplama, quiz / flashcard ---
+
+export type NoteAiStatus = 'pending' | 'processing' | 'ready' | 'empty' | 'unsupported' | 'failed';
+
+export interface NoteAiInfo {
+  status?: NoteAiStatus;
+  pages?: number;
+  ocr?: boolean;
+}
+
+export interface AiStatus {
+  enabled: boolean;
+  // Yerel deneme modu (AI_MOCK): örnek içerik, gerçek yapay zekâ çıktısı değil.
+  mock?: boolean;
+  semanticSearch: boolean;
+}
+
+export interface ContentSource {
+  chunkId: ID;
+  page: number | null;
+  snippet: string;
+  note: {
+    _id: ID;
+    title: string;
+    courseCode?: string;
+    courseName: string;
+    fileType: FileType;
+    author: { _id: ID; fullName: string; avatarUrl?: string } | null;
+  };
+}
+
+// Cevabın bir parçası ve dayandığı kaynakların sırası (sources dizisinde index).
+export interface AnswerSegment {
+  text: string;
+  sources: number[];
+}
+
+export interface AskResult {
+  sources: ContentSource[];
+  answer: AnswerSegment[] | null;
+  answerError?: string;
+  aiEnabled: boolean;
+}
+
+export interface AskParams {
+  question: string;
+  noteId?: string;
+  courseCode?: string;
+}
+
+export interface QuizQuestion {
+  question: string;
+  options: string[];
+  answerIndex: number;
+  explanation: string;
+  page: number | null;
+  // Bilgi haritası için sorunun konusu (eski setlerde yok).
+  topic?: string;
+}
+
+export interface Flashcard {
+  front: string;
+  back: string;
+  page: number | null;
+}
+
+export type StudyKind = 'quiz' | 'flashcards';
+
+export type StudySet =
+  | { kind: 'quiz'; items: QuizQuestion[]; createdAt?: ISODate; mock?: boolean }
+  | { kind: 'flashcards'; items: Flashcard[]; createdAt?: ISODate; mock?: boolean };
+
+// --- Kişisel bilgi haritası ---
+
+export type TopicStatus = 'strong' | 'learning' | 'weak' | 'untested';
+
+export interface KnowledgeNode {
+  key: string;
+  name: string;
+  correct: number;
+  total: number;
+  status: TopicStatus;
+}
+
+// from: ön koşul konu, to: ona dayanan konu.
+export interface KnowledgeEdge {
+  from: string;
+  to: string;
+}
+
+export interface KnowledgeFocus {
+  topic: string;
+  name: string;
+  status: TopicStatus;
+  message: string;
+  foundation: { key: string; name: string } | null;
+  // Önerilen notların hangi konu için olduğu (eksik temel varsa o).
+  recommendedFor: string;
+  notes: (ContentSource['note'] & { page: number | null; snippet: string })[];
+}
+
+export interface KnowledgeMap {
+  nodes: KnowledgeNode[];
+  edges: KnowledgeEdge[];
+  focus: KnowledgeFocus[];
+  totals: { answered: number; topics: number };
+}
+
 
 export interface NoteFilters {
   universities: string[];
