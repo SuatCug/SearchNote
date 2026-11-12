@@ -55,7 +55,7 @@ export default function StudyTools({ note, onOpenPage }: StudyToolsProps) {
         <>
           {aiEnabled && (
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setOpen('quiz')} className="btn-secondary border-gray-300 px-2 py-2">
+              <button type="button" onClick={() => setOpen('quiz')} className="btn-primary px-2 py-2">
                 <ListChecks size={16} /> Practice quiz
               </button>
               <button type="button" onClick={() => setOpen('flashcards')} className="btn-secondary border-gray-300 px-2 py-2">

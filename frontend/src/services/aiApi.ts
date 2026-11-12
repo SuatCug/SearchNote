@@ -1,5 +1,5 @@
 import { baseApi } from './baseApi';
-import type { AiStatus, ApiResponse, AskParams, AskResult, KnowledgeMap, StudyKind, StudySet } from '@/types/api';
+import type { AiStatus, ApiResponse, AskParams, AskResult, KnowledgeMap, PracticeNote, StudyKind, StudySet } from '@/types/api';
 
 export const aiApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -27,8 +27,14 @@ export const aiApi = baseApi.injectEndpoints({
       query: () => '/ai/knowledge',
       providesTags: ['Knowledge'],
     }),
+    // Quiz cevabı kaydedilince ('Knowledge') skorlar da tazelenir.
+    // q verilirse görülebilen tüm notlar arasında ders / başlık araması.
+    getPracticeList: builder.query<ApiResponse<{ notes: PracticeNote[] }>, { q?: string } | void>({
+      query: (args) => ({ url: '/ai/practice', params: args?.q ? { q: args.q } : undefined }),
+      providesTags: ['Knowledge'],
+    }),
   }),
 });
 
-export const { useGetAiStatusQuery, useAskNotesQuery, useGetStudySetQuery, useRecordQuizAnswerMutation, useGetKnowledgeMapQuery } =
+export const { useGetAiStatusQuery, useAskNotesQuery, useGetStudySetQuery, useRecordQuizAnswerMutation, useGetKnowledgeMapQuery, useGetPracticeListQuery } =
   aiApi;

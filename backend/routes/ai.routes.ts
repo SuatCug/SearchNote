@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { body, param } from 'express-validator';
+import { body, param, query } from 'express-validator';
 import * as aiController from '../controllers/ai.controller.ts';
 import authenticate from '../middlewares/auth.middleware.ts';
 import requireVerified from '../middlewares/verified.middleware.ts';
@@ -38,5 +38,12 @@ router.post(
   aiController.answerQuiz
 );
 router.get('/knowledge', verifiedOnly, aiController.getKnowledgeMap);
+router.get(
+  '/practice',
+  query('q').optional().isString().isLength({ max: 100 }).withMessage('Search is too long.'),
+  validate,
+  verifiedOnly,
+  aiController.getPracticeList
+);
 
 export default router;

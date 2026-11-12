@@ -14,6 +14,7 @@ import {
   refundQuota,
 } from '../services/ai.service.ts';
 import { buildKnowledgeMap, recordQuizAnswer, saveQuizTopics } from '../services/knowledge.service.ts';
+import { buildPracticeList, searchPracticeNotes } from '../services/practice.service.ts';
 
 // Yapay zekâ ile çalışma araçları: notların içinde arama + soru cevaplama, quiz ve flashcard.
 
@@ -181,4 +182,11 @@ const getKnowledgeMap = asyncHandler<AuthedRequest>(async (req, res) => {
   res.json({ success: true, data: await buildKnowledgeMap(req.user.id) });
 });
 
-export { getStatus, ask, getStudySet, answerQuiz, getKnowledgeMap };
+// Pratik listesi: quiz çözülen, kaydedilen ve kendi notlar (skor ve hazır setlerle).
+// ?q= verilirse görülebilen tüm notlar arasında ders / başlık araması.
+const getPracticeList = asyncHandler<AuthedRequest>(async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  res.json({ success: true, data: q ? await searchPracticeNotes(req.user.id, q) : await buildPracticeList(req.user.id) });
+});
+
+export { getStatus, ask, getStudySet, answerQuiz, getKnowledgeMap, getPracticeList };

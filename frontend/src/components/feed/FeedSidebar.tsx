@@ -1,6 +1,6 @@
 import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
-import { Bookmark, Compass, FileSearch, Home, MessageCircle, Network, UserRound, Users } from 'lucide-react';
+import { Bookmark, Compass, FileSearch, Home, ListChecks, MessageCircle, Network, Sparkles, UserRound, Users } from 'lucide-react';
 import UserAvatar from '@/components/users/UserAvatar';
 import { useGetUnreadCountQuery } from '@/services/messagesApi';
 import { UNREAD_POLL_INTERVAL_MS } from '@/lib/constants';
@@ -45,12 +45,6 @@ export default function FeedSidebar() {
       <Link to="/?all=1" className={itemClass(isExplore)}>
         <Compass size={20} /> Explore
       </Link>
-      <NavLink to="/ask" className={({ isActive }) => itemClass(isActive)}>
-        <FileSearch size={20} /> Search inside notes
-      </NavLink>
-      <NavLink to="/knowledge" className={({ isActive }) => itemClass(isActive)}>
-        <Network size={20} /> Knowledge map
-      </NavLink>
       <NavLink to="/messages" className={({ isActive }) => itemClass(isActive)}>
         <MessageCircle size={20} /> Messages
         {unread > 0 && (
@@ -69,6 +63,21 @@ export default function FeedSidebar() {
         <UserRound size={20} /> Profile
       </NavLink>
 
+      {/* AI ile çalışan özellikler tek başlık altında */}
+      <div role="group" aria-labelledby="sidebar-ai-title" className="mt-4 space-y-1 border-t border-gray-100 pt-4">
+        <p id="sidebar-ai-title" className="flex items-center gap-1.5 px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <Sparkles size={14} /> Learn with AI
+        </p>
+        <NavLink to="/ask" className={({ isActive }) => itemClass(isActive)}>
+          <FileSearch size={20} /> Search inside notes
+        </NavLink>
+        <NavLink to="/practice" className={({ isActive }) => itemClass(isActive)}>
+          <ListChecks size={20} /> Quizzes & flashcards
+        </NavLink>
+        <NavLink to="/knowledge" className={({ isActive }) => itemClass(isActive)}>
+          <Network size={20} /> Knowledge map
+        </NavLink>
+      </div>
     </nav>
   );
 }

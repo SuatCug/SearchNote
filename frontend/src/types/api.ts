@@ -251,6 +251,24 @@ export interface KnowledgeFocus {
   notes: (ContentSource['note'] & { page: number | null; snippet: string })[];
 }
 
+// Pratik listesi: quiz / flashcard çalışılabilecek notlar.
+export type PracticeSource = 'practiced' | 'saved' | 'mine' | 'search';
+
+export interface PracticeNote {
+  _id: ID;
+  title: string;
+  courseCode?: string;
+  courseName: string;
+  fileType: FileType;
+  author: { _id: ID; fullName: string; avatarUrl?: string } | null;
+  status: NoteAiStatus;
+  pages: number | null;
+  sources: PracticeSource[];
+  practice: { answered: number; correct: number; lastAt: string } | null;
+  // Daha önce üretilmiş setler anında açılır.
+  ready: { quiz: boolean; flashcards: boolean };
+}
+
 export interface KnowledgeMap {
   nodes: KnowledgeNode[];
   edges: KnowledgeEdge[];

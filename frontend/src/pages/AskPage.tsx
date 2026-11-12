@@ -1,7 +1,8 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FileSearch, Loader2, Search, X } from 'lucide-react';
+import { FileSearch, Loader2, Search, Sparkles, X } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
+import NotesSearchIllustration from '@/components/ai/NotesSearchIllustration';
 import EmptyState from '@/components/common/EmptyState';
 import Alert from '@/components/common/Alert';
 import UserAvatar from '@/components/users/UserAvatar';
@@ -50,62 +51,114 @@ export default function AskPage() {
     setParams(next);
   };
 
+  const askExample = (example: string) => {
+    const next = new URLSearchParams();
+    next.set('q', example);
+    if (noteId) next.set('note', noteId);
+    setParams(next);
+  };
+
   const result = data?.data;
+  const searching = q.length >= 2;
+
+  const intro = (
+    <>
+      <h1 className={`font-bold text-gray-900 ${searching ? 'text-2xl' : 'text-2xl sm:text-3xl lg:text-4xl'}`}>Search inside notes</h1>
+      <p className={`text-gray-600 ${searching ? 'mt-1 text-sm' : 'mt-2 text-sm sm:text-base lg:text-lg'}`}>
+        Ask a question or type a topic. We look through the pages of the notes you can see and show where it’s explained.
+      </p>
+    </>
+  );
+
+  const form = (
+    <form onSubmit={submit} className={`card space-y-3 ${searching ? 'mt-5 p-4' : 'mt-6 p-4 sm:p-5'}`}>
+      <label className="relative block">
+        <span className="sr-only">Question or topic</span>
+        <Search size={searching ? 17 : 19} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="search"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          maxLength={300}
+          autoFocus={!q}
+          placeholder="e.g. What is the initial value theorem?"
+          className={`form-input pl-10 ${searching ? '' : 'sm:py-3.5 sm:text-base'}`}
+        />
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        {noteId ? (
+          <span className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-navy-50 py-1 pl-2.5 pr-1 text-sm text-navy-800">
+            <span className="truncate">
+              In: <strong>{scopedNote.data?.data.note.title ?? 'this note'}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={removeScope}
+              aria-label="Search all notes instead"
+              className="rounded p-0.5 text-navy-600 hover:bg-navy-100"
+            >
+              <X size={14} />
+            </button>
+          </span>
+        ) : (
+          <input
+            value={courseInput}
+            onChange={(e) => setCourseInput(e.target.value)}
+            maxLength={20}
+            placeholder="Course code"
+            aria-label="Course code (optional)"
+            className="form-input w-36 sm:w-48 py-2 text-sm"
+          />
+        )}
+        <button type="submit" className="btn-primary ml-auto" disabled={question.trim().length < 2}>
+          Search
+        </button>
+      </div>
+    </form>
+  );
+
+  // Henüz arama yoksa: solda beyaz daire içinde görsel, sağda daha geniş arama alanı ve örnek sorular
+  // (telefonda görsel üstte, küçük).
+  if (!searching) {
+    return (
+      <PageLayout>
+        <div className="grid items-center gap-6 sm:py-6 lg:grid-cols-2 lg:gap-12 lg:py-8">
+          <NotesSearchIllustration className="mx-auto h-auto w-full max-w-[280px] sm:max-w-[400px] lg:mx-0 lg:max-w-[560px]" />
+          <div className="lg:max-w-2xl">
+            {intro}
+            {form}
+            <div className="mt-6">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Try asking</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {EXAMPLES.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => askExample(example)}
+                    className="rounded-full border border-gray-200 bg-white px-3.5 py-2 text-sm text-gray-700 transition-colors hover:border-navy-300 hover:bg-navy-50 hover:text-navy-800"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="mt-6 flex items-start gap-2 text-xs text-gray-500">
+              <Sparkles size={14} className="mt-px shrink-0 text-navy-400" />
+              Answers are written by AI from the pages it finds, with numbers that link to each page.
+            </p>
+          </div>
+        </div>
+      </PageLayout>
+    );
+  }
 
   return (
     <PageLayout narrow>
-      <h1 className="text-2xl font-bold text-gray-900">Search inside notes</h1>
-      <p className="mt-1 text-sm text-gray-600">
-        Ask a question or type a topic. We look through the pages of the notes you can see and show where it’s explained.
-      </p>
-
-      <form onSubmit={submit} className="card mt-5 p-4 space-y-3">
-        <label className="relative block">
-          <span className="sr-only">Question or topic</span>
-          <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="search"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            maxLength={300}
-            autoFocus={!q}
-            placeholder="e.g. What is the initial value theorem?"
-            className="form-input pl-10"
-          />
-        </label>
-        <div className="flex flex-wrap items-center gap-2">
-          {noteId ? (
-            <span className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-navy-50 py-1 pl-2.5 pr-1 text-sm text-navy-800">
-              <span className="truncate">
-                In: <strong>{scopedNote.data?.data.note.title ?? 'this note'}</strong>
-              </span>
-              <button
-                type="button"
-                onClick={removeScope}
-                aria-label="Search all notes instead"
-                className="rounded p-0.5 text-navy-600 hover:bg-navy-100"
-              >
-                <X size={14} />
-              </button>
-            </span>
-          ) : (
-            <input
-              value={courseInput}
-              onChange={(e) => setCourseInput(e.target.value)}
-              maxLength={20}
-              placeholder="Course code"
-              aria-label="Course code (optional)"
-              className="form-input w-36 sm:w-48 py-2 text-sm"
-            />
-          )}
-          <button type="submit" className="btn-primary ml-auto" disabled={question.trim().length < 2}>
-            Search
-          </button>
-        </div>
-      </form>
+      {intro}
+      {form}
 
       <div className="mt-6">
-        {q.length < 2 ? null : isFetching ? (
+        {isFetching ? (
           <div className="flex items-center justify-center gap-2 py-16 text-sm text-gray-500">
             <Loader2 size={18} className="animate-spin" /> Looking through the pages…
           </div>
@@ -218,7 +271,10 @@ function SourceCard({ source, number, query }: { source: ContentSource; number: 
   );
 }
 
-const STOP_WORDS = new Set('nedir ne nasıl neden hangi kaç mi mı mu mü what is are how why which the and'.split(' '));
+// Boş sayfada gösterilen örnek sorular; tıklanınca doğrudan aranır.
+const EXAMPLES = ['What is the initial value theorem?', 'Newton’s second law', 'TCP vs UDP', 'How does mitosis work?'];
+
+const STOP_WORDS =new Set('nedir ne nasıl neden hangi kaç mi mı mu mü what is are how why which the and'.split(' '));
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Alıntıda arama kelimelerinin geçtiği yerleri kalın gösterir (kelime kökü yeterli: "dönüşümünde" -> "dönüş").

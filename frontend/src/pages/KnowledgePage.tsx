@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Network } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import Spinner from '@/components/common/Spinner';
-import EmptyState from '@/components/common/EmptyState';
 import Alert from '@/components/common/Alert';
+import KnowledgeTreeIllustration from '@/components/ai/KnowledgeTreeIllustration';
 import { useGetKnowledgeMapQuery } from '@/services/aiApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import type { KnowledgeEdge, KnowledgeFocus, KnowledgeMap, KnowledgeNode, TopicStatus } from '@/types/api';
@@ -19,39 +19,93 @@ const STATUS: Record<TopicStatus, { label: string; fill: string; stroke: string;
   untested: { label: 'Not practiced', fill: '#ffffff', stroke: '#cbd5e1', text: '#475569', pill: 'bg-gray-100 text-gray-600' },
 };
 
+const DESCRIPTION =
+  'Built from your practice quiz answers. It shows which topics you know, where you struggle, and which foundation a weak topic depends on.';
+
 export default function KnowledgePage() {
   const { data, isLoading, error } = useGetKnowledgeMapQuery(undefined, { refetchOnMountOrArgChange: true });
   const map = data?.data;
 
+  const empty = !isLoading && !error && (!map || !map.nodes.length);
+  const hasMap = Boolean(map?.nodes.length);
+  // Ağacın yaprakları öğrencinin en çok çalıştığı konular (12 dal).
+  const leaves = useMemo(
+    () =>
+      map?.nodes.length
+        ? [...map.nodes]
+            .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'tr'))
+            .slice(0, TREE_LEAVES)
+            .map((n) => n.status)
+        : undefined,
+    [map]
+  );
+
+  // Sayfanın solunda büyük ağaç (geniş ekranda kaydırırken sabit), sağda başlık ve harita.
   return (
     <PageLayout>
-      <h1 className="text-2xl font-bold text-gray-900">My knowledge map</h1>
-      <p className="mt-1 max-w-2xl text-sm text-gray-600">
-        Built from your practice quiz answers. It shows which topics you know, where you struggle, and which
-        foundation a weak topic depends on.
-      </p>
-
-      <div className="mt-6">
-        {isLoading ? (
-          <Spinner />
-        ) : error ? (
-          <Alert>{getErrorMessage(error)}</Alert>
-        ) : !map || !map.nodes.length ? (
-          <EmptyState
-            icon={Network}
-            title="Your map is empty"
-            text="Open any note and take its practice quiz. Each answer adds to your map."
-            action={
-              <Link to="/?all=1" className="btn-primary">
-                Find a note
-              </Link>
-            }
+      <div className={`grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-12 ${empty ? 'items-center sm:py-6 lg:py-8' : ''}`}>
+        <aside className="lg:sticky lg:top-24 lg:self-start">
+          <KnowledgeTreeIllustration
+            leaves={leaves}
+            className="mx-auto h-auto w-full max-w-[280px] sm:max-w-[380px] lg:max-w-none"
           />
-        ) : (
-          <MapView map={map} />
-        )}
+          {hasMap && map && <TreeSummary map={map} />}
+        </aside>
+
+        <div className="min-w-0">
+          <h1 className={`font-bold text-gray-900 ${empty ? 'text-2xl sm:text-3xl lg:text-4xl' : 'text-2xl sm:text-3xl'}`}>
+            My knowledge map
+          </h1>
+          <p className={`mt-2 text-gray-600 ${empty ? 'text-sm sm:text-base lg:text-lg' : 'text-sm sm:text-base'}`}>
+            {DESCRIPTION}
+          </p>
+
+          {empty ? (
+            <>
+              <p className="mt-6 text-sm text-gray-700 sm:text-base">
+                Your map is empty for now. Take a quiz on any note and every answer you give fills in a topic on the tree.
+              </p>
+              <Link to="/practice" className="btn-primary mt-5">
+                Take a quiz
+              </Link>
+            </>
+          ) : (
+            <div className="mt-6">
+              {isLoading ? <Spinner /> : error ? <Alert>{getErrorMessage(error)}</Alert> : map && <MapView map={map} />}
+            </div>
+          )}
+
+          <p className="mt-6 flex items-start gap-2 text-xs text-gray-500">
+            <Sparkles size={14} className="mt-px shrink-0 text-navy-400" />
+            Quiz questions are written by AI from the note’s pages. Only you can see your map.
+          </p>
+        </div>
       </div>
     </PageLayout>
+  );
+}
+
+const TREE_LEAVES = 12;
+
+// Ağacın altında: konu sayıları durumlara göre.
+function TreeSummary({ map }: { map: KnowledgeMap }) {
+  const counts = (Object.keys(STATUS) as TopicStatus[])
+    .map((s) => ({ status: s, count: map.nodes.filter((n) => n.status === s).length }))
+    .filter((c) => c.count > 0);
+  return (
+    <div className="mx-auto mt-2 max-w-[380px] text-center lg:max-w-none">
+      <p className="text-sm font-semibold text-gray-900">
+        {map.totals.topics} topics · {map.totals.answered} answers
+      </p>
+      <ul className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-gray-600">
+        {counts.map(({ status, count }) => (
+          <li key={status} className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: STATUS[status].stroke }} />
+            {count} {STATUS[status].label.toLowerCase()}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -62,16 +116,12 @@ function MapView({ map }: { map: KnowledgeMap }) {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-gray-500">
-        {map.totals.answered} answers across {map.totals.topics} topics
-      </p>
-
       {map.focus.length > 0 && (
         <section aria-labelledby="focus-title">
           <h2 id="focus-title" className="mb-3 text-sm font-bold uppercase tracking-wide text-gray-500">
             Where to focus
           </h2>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 xl:grid-cols-2">
             {map.focus.map((f) => (
               <FocusCard key={f.topic} focus={f} onShow={() => setSelected(f.topic)} />
             ))}

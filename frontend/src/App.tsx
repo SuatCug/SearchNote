@@ -30,6 +30,7 @@ import ContactPage from '@/pages/ContactPage';
 import MessagesPage from '@/pages/MessagesPage';
 import AskPage from '@/pages/AskPage';
 import KnowledgePage from '@/pages/KnowledgePage';
+import PracticePage from '@/pages/PracticePage';
 
 // Giriş gerektiren sayfalar: giriş sonrası geri dönülebilmesi için gelinen adres saklanır.
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -113,6 +114,8 @@ export default function App() {
         <Route path="/messages/:id" element={<RequireAuth><MessagesPage /></RequireAuth>} />
         {/* Notların içinde arama / soru sorma */}
         <Route path="/ask" element={<RequireAuth><AskPage /></RequireAuth>} />
+        {/* Quiz / flashcard çalışılabilecek notlar */}
+        <Route path="/practice" element={<RequireAuth><PracticePage /></RequireAuth>} />
         {/* Kişisel bilgi haritası (quiz cevaplarından) */}
         <Route path="/knowledge" element={<RequireAuth><KnowledgePage /></RequireAuth>} />
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
-import { Bookmark, ChevronDown, FileSearch, FileText, HelpCircle, LogOut, Network, Settings, Users } from 'lucide-react';
+import { Bookmark, ChevronDown, FileSearch, FileText, HelpCircle, ListChecks, LogOut, Network, Settings, Sparkles, Users } from 'lucide-react';
 import { logout } from '@/app/authSlice';
 import { baseApi, SESSION_TAGS } from '@/services/baseApi';
 import UserAvatar from '@/components/users/UserAvatar';
@@ -80,11 +80,21 @@ export default function AvatarMenu() {
             <Link to="/groups?tab=mine" onClick={close} className={itemClass}>
               <Users size={16} className="text-gray-400" /> My Groups
             </Link>
-            <Link to="/knowledge" onClick={close} className={itemClass}>
-              <Network size={16} className="text-gray-400" /> My Knowledge Map
-            </Link>
+
+            <div className="my-1 border-t border-gray-100" />
+
+            {/* AI ile çalışan özellikler tek başlık altında */}
+            <p className="flex items-center gap-1.5 px-4 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+              <Sparkles size={12} /> Learn with AI
+            </p>
             <Link to="/ask" onClick={close} className={itemClass}>
               <FileSearch size={16} className="text-gray-400" /> Search Inside Notes
+            </Link>
+            <Link to="/practice" onClick={close} className={itemClass}>
+              <ListChecks size={16} className="text-gray-400" /> Quizzes & Flashcards
+            </Link>
+            <Link to="/knowledge" onClick={close} className={itemClass}>
+              <Network size={16} className="text-gray-400" /> My Knowledge Map
             </Link>
 
             <div className="my-1 border-t border-gray-100" />
