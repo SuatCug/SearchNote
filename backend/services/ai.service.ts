@@ -77,13 +77,14 @@ const createJson = async <T>(params: {
   content: Anthropic.ContentBlockParam[];
   schema: Record<string, unknown>;
   maxTokens: number;
+  effort?: 'low' | 'medium';
 }): Promise<T> => {
   const stream = requireClient().messages.stream({
     model: AI_MODEL,
     max_tokens: params.maxTokens,
     system: params.system,
     messages: [{ role: 'user', content: params.content }],
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: params.schema } },
+    output_config: { effort: params.effort ?? 'low', format: { type: 'json_schema', schema: params.schema } },
   });
   const message = await stream.finalMessage();
   assertCompleted(message);
@@ -313,7 +314,7 @@ const generateQuiz = async (noteTitle: string, noteText: string) => {
           'topics that are not in the note. ' +
           'Then write 10 multiple-choice questions. Each has exactly 4 options with one correct answer (answerIndex is 0-3), ' +
           'plausible wrong options, a one or two sentence explanation of why the answer is correct, and "topic" set to ' +
-          'exactly one of the topic names above. Vary the position of the correct answer.',
+          'exactly one of the topic names above. Vary the position of the correct answer. Options are shown in random order, so never refer to them by letter or position (no "option B", "all of the above").',
       },
     ],
     schema: QUIZ_SCHEMA,
@@ -323,6 +324,85 @@ const generateQuiz = async (noteTitle: string, noteText: string) => {
     (q) => q.options.length >= 2 && Number.isInteger(q.answerIndex) && q.answerIndex >= 0 && q.answerIndex < q.options.length
   );
   return { topics, questions: valid };
+};
+
+// Konu pratiği: notun quiz'inden çıkan konular üzerine, notla sınırlı olmayan yeni sorular.
+// Sorular notta yazmak zorunda değildir ama her biri listedeki bir konuya bağlıdır (şemada enum);
+// bilgi haritası bu yüzden aynı konuları kullanmaya devam eder. Sayfa yoktur (page: null).
+const TOPIC_QUIZ_SYSTEM =
+  'You write exam-preparation questions for university students. Questions test standard, well-established ' +
+  'course material on the given topics at the level of a university exam; each has exactly one clearly correct answer. ' +
+  'Write in the same language as the example questions.';
+
+const generateTopicQuiz = async (params: {
+  noteTitle: string;
+  course?: string;
+  topics: string[];
+  noteQuestions: QuizItem[];
+}): Promise<QuizItem[]> => {
+  const { noteTitle, course, topics, noteQuestions } = params;
+  if (MOCK) {
+    // Deneme: notun quiz soruları ters sırayla, işaretlenerek.
+    return [...noteQuestions].reverse().map((q) => ({ ...q, question: `[Demo topic] ${q.question}`, page: null }));
+  }
+  const schema = {
+    type: 'object',
+    properties: {
+      questions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            question: { type: 'string' },
+            options: { type: 'array', items: { type: 'string' } },
+            answerIndex: { type: 'integer' },
+            explanation: { type: 'string' },
+            topic: { type: 'string', enum: topics },
+          },
+          required: ['question', 'options', 'answerIndex', 'explanation', 'topic'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['questions'],
+    additionalProperties: false,
+  };
+  const { questions } = await createJson<{ questions: Omit<QuizItem, 'page'>[] }>({
+    system: TOPIC_QUIZ_SYSTEM,
+    content: [
+      {
+        type: 'text',
+        text:
+          `${course ? `Course: ${course}\n` : ''}Note: ${noteTitle}\n` +
+          `Topics: ${topics.join(', ')}\n\n` +
+          `Questions the student has already answered (do not repeat or rephrase them):\n` +
+          noteQuestions.map((q, i) => `${i + 1}. ${q.question}`).join('\n'),
+      },
+      {
+        type: 'text',
+        text:
+          'Write 10 new multiple-choice questions on these topics. They may go beyond the note: ask about definitions, ' +
+          'how things work, comparisons, complexity, short code or worked examples — whatever a typical exam on these ' +
+          'topics would ask. Spread the questions across the topics. Each has exactly 4 options with one correct answer ' +
+          '(answerIndex is 0-3), plausible wrong options, a one or two sentence explanation of why the answer is correct, ' +
+          'and "topic" set to the topic it tests. Vary the position of the correct answer. Options are shown in random order, so never refer to them by letter or position (no "option B", "all of the above").',
+      },
+    ],
+    schema,
+    maxTokens: 16000,
+    // Nota dayanmadığı için doğruluk daha önemli: biraz daha fazla düşünür.
+    effort: 'medium',
+  });
+  return questions
+    .filter(
+      (q) =>
+        q.options.length >= 2 &&
+        Number.isInteger(q.answerIndex) &&
+        q.answerIndex >= 0 &&
+        q.answerIndex < q.options.length &&
+        topics.includes(q.topic)
+    )
+    .map((q) => ({ ...q, page: null }));
 };
 
 const generateFlashcards = async (noteTitle: string, noteText: string) => {
@@ -420,6 +500,7 @@ export {
   transcribeFile,
   answerFromSources,
   generateQuiz,
+  generateTopicQuiz,
   generateFlashcards,
   OCR_MAX_PAGES,
 };

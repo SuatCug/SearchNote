@@ -52,15 +52,36 @@ const saveQuizTopics = async (topics: TopicInfo[], questions: QuizItem[], course
   );
 };
 
+// Konu pratiği sorularının cevapları aynı koleksiyonda, soru sırası bu kadar kaydırılarak tutulur
+// (notun quiz'iyle çakışmasın diye; notun quiz'i ~10 soru, konu pratiği turlarla en fazla ~200 soru).
+const TOPIC_QUIZ_INDEX_OFFSET = 100;
+
 // Quiz cevabı kaydedilir; doğruluk sunucuda, kayıtlı setten hesaplanır.
-const recordQuizAnswer = async ({ userId, noteId, index, choice }: { userId: string; noteId: string; index: number; choice: number }) => {
-  const set = await StudySet.findOne({ note: noteId, kind: 'quiz' }).lean();
+const recordQuizAnswer = async ({
+  userId,
+  noteId,
+  index,
+  choice,
+  kind = 'quiz',
+}: {
+  userId: string;
+  noteId: string;
+  index: number;
+  choice: number;
+  kind?: 'quiz' | 'topic-quiz';
+}) => {
+  const set = await StudySet.findOne({ note: noteId, kind }).lean();
   const question = set?.items?.[index] as QuizItem | undefined;
   if (!set || !question) throw new ApiError(404, 'Question not found.');
   const correct = choice === question.answerIndex;
   const topic = question.topic?.trim() || 'General';
   await QuizAttempt.updateOne(
-    { user: userId, note: noteId, questionIndex: index, mock: set.model === 'mock' },
+    {
+      user: userId,
+      note: noteId,
+      questionIndex: kind === 'topic-quiz' ? TOPIC_QUIZ_INDEX_OFFSET + index : index,
+      mock: set.model === 'mock',
+    },
     { $set: { topicKey: normalizeTopic(topic), topic, correct } },
     { upsert: true }
   );
@@ -187,4 +208,4 @@ const buildKnowledgeMap = async (userId: string) => {
   };
 };
 
-export { normalizeTopic, saveQuizTopics, recordQuizAnswer, buildKnowledgeMap };
+export { normalizeTopic, saveQuizTopics, recordQuizAnswer, buildKnowledgeMap, TOPIC_QUIZ_INDEX_OFFSET };

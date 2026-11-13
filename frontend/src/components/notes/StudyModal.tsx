@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, ChevronLeft, ChevronRight, Loader2, RotateCcw, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
 import Modal from '@/components/common/Modal';
 import { useGetStudySetQuery, useRecordQuizAnswerMutation } from '@/services/aiApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
@@ -14,9 +14,27 @@ interface StudyModalProps {
   onOpenPage: (page: number) => void;
 }
 
+const TITLES: Record<StudyKind, string> = {
+  quiz: 'Practice quiz',
+  'topic-quiz': 'Topic practice',
+  flashcards: 'Flashcards',
+};
+
+const LOADING: Record<StudyKind, string> = {
+  quiz: 'Writing questions from this note…',
+  'topic-quiz': 'Writing new questions on this note’s topics…',
+  flashcards: 'Making flashcards from this note…',
+};
+
 // Nottan üretilen quiz ya da flashcard'lar. İlk açılışta set üretilir (birkaç saniye sürer), sonra kayıtlıdır.
-export default function StudyModal({ noteId, kind, onClose, onOpenPage }: StudyModalProps) {
-  const { data, error, isFetching, refetch } = useGetStudySetQuery({ noteId, kind });
+// Notun quiz'i bitince aynı pencerede "konu pratiği"ne geçilebilir (notla sınırlı olmayan yeni sorular).
+export default function StudyModal({ noteId, kind: initialKind, onClose, onOpenPage }: StudyModalProps) {
+  const [kind, setKind] = useState<StudyKind>(initialKind);
+  // Konu pratiği her açılışta sunucuya sorulur: bitirilen turun yerine sıradaki (ya da yeni) tur gelir.
+  const { data, error, isFetching, refetch } = useGetStudySetQuery(
+    { noteId, kind },
+    { refetchOnMountOrArgChange: kind === 'topic-quiz' }
+  );
   const set = data?.data.set;
 
   const openPage = (page: number) => {
@@ -25,14 +43,16 @@ export default function StudyModal({ noteId, kind, onClose, onOpenPage }: StudyM
   };
 
   return (
-    <Modal title={kind === 'quiz' ? 'Practice quiz' : 'Flashcards'} onClose={onClose} size="lg">
-      {isFetching && !set ? (
+    <Modal title={TITLES[kind]} onClose={onClose} size="lg">
+      {isFetching && (!set || set.kind !== kind || kind === 'topic-quiz') ? (
         <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
           <Loader2 size={22} className="animate-spin text-navy-600" />
-          <p className="text-sm text-gray-600">
-            {kind === 'quiz' ? 'Writing questions from this note…' : 'Making flashcards from this note…'}
+          <p className="text-sm text-gray-600">{LOADING[kind]}</p>
+          <p className="text-xs text-gray-400">
+            {kind === 'topic-quiz'
+              ? 'New questions take about 15 seconds.'
+              : 'The first time takes about 15 seconds. After that it opens instantly.'}
           </p>
-          <p className="text-xs text-gray-400">The first time takes about 15 seconds. After that it opens instantly.</p>
         </div>
       ) : error ? (
         <div className="px-6 py-12 text-center">
@@ -41,10 +61,25 @@ export default function StudyModal({ noteId, kind, onClose, onOpenPage }: StudyM
             Try again
           </button>
         </div>
-      ) : set?.kind === 'quiz' ? (
+      ) : set?.kind === 'quiz' || set?.kind === 'topic-quiz' ? (
         <>
           {set.mock && <DemoNotice />}
-          <Quiz noteId={noteId} questions={set.items} onOpenPage={openPage} />
+          {set.kind === 'topic-quiz' && <TopicNotice />}
+          <Quiz
+            key={`${set.kind}-${set.start ?? 0}`}
+            noteId={noteId}
+            kind={set.kind}
+            questions={set.items}
+            start={set.start ?? 0}
+            onOpenPage={openPage}
+            onMore={
+              set.kind === 'topic-quiz'
+                ? () => refetch()
+                : set.items.some((q) => q.topic)
+                  ? () => setKind('topic-quiz')
+                  : undefined
+            }
+          />
         </>
       ) : set?.kind === 'flashcards' ? (
         <>
@@ -65,6 +100,15 @@ function DemoNotice() {
   );
 }
 
+// Konu pratiği soruları notta yazmayabilir: sayfa bağlantısı yoktur.
+function TopicNotice() {
+  return (
+    <p className="mx-5 mt-3 rounded-lg bg-navy-50 px-3 py-2 text-xs text-navy-800">
+      These questions go beyond the note. The AI wrote them on the note’s topics, so they don’t point to a page.
+    </p>
+  );
+}
+
 function PageLink({ page, onOpenPage }: { page: number | null; onOpenPage: (page: number) => void }) {
   if (!page) return null;
   return (
@@ -74,12 +118,44 @@ function PageLink({ page, onOpenPage }: { page: number | null; onOpenPage: (page
   );
 }
 
-function Quiz({ noteId, questions, onOpenPage }: { noteId: string; questions: QuizQuestion[]; onOpenPage: (page: number) => void }) {
+const shuffle = <T,>(list: T[]) => {
+  const result = [...list];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
+
+// Her açılışta ve "Start over"da soruların sırası ve şıkların yerleri karışır (ezber olmasın).
+// index / order asıl sıralardır: cevap kaydı ve doğruluk kontrolü bunlarla yapılır.
+const deal = (questions: QuizQuestion[]) =>
+  shuffle(questions.map((q, index) => ({ q, index, order: shuffle(q.options.map((_, i) => i)) })));
+
+function Quiz({
+  noteId,
+  kind,
+  questions,
+  start,
+  onOpenPage,
+  onMore,
+}: {
+  noteId: string;
+  kind: 'quiz' | 'topic-quiz';
+  questions: QuizQuestion[];
+  // Konu pratiğinde turun ilk sorusunun sırası.
+  start: number;
+  onOpenPage: (page: number) => void;
+  // Quiz bitince: notun quiz'inden konu pratiğine geçiş ya da konu pratiğinde yeni tur.
+  onMore?: () => void;
+}) {
   const [recordAnswer] = useRecordQuizAnswerMutation();
+  const [deck, setDeck] = useState(() => deal(questions));
   const [index, setIndex] = useState(0);
+  // Seçilen şıkkın asıl sırası.
   const [picked, setPicked] = useState<number | null>(null);
   const [score, setScore] = useState(0);
-  const finished = index >= questions.length;
+  const finished = index >= deck.length;
 
   if (finished) {
     return (
@@ -90,15 +166,20 @@ function Quiz({ noteId, questions, onOpenPage }: { noteId: string; questions: Qu
         </p>
         <p className="mt-2 text-sm text-gray-600">
           {score === questions.length
-            ? 'All correct. You know this note.'
+            ? kind === 'quiz'
+              ? 'All correct. You know this note.'
+              : 'All correct. You know these topics.'
             : score >= questions.length * 0.7
               ? 'Good. Go over the ones you missed once more.'
-              : 'Read the note again and give it another try.'}
+              : kind === 'quiz'
+                ? 'Read the note again and give it another try.'
+                : 'Review these topics and give it another try.'}
         </p>
         <div className="mt-5 flex flex-wrap justify-center gap-2">
           <button
             type="button"
             onClick={() => {
+              setDeck(deal(questions));
               setIndex(0);
               setPicked(null);
               setScore(0);
@@ -108,36 +189,41 @@ function Quiz({ noteId, questions, onOpenPage }: { noteId: string; questions: Qu
             <RotateCcw size={15} /> Start over
           </button>
           {questions.some((q) => q.topic) && (
-            <Link to="/knowledge" className="btn-primary">
+            <Link to="/knowledge" className={onMore ? 'btn-secondary' : 'btn-primary'}>
               See your knowledge map
             </Link>
+          )}
+          {onMore && (
+            <button type="button" onClick={onMore} className="btn-primary">
+              <Sparkles size={15} /> {kind === 'quiz' ? 'More questions on these topics' : 'New questions on these topics'}
+            </button>
           )}
         </div>
       </div>
     );
   }
 
-  const q = questions[index];
+  const { q, index: questionIndex, order } = deck[index];
   const answered = picked !== null;
 
   const choose = (i: number) => {
     if (answered) return;
     setPicked(i);
     if (i === q.answerIndex) setScore((s) => s + 1);
-    // Bilgi haritası için kaydedilir; kayıt başarısız olsa da quiz devam eder.
-    recordAnswer({ noteId, index, choice: i });
+    // Bilgi haritası için kaydedilir (asıl soru ve şık sırasıyla); kayıt başarısız olsa da quiz devam eder.
+    recordAnswer({ noteId, index: start + questionIndex, choice: i, ...(kind === 'topic-quiz' && { set: kind }) });
   };
 
   return (
     <div className="px-5 py-4">
       <div className="flex items-center justify-between text-xs text-gray-500">
         <span>
-          Question {index + 1} of {questions.length}
+          Question {index + 1} of {deck.length}
         </span>
         <span>{score} correct</span>
       </div>
       <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-gray-100">
-        <div className="h-full bg-navy-600 transition-all" style={{ width: `${(index / questions.length) * 100}%` }} />
+        <div className="h-full bg-navy-600 transition-all" style={{ width: `${(index / deck.length) * 100}%` }} />
       </div>
 
       {q.topic && (
@@ -145,7 +231,8 @@ function Quiz({ noteId, questions, onOpenPage }: { noteId: string; questions: Qu
       )}
       <p className={`${q.topic ? 'mt-1' : 'mt-4'} text-[15px] font-semibold leading-snug text-gray-900`}>{q.question}</p>
       <ul className="mt-3 space-y-2">
-        {q.options.map((option, i) => {
+        {order.map((i, position) => {
+          const option = q.options[i];
           const isAnswer = i === q.answerIndex;
           const isPicked = i === picked;
           const tone = !answered
@@ -163,7 +250,7 @@ function Quiz({ noteId, questions, onOpenPage }: { noteId: string; questions: Qu
                 aria-pressed={isPicked}
                 className={`flex w-full items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-left text-sm transition-colors ${tone}`}
               >
-                <span className="mt-px w-4 shrink-0 font-bold">{String.fromCharCode(65 + i)}</span>
+                <span className="mt-px w-4 shrink-0 font-bold">{String.fromCharCode(65 + position)}</span>
                 <span className="flex-1">{option}</span>
                 {answered && isAnswer && <Check size={16} className="shrink-0 text-emerald-600" />}
                 {answered && isPicked && !isAnswer && <X size={16} className="shrink-0 text-rose-600" />}

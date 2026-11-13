@@ -132,12 +132,14 @@ function MapView({ map }: { map: KnowledgeMap }) {
       <section className="card p-4 sm:p-5" aria-labelledby="graph-title">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="graph-title" className="text-lg font-semibold text-gray-900">
-            Topics and what they build on
+            Topics to work on
           </h2>
           <Legend />
         </div>
-        <p className="mt-1 text-xs text-gray-500">Arrows go from a foundation to the topic that needs it. Tap a topic for details.</p>
-        <Graph nodes={map.nodes} edges={map.edges} selected={selected} onSelect={setSelected} />
+        <p className="mt-1 text-xs text-gray-500">
+          Topics you haven’t mastered yet and the basics they’re missing. Tap a card for details.
+        </p>
+        <GapCards nodes={map.nodes} edges={map.edges} selected={selected} onSelect={setSelected} />
         {selectedNode && <NodeDetails node={selectedNode} map={map} nodesByKey={nodesByKey} onSelect={setSelected} />}
       </section>
     </div>
@@ -210,60 +212,30 @@ function FocusCard({ focus, onShow }: { focus: KnowledgeFocus; onShow: () => voi
   );
 }
 
-// ---------- Grafik ----------
+// ---------- Eksik konular (kartlar) ----------
 
-const NODE_W = 168;
-const NODE_H = 50;
-const COL_GAP = 64;
-const ROW_GAP = 18;
-const PAD = 12;
+// Önce zorlanılan, sonra oturmamış konular, sonra hiç çalışılmamış temeller; güçlü konular en altta tek satır.
+const GAP_ORDER: Record<TopicStatus, number> = { weak: 0, learning: 1, untested: 2, strong: 3 };
 
-// Her konu, ön koşullarının bir sağındaki sütuna yerleşir (temeller solda). Döngü varsa sınırlı sayıda
-// geçişten sonra durulur.
-const layout = (nodes: KnowledgeNode[], edges: KnowledgeEdge[]) => {
-  const level = new Map(nodes.map((n) => [n.key, 0]));
-  for (let pass = 0; pass < nodes.length; pass++) {
-    let changed = false;
-    for (const e of edges) {
-      const next = (level.get(e.from) ?? 0) + 1;
-      if (next > (level.get(e.to) ?? 0) && next < nodes.length) {
-        level.set(e.to, next);
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-  const columns = new Map<number, KnowledgeNode[]>();
-  for (const n of nodes) {
-    const l = level.get(n.key) ?? 0;
-    columns.set(l, [...(columns.get(l) ?? []), n]);
-  }
-  const positions = new Map<string, { x: number; y: number }>();
-  const colCount = Math.max(...columns.keys()) + 1;
-  const maxRows = Math.max(...[...columns.values()].map((c) => c.length));
-  const height = maxRows * NODE_H + (maxRows - 1) * ROW_GAP;
-  for (const [l, col] of columns) {
-    // Sütunlar dikeyde ortalanır; zayıf konular üstte.
-    const order = { weak: 0, learning: 1, untested: 2, strong: 3 };
-    col.sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name, 'tr'));
-    const colHeight = col.length * NODE_H + (col.length - 1) * ROW_GAP;
-    col.forEach((n, i) =>
-      positions.set(n.key, {
-        x: PAD + l * (NODE_W + COL_GAP),
-        y: PAD + (height - colHeight) / 2 + i * (NODE_H + ROW_GAP),
-      })
-    );
-  }
-  return {
-    positions,
-    width: PAD * 2 + colCount * NODE_W + (colCount - 1) * COL_GAP,
-    height: PAD * 2 + height,
-  };
+const STATUS_TEXT: Record<TopicStatus, string> = {
+  strong: 'text-emerald-700',
+  learning: 'text-amber-700',
+  weak: 'text-rose-700',
+  untested: 'text-gray-500',
 };
 
-const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+function StatusDot({ status }: { status: TopicStatus }) {
+  const s = STATUS[status];
+  return (
+    <span
+      className="h-2.5 w-2.5 shrink-0 rounded-full border"
+      style={{ background: status === 'untested' ? 'transparent' : s.stroke, borderColor: s.stroke }}
+      aria-hidden
+    />
+  );
+}
 
-function Graph({
+function GapCards({
   nodes,
   edges,
   selected,
@@ -274,81 +246,113 @@ function Graph({
   selected: string | null;
   onSelect: (key: string) => void;
 }) {
-  const { positions, width, height } = useMemo(() => layout(nodes, edges), [nodes, edges]);
-  // Seçili konunun bağlantıları vurgulanır.
-  const related = new Set(selected ? edges.filter((e) => e.from === selected || e.to === selected).flatMap((e) => [e.from, e.to]) : []);
+  const { gaps, strong, prereqs, dependents } = useMemo(() => {
+    const byKey = new Map(nodes.map((n) => [n.key, n]));
+    const prereqs = new Map<string, KnowledgeNode[]>();
+    const dependents = new Map<string, KnowledgeNode[]>();
+    for (const e of edges) {
+      const from = byKey.get(e.from);
+      const to = byKey.get(e.to);
+      if (!from || !to || e.from === e.to) continue;
+      prereqs.set(e.to, [...(prereqs.get(e.to) ?? []), from]);
+      dependents.set(e.from, [...(dependents.get(e.from) ?? []), to]);
+    }
+    const byName = (a: KnowledgeNode, b: KnowledgeNode) => a.name.localeCompare(b.name, 'tr');
+    return {
+      gaps: nodes
+        .filter((n) => n.status !== 'strong')
+        .sort((a, b) => GAP_ORDER[a.status] - GAP_ORDER[b.status] || byName(a, b)),
+      strong: nodes.filter((n) => n.status === 'strong').sort(byName),
+      prereqs,
+      dependents,
+    };
+  }, [nodes, edges]);
 
   return (
-    <div className="mt-4 overflow-x-auto overscroll-x-contain rounded-lg bg-gray-50">
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Topic map" className="block">
-        <defs>
-          <marker id="km-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8" />
-          </marker>
-          <marker id="km-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0 0 L10 5 L0 10 z" fill="#1e3a8a" />
-          </marker>
-        </defs>
-        {edges.map((e) => {
-          const a = positions.get(e.from);
-          const b = positions.get(e.to);
-          if (!a || !b) return null;
-          const x1 = a.x + NODE_W;
-          const y1 = a.y + NODE_H / 2;
-          const x2 = b.x - 2;
-          const y2 = b.y + NODE_H / 2;
-          const mid = (x1 + x2) / 2;
-          const active = selected !== null && (e.from === selected || e.to === selected);
-          return (
-            <path
-              key={`${e.from}-${e.to}`}
-              d={`M${x1} ${y1} C${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`}
-              fill="none"
-              stroke={active ? '#1e3a8a' : '#cbd5e1'}
-              strokeWidth={active ? 2 : 1.5}
-              markerEnd={`url(#${active ? 'km-arrow-active' : 'km-arrow'})`}
-            />
-          );
-        })}
-        {nodes.map((n) => {
-          const p = positions.get(n.key)!;
-          const s = STATUS[n.status];
-          const isSelected = n.key === selected;
-          const dimmed = selected !== null && !isSelected && !related.has(n.key);
-          return (
-            <g
+    <>
+      {gaps.length > 0 ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {gaps.map((n) => {
+            const isSelected = n.key === selected;
+            // Çalışılan konu: oturmamış temelleri; çalışılmamış temel: hangi konular için gerekli.
+            const related =
+              n.status === 'untested'
+                ? (dependents.get(n.key) ?? [])
+                : (prereqs.get(n.key) ?? []).filter((p) => p.status !== 'strong');
+            return (
+              <button
+                key={n.key}
+                type="button"
+                onClick={() => onSelect(n.key)}
+                aria-pressed={isSelected}
+                className={`rounded-lg border bg-white p-3.5 text-left transition-colors ${
+                  isSelected ? 'border-navy-700 ring-1 ring-navy-700' : 'border-gray-200 hover:border-navy-300'
+                }`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <StatusDot status={n.status} />
+                    <span className="truncate font-semibold text-gray-900">{n.name}</span>
+                  </span>
+                  <span className={`shrink-0 text-xs font-semibold ${STATUS_TEXT[n.status]}`}>
+                    {n.total ? `${n.correct}/${n.total} correct` : STATUS[n.status].label}
+                  </span>
+                </span>
+                {n.total > 0 && (
+                  <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-gray-100">
+                    <span
+                      className="block h-full rounded-full"
+                      style={{ width: `${Math.max((n.correct / n.total) * 100, 4)}%`, background: STATUS[n.status].stroke }}
+                    />
+                  </span>
+                )}
+                <span className="mt-2.5 block text-xs text-gray-600">
+                  {n.status === 'untested' ? (
+                    related.length ? (
+                      <>You haven’t practiced this yet. It’s needed for {related.map((r) => r.name).join(', ')}.</>
+                    ) : (
+                      <>You haven’t practiced this yet.</>
+                    )
+                  ) : related.length ? (
+                    <>
+                      <span className="font-semibold text-gray-700">Missing basics: </span>
+                      {related.map((r, i) => (
+                        <span key={r.key} className="inline-flex items-center gap-1">
+                          {i > 0 && ', '}
+                          <StatusDot status={r.status} />
+                          {r.name}
+                        </span>
+                      ))}
+                    </>
+                  ) : (
+                    <>No missing basics. Practice this topic itself again.</>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-gray-700">No gaps right now. Every topic you practiced is strong.</p>
+      )}
+
+      {strong.length > 0 && (
+        <p className="mt-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-gray-600">
+          <span className="font-semibold text-gray-800">You’re strong in:</span>
+          {strong.map((n, i) => (
+            <button
               key={n.key}
-              transform={`translate(${p.x} ${p.y})`}
-              role="button"
-              tabIndex={0}
-              aria-label={`${n.name}: ${s.label}${n.total ? `, ${n.correct} of ${n.total} correct` : ''}`}
-              aria-pressed={isSelected}
+              type="button"
               onClick={() => onSelect(n.key)}
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onSelect(n.key))}
-              className="cursor-pointer outline-none [&:focus-visible>rect]:stroke-navy-700"
-              opacity={dimmed ? 0.45 : 1}
+              className="text-emerald-700 hover:underline"
             >
-              <title>{n.name}</title>
-              <rect
-                width={NODE_W}
-                height={NODE_H}
-                rx={10}
-                fill={s.fill}
-                stroke={isSelected ? '#1e3a8a' : s.stroke}
-                strokeWidth={isSelected ? 2.5 : 1.5}
-                strokeDasharray={n.status === 'untested' ? '5 4' : undefined}
-              />
-              <text x={12} y={21} fontSize={13} fontWeight={600} fill="#111827">
-                {truncate(n.name, 20)}
-              </text>
-              <text x={12} y={38} fontSize={11} fill={s.text}>
-                {n.total ? `${n.correct}/${n.total} correct` : 'Not practiced'}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
+              {n.name}
+              {i < strong.length - 1 && ','}
+            </button>
+          ))}
+        </p>
+      )}
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 import asyncHandler, { type AuthedRequest } from '../utils/asyncHandler.ts';
 import ApiError from '../utils/apiError.ts';
-import { Note, StudySet } from '../models/index.ts';
+import { Note, QuizAttempt, StudySet } from '../models/index.ts';
 import { assertNoteVisible } from '../services/note.service.ts';
 import { isVectorEnabled, loadNoteText, searchNotesContent, type ContentHit } from '../services/noteIndex.service.ts';
 import {
@@ -9,16 +9,23 @@ import {
   consumeQuota,
   generateFlashcards,
   generateQuiz,
+  generateTopicQuiz,
   isAiEnabled,
   isMock,
   refundQuota,
 } from '../services/ai.service.ts';
-import { buildKnowledgeMap, recordQuizAnswer, saveQuizTopics } from '../services/knowledge.service.ts';
+import type { QuizItem, TopicInfo } from '../services/ai.service.ts';
+import {
+  buildKnowledgeMap,
+  recordQuizAnswer,
+  saveQuizTopics,
+  TOPIC_QUIZ_INDEX_OFFSET,
+} from '../services/knowledge.service.ts';
 import { buildPracticeList, searchPracticeNotes } from '../services/practice.service.ts';
 
 // Yapay zekâ ile çalışma araçları: notların içinde arama + soru cevaplama, quiz ve flashcard.
 
-const STUDY_KINDS = ['quiz', 'flashcards'] as const;
+const STUDY_KINDS = ['quiz', 'flashcards', 'topic-quiz'] as const;
 type StudyKind = (typeof STUDY_KINDS)[number];
 
 const MIN_STUDY_TEXT_CHARS = 200;
@@ -97,6 +104,97 @@ const ask = asyncHandler<AuthedRequest>(async (req, res) => {
 // Aynı not için aynı anda gelen üretim istekleri (çift tıklama, iki öğrenci) tek API çağrısını paylaşır.
 const pendingSets = new Map<string, Promise<unknown>>();
 
+// ---------- Konu pratiği (turlar) ----------
+// Notun quiz'indeki konulardan, notla sınırlı olmayan sorular. Sorular not başına tek kayıtta turlar halinde
+// birikir: öğrenciye bitirmediği ilk tur verilir; hepsini bitirdiyse yeni tur üretilip sona eklenir (bir hak düşer).
+// Önce notun quiz'i üretilmiş olmalı (arayüzde buton quiz bitince çıkar).
+
+const MAX_TOPIC_ROUNDS = 20;
+// Önceki sorulardan bu kadarı "tekrarlama" diye modele verilir.
+const TOPIC_AVOID_LIMIT = 60;
+
+type Round = { start: number; count: number };
+type TopicSetDoc = { _id: unknown; items: unknown[]; rounds?: Round[]; model?: string; createdAt?: Date };
+
+// Eski kayıtlarda rounds yok: tüm sorular tek tur sayılır.
+const roundsOf = (set: TopicSetDoc | null): Round[] =>
+  !set ? [] : set.rounds?.length ? set.rounds : set.items.length ? [{ start: 0, count: set.items.length }] : [];
+
+// Aynı not için turlar sırayla işlenir (iki istek aynı anda tur eklerse başlangıç sıraları karışmasın).
+const topicLocks = new Map<string, Promise<unknown>>();
+const withTopicLock = <T>(noteId: string, task: () => Promise<T>): Promise<T> => {
+  const previous = topicLocks.get(noteId) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(task);
+  const tail = run.catch(() => undefined);
+  topicLocks.set(noteId, tail);
+  void tail.then(() => topicLocks.get(noteId) === tail && topicLocks.delete(noteId));
+  return run;
+};
+
+const nextTopicRound = (noteId: string, title: string, course: string | undefined, userId: string) =>
+  withTopicLock(noteId, async () => {
+    let set = (await StudySet.findOne({ note: noteId, kind: 'topic-quiz' }).lean()) as TopicSetDoc | null;
+    if (set?.model === 'mock' && !isMock()) {
+      await StudySet.deleteOne({ _id: set._id });
+      set = null;
+    }
+    const rounds = roundsOf(set);
+
+    if (set && rounds.length) {
+      const answered = new Set(
+        (
+          await QuizAttempt.distinct('questionIndex', {
+            user: userId,
+            note: noteId,
+            questionIndex: { $gte: TOPIC_QUIZ_INDEX_OFFSET },
+            mock: set.model === 'mock',
+          })
+        ).map((i: number) => i - TOPIC_QUIZ_INDEX_OFFSET)
+      );
+      const answeredIn = (r: Round) => {
+        let n = 0;
+        for (let i = r.start; i < r.start + r.count; i++) if (answered.has(i)) n++;
+        return n / r.count;
+      };
+      // Yarısından azı cevaplanmış ilk tur (yarıda bırakılan tur da tekrar gelir).
+      const open = rounds.find((r) => answeredIn(r) < 0.5);
+      if (open) return { set, round: open };
+      // Sınıra gelindiyse en az çözülmüş tur tekrar verilir (yeni üretim yok).
+      if (rounds.length >= MAX_TOPIC_ROUNDS) {
+        return { set, round: [...rounds].sort((a, b) => answeredIn(a) - answeredIn(b))[0] };
+      }
+    }
+
+    if (!isAiEnabled()) throw new ApiError(503, 'AI features are not configured on this server.');
+    const base = await StudySet.findOne({ note: noteId, kind: 'quiz', ...(isMock() ? {} : { model: { $ne: 'mock' } }) }).lean();
+    const noteQuestions = (base?.items ?? []) as QuizItem[];
+    const topics = [
+      ...new Set(
+        [...((base?.topics ?? []) as TopicInfo[]).map((t) => t.name), ...noteQuestions.map((q) => q.topic)]
+          .map((name) => name?.trim())
+          .filter(Boolean)
+      ),
+    ];
+    if (!topics.length) throw new ApiError(409, 'Take the practice quiz for this note first.');
+
+    await consumeQuota(userId, 'study');
+    try {
+      const previous = ((set?.items ?? []) as QuizItem[]).slice(-TOPIC_AVOID_LIMIT);
+      const items = await generateTopicQuiz({ noteTitle: title, course, topics, noteQuestions: [...noteQuestions, ...previous] });
+      if (!items.length) throw new ApiError(502, 'The AI could not create questions. Please try again.');
+      const round = { start: set?.items.length ?? 0, count: items.length };
+      const updated = (await StudySet.findOneAndUpdate(
+        { note: noteId, kind: 'topic-quiz' },
+        { $push: { items: { $each: items } }, $set: { rounds: [...rounds, round], model: AI_MODEL } },
+        { upsert: true, returnDocument: 'after' }
+      ).lean()) as TopicSetDoc;
+      return { set: updated, round };
+    } catch (error) {
+      await refundQuota(userId, 'study');
+      throw error;
+    }
+  });
+
 const generateSet = async (noteId: string, title: string, course: string | undefined, kind: StudyKind, userId: string) => {
   const text = await loadNoteText(noteId);
   if (text.length < MIN_STUDY_TEXT_CHARS) {
@@ -128,10 +226,29 @@ const generateSet = async (noteId: string, title: string, course: string | undef
 };
 
 // Quiz / flashcard: daha önce üretildiyse kayıtlı set döner (hak harcanmaz), yoksa üretilir.
+// Konu pratiği: öğrencinin bitirmediği tur (yoksa yeni tur); start = turun ilk sorusunun sırası.
 const getStudySet = asyncHandler<AuthedRequest>(async (req, res) => {
   const kind = req.params.kind as StudyKind;
   if (!STUDY_KINDS.includes(kind)) throw new ApiError(404, 'Unknown study tool.');
   const note = await loadVisibleNote(req.params.id, req.user.id);
+
+  if (kind === 'topic-quiz') {
+    const course = note.courseCode || note.courseName || undefined;
+    const { set, round } = await nextTopicRound(String(note._id), note.title, course, req.user.id);
+    res.json({
+      success: true,
+      data: {
+        set: {
+          kind,
+          items: set.items.slice(round.start, round.start + round.count),
+          start: round.start,
+          createdAt: set.createdAt,
+          mock: set.model === 'mock',
+        },
+      },
+    });
+    return;
+  }
 
   let set = await StudySet.findOne({ note: note._id, kind }).lean();
   // Yerel deneme modunda (AI_MOCK) üretilmiş örnek set gerçek modda kullanılmaz: silinip gerçeği üretilir.
@@ -173,6 +290,7 @@ const answerQuiz = asyncHandler<AuthedRequest>(async (req, res) => {
     noteId: req.params.id,
     index: Number(req.body.index),
     choice: Number(req.body.choice),
+    kind: req.body.set === 'topic-quiz' ? 'topic-quiz' : 'quiz',
   });
   res.json({ success: true, data });
 });

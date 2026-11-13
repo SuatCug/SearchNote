@@ -196,7 +196,7 @@ function Results({ result, query }: { result: AskResult; query: string }) {
           </h2>
           <Answer segments={result.answer} />
           <p className="mt-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
-            Written from the pages below by AI. Numbers point to the page it came from — check it before you rely on it.
+            Written by AI from the pages below — check them before you rely on it.
           </p>
         </section>
       )}
@@ -216,25 +216,11 @@ function Results({ result, query }: { result: AskResult; query: string }) {
   );
 }
 
-// Cevap metni; alıntılı kısımların sonunda kaynak numaraları (tıklanınca o kaynağa kayar).
+// Cevap metni düz yazı olarak gösterilir; kaynaklar altta "Pages that match" listesinde.
 function Answer({ segments }: { segments: AnswerSegment[] }) {
   return (
     <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-gray-800">
-      {segments.map((segment, i) => (
-        <span key={i}>
-          {segment.text}
-          {segment.sources.map((s) => (
-            <a
-              key={s}
-              href={`#source-${s + 1}`}
-              className="ml-0.5 inline-flex min-w-[18px] -translate-y-1 items-center justify-center rounded bg-navy-50 px-1 text-[11px] font-bold text-navy-700 hover:bg-navy-100"
-              aria-label={`Source ${s + 1}`}
-            >
-              {s + 1}
-            </a>
-          ))}
-        </span>
-      ))}
+      {segments.map((segment) => segment.text).join('').trim()}
     </p>
   );
 }
@@ -272,7 +258,7 @@ function SourceCard({ source, number, query }: { source: ContentSource; number: 
 }
 
 // Boş sayfada gösterilen örnek sorular; tıklanınca doğrudan aranır.
-const EXAMPLES = ['What is the initial value theorem?', 'Newton’s second law', 'TCP vs UDP', 'How does mitosis work?'];
+const EXAMPLES = ['What is a stack?', 'Stack vs queue', 'Types of linked lists', 'Min-heap vs max-heap'];
 
 const STOP_WORDS =new Set('nedir ne nasıl neden hangi kaç mi mı mu mü what is are how why which the and'.split(' '));
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

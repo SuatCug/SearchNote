@@ -5,12 +5,16 @@ import mongoose from 'mongoose';
 const studySetSchema = new mongoose.Schema(
   {
     note: { type: mongoose.Schema.Types.ObjectId, ref: 'Note', required: true },
-    kind: { type: String, enum: ['quiz', 'flashcards'], required: true },
-    // quiz: [{ question, options[], answerIndex, explanation, page }]
+    kind: { type: String, enum: ['quiz', 'flashcards', 'topic-quiz'], required: true },
+    // quiz: [{ question, options[], answerIndex, explanation, page, topic }]
+    // topic-quiz: quiz ile aynı biçim; notun konularından, notla sınırlı olmadan üretilir (page hep null)
     // flashcards: [{ front, back, page }]
     items: { type: [mongoose.Schema.Types.Mixed], default: [] },
     // quiz: notun konuları ve ön koşulları [{ name, prerequisites[] }] (bilgi haritası için)
     topics: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+    // topic-quiz: sorular turlar halinde eklenir (items içindeki başlangıç sırası + soru sayısı).
+    // Öğrenciye bitirmediği bir tur verilir; hepsini bitirdiyse yeni tur üretilip sona eklenir.
+    rounds: { type: [{ start: Number, count: Number, _id: false }], default: undefined },
     model: { type: String },
   },
   { timestamps: true }

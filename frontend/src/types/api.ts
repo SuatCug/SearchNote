@@ -216,10 +216,12 @@ export interface Flashcard {
   page: number | null;
 }
 
-export type StudyKind = 'quiz' | 'flashcards';
+// topic-quiz: notun konularından, notla sınırlı olmayan sorular (sayfa yok).
+export type StudyKind = 'quiz' | 'flashcards' | 'topic-quiz';
 
 export type StudySet =
-  | { kind: 'quiz'; items: QuizQuestion[]; createdAt?: ISODate; mock?: boolean }
+  // start: konu pratiğinde turun ilk sorusunun sırası (cevap kaydında soru sırasına eklenir).
+  | { kind: 'quiz' | 'topic-quiz'; items: QuizQuestion[]; start?: number; createdAt?: ISODate; mock?: boolean }
   | { kind: 'flashcards'; items: Flashcard[]; createdAt?: ISODate; mock?: boolean };
 
 // --- Kişisel bilgi haritası ---

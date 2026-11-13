@@ -18,9 +18,13 @@ export const aiApi = baseApi.injectEndpoints({
     // Quiz cevabı bilgi haritası için kaydedilir; harita bir sonraki açılışta tazelenir.
     recordQuizAnswer: builder.mutation<
       ApiResponse<{ correct: boolean; answerIndex: number }>,
-      { noteId: string; index: number; choice: number }
+      { noteId: string; index: number; choice: number; set?: 'quiz' | 'topic-quiz' }
     >({
-      query: ({ noteId, index, choice }) => ({ url: `/ai/notes/${noteId}/quiz/answers`, method: 'POST', body: { index, choice } }),
+      query: ({ noteId, index, choice, set }) => ({
+        url: `/ai/notes/${noteId}/quiz/answers`,
+        method: 'POST',
+        body: { index, choice, ...(set && { set }) },
+      }),
       invalidatesTags: ['Knowledge'],
     }),
     getKnowledgeMap: builder.query<ApiResponse<KnowledgeMap>, void>({

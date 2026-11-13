@@ -21,7 +21,7 @@ router.post('/ask', verifiedOnly, askRules, validate, aiController.ask);
 router.post(
   '/notes/:id/study/:kind',
   idParamRules,
-  param('kind').isIn(['quiz', 'flashcards']).withMessage('Unknown study tool.'),
+  param('kind').isIn(['quiz', 'flashcards', 'topic-quiz']).withMessage('Unknown study tool.'),
   validate,
   verifiedOnly,
   aiController.getStudySet
@@ -31,8 +31,9 @@ router.post(
 router.post(
   '/notes/:id/quiz/answers',
   idParamRules,
-  body('index').isInt({ min: 0, max: 50 }),
+  body('index').isInt({ min: 0, max: 500 }),
   body('choice').isInt({ min: 0, max: 10 }),
+  body('set').optional().isIn(['quiz', 'topic-quiz']),
   validate,
   verifiedOnly,
   aiController.answerQuiz

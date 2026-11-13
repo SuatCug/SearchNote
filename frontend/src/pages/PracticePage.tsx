@@ -226,7 +226,7 @@ const scoreClass = (ratio: number) =>
 // Tek satır: ders kodu, başlık, kısa bilgi; sağda skor ve Quiz / Flashcards (telefonda altta, iki eşit düğme).
 function NoteRow({ note, aiEnabled, onOpen }: { note: PracticeNote; aiEnabled: boolean; onOpen: OpenStudy }) {
   const preparing = note.status !== 'ready';
-  const canOpen = (kind: StudyKind) => !preparing && (aiEnabled || note.ready[kind]);
+  const canOpen = (kind: keyof PracticeNote['ready']) => !preparing && (aiEnabled || note.ready[kind]);
   const { practice } = note;
   const meta = [
     note.author?.fullName,
