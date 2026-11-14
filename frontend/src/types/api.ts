@@ -103,7 +103,8 @@ export interface ProfileData {
 // --- Notlar ---
 
 export type FileType = 'pdf' | 'docx' | 'image' | 'archive';
-export type NoteVisibility = 'public' | 'followers';
+// private: Quizzes & flashcards sayfasından yüklenen, sadece yükleyenin gördüğü çalışma dosyası.
+export type NoteVisibility = 'public' | 'followers' | 'private';
 export type NoteSort = 'newest' | 'popular' | 'downloads' | 'oldest';
 
 interface NoteBase {
@@ -191,6 +192,8 @@ export interface AskResult {
   sources: ContentSource[];
   answer: AnswerSegment[] | null;
   answerError?: string;
+  // Bulunan sayfalar soruyu cevaplamıyor (yapay zekâ kararı): sources boş gelir.
+  notCovered?: boolean;
   aiEnabled: boolean;
 }
 
@@ -202,6 +205,9 @@ export interface AskParams {
 
 export interface QuizQuestion {
   question: string;
+  // note: notta olan soru (çıkmış soru / alıştırma); similar: notta bulunan bir soruya benzer yeni soru;
+  // concept: notun açıklamalarından. Eski setlerde yok.
+  origin?: 'note' | 'similar' | 'concept';
   options: string[];
   answerIndex: number;
   explanation: string;
@@ -217,11 +223,12 @@ export interface Flashcard {
 }
 
 // topic-quiz: notun konularından, notla sınırlı olmayan sorular (sayfa yok).
-export type StudyKind = 'quiz' | 'flashcards' | 'topic-quiz';
+// quiz: yapay zekânın yeni soruları; note-quiz: notta zaten olan sorular (soru yoksa items boş gelir).
+export type StudyKind = 'quiz' | 'note-quiz' | 'flashcards' | 'topic-quiz';
 
 export type StudySet =
   // start: konu pratiğinde turun ilk sorusunun sırası (cevap kaydında soru sırasına eklenir).
-  | { kind: 'quiz' | 'topic-quiz'; items: QuizQuestion[]; start?: number; createdAt?: ISODate; mock?: boolean }
+  | { kind: 'quiz' | 'note-quiz' | 'topic-quiz'; items: QuizQuestion[]; start?: number; createdAt?: ISODate; mock?: boolean }
   | { kind: 'flashcards'; items: Flashcard[]; createdAt?: ISODate; mock?: boolean };
 
 // --- Kişisel bilgi haritası ---
@@ -254,7 +261,7 @@ export interface KnowledgeFocus {
 }
 
 // Pratik listesi: quiz / flashcard çalışılabilecek notlar.
-export type PracticeSource = 'practiced' | 'saved' | 'mine' | 'search';
+export type PracticeSource = 'practiced' | 'saved' | 'mine' | 'uploaded' | 'search';
 
 export interface PracticeNote {
   _id: ID;
@@ -266,6 +273,9 @@ export interface PracticeNote {
   status: NoteAiStatus;
   pages: number | null;
   sources: PracticeSource[];
+  // Kendi yüklediği kişisel dosya (sadece kendisi görür, buradan silinebilir).
+  isPrivate?: boolean;
+  createdAt?: string;
   practice: { answered: number; correct: number; lastAt: string } | null;
   // Daha önce üretilmiş setler anında açılır.
   ready: { quiz: boolean; flashcards: boolean };

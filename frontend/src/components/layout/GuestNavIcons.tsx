@@ -55,13 +55,38 @@ export function GroupsIcon() {
   );
 }
 
-// Telefon
-export function AppIcon() {
+// Üstünde yıldız olan quiz kartı: AI ile quiz / flashcard çalışma
+export function PracticeIcon() {
   return (
     <Icon>
       <path
         fillRule="evenodd"
-        d="M8 1h8a2.5 2.5 0 0 1 2.5 2.5v17A2.5 2.5 0 0 1 16 23H8a2.5 2.5 0 0 1-2.5-2.5v-17A2.5 2.5 0 0 1 8 1Zm2 18.5v1.5h4v-1.5h-4Z"
+        d="M5 4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm1.3 5.6 1.4-1.4 1 1 2.3-2.3 1.4 1.4-3.7 3.7-2.4-2.4Zm0 6 1.4-1.4 1 1 2.3-2.3 1.4 1.4-3.7 3.7-2.4-2.4Z"
+      />
+      <path d="M20 1l.9 2.1L23 4l-2.1.9L20 7l-.9-2.1L17 4l2.1-.9L20 1Z" />
+    </Icon>
+  );
+}
+
+// Birbirine bağlı düğümler: konuların bilgi haritası
+export function KnowledgeIcon() {
+  return (
+    <Icon>
+      <circle cx="12" cy="4.5" r="3.5" />
+      <circle cx="4.5" cy="18.5" r="3.5" />
+      <circle cx="19.5" cy="18.5" r="3.5" />
+      <path d="M11 7.5h2v4.2l5.6 4.4-1.2 1.6L12 13.4l-5.4 4.3-1.2-1.6 5.6-4.4V7.5Z" />
+    </Icon>
+  );
+}
+
+// İçinde soru işareti olan konuşma balonu: notların içinde soru sorma (Ask)
+export function AskIcon() {
+  return (
+    <Icon>
+      <path
+        fillRule="evenodd"
+        d="M12 2C6.5 2 2 5.9 2 10.7c0 2.6 1.3 4.9 3.4 6.5L4.5 22l5-2.6c.8.2 1.6.3 2.5.3 5.5 0 10-3.9 10-8.9S17.5 2 12 2Zm-.1 4.3c-1.6 0-2.8.9-3.1 2.4l1.8.4c.1-.6.6-1 1.3-1 .7 0 1.2.4 1.2 1 0 .5-.3.8-1 1.2-.9.5-1.3 1.1-1.3 2.1v.4h1.8v-.3c0-.4.2-.6.8-1 .9-.5 1.6-1.2 1.6-2.4 0-1.7-1.3-2.8-3.1-2.8Zm-1.2 8.2a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 0 0-2.4 0Z"
       />
     </Icon>
   );

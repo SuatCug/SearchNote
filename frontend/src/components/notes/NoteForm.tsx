@@ -72,7 +72,9 @@ export default function NoteForm({
   }));
   // Seçili kitle: grup seçiliyse "group" (grup henüz seçilmemiş olabilir), değilse notun görünürlüğü.
   const [groupMode, setGroupMode] = useState(Boolean(initialValues?.group));
-  const audience: Audience = groupMode ? 'group' : values.visibility || 'public';
+  // Kişisel çalışma dosyasının (private) görünürlüğü değiştirilemez; seçici gösterilmez.
+  const isPrivateFile = values.visibility === 'private';
+  const audience: Audience = groupMode ? 'group' : values.visibility === 'followers' ? 'followers' : 'public';
   const [file, setFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [dragging, setDragging] = useState(false);
@@ -250,7 +252,9 @@ export default function NoteForm({
 
       <fieldset>
         <legend className="form-label">Who can see this note?</legend>
-        {!allowVisibility ? (
+        {isPrivateFile ? (
+          <p className="text-sm text-gray-500">Only you (uploaded for your own quizzes).</p>
+        ) : !allowVisibility ? (
           <p className="text-sm text-gray-500">Shared with a study group (this can&apos;t be changed).</p>
         ) : (
           <div className="space-y-2.5" role="radiogroup">

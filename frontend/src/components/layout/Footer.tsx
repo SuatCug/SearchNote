@@ -8,13 +8,13 @@ import { REQUIRE_EDU_EMAIL, SOCIAL_LINKS } from '@/lib/constants';
 
 const YEAR = new Date().getFullYear();
 
-// Platform sütunu oturuma göre değişir: ziyaretçi notları görmediği için karşılama sayfasının bölümlerine gider
-// (adlar bölüm başlıklarıyla aynı). /upload ziyaretçiyi girişe yollar, girişten sonra yükleme sayfasına döner.
+// Platform sütunu oturuma göre değişir. Ziyaretçi notları gezebilir / arayabilir;
+// /upload ziyaretçiyi girişe yollar, girişten sonra yükleme sayfasına döner.
 const PLATFORM_LINKS = {
   guest: [
-    { to: '/#features', label: 'Find Notes' },
-    { to: '/#profiles', label: 'Student Profiles' },
-    { to: '/#community', label: 'Study Groups' },
+    { to: '/?all=1', label: 'Explore Notes' },
+    { to: '/?all=1&sort=popular', label: 'Popular Notes' },
+    { to: '/groups', label: 'Study Groups' },
     { to: '/upload', label: 'Share Your Notes' },
     { to: '/register', label: 'Sign Up' },
     { to: '/login', label: 'Log In' },
@@ -28,7 +28,16 @@ const PLATFORM_LINKS = {
   ],
 };
 
+// AI ile çalışma araçları (giriş gerektirir: ziyaretçi giriş sayfasına gider, girişten sonra o sayfa açılır).
 const COLUMNS = [
+  {
+    title: 'Study with AI',
+    links: [
+      { to: '/ask', label: 'Ask your notes' },
+      { to: '/practice', label: 'AI Practice' },
+      { to: '/knowledge', label: 'Knowledge Map' },
+    ],
+  },
   {
     title: 'Help',
     links: [
@@ -106,7 +115,7 @@ export default function Footer({ flush = false }: { flush?: boolean }) {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-4">
             {[{ title: 'Platform', links: PLATFORM_LINKS[token ? 'member' : 'guest'] }, ...COLUMNS].map((col) => (
               <nav key={col.title} aria-label={col.title}>
                 <h2 className="text-sm font-semibold text-white">{col.title}</h2>

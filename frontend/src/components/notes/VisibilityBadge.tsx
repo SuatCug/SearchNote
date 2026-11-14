@@ -1,8 +1,19 @@
-import { UserCheck } from 'lucide-react';
+import { Lock, UserCheck } from 'lucide-react';
 import type { NoteVisibility } from '@/types/api';
 
-// "Sadece takipçiler" notlarında gösterilen rozet; herkese açık notlarda hiçbir şey göstermez.
+// "Sadece takipçiler" ve kişisel (sadece sen) notlarda gösterilen rozet; herkese açık notlarda hiçbir şey göstermez.
 export default function VisibilityBadge({ visibility, className = '' }: { visibility?: NoteVisibility; className?: string }) {
+  if (visibility === 'private') {
+    return (
+      <span
+        title="Uploaded for your own quizzes. Only you can see this file."
+        className={`inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-700 ${className}`}
+      >
+        <Lock size={13} />
+        Only you
+      </span>
+    );
+  }
   if (visibility !== 'followers') return null;
   return (
     <span

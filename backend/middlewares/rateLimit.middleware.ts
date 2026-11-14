@@ -36,5 +36,15 @@ const rateLimitWith =
 const rateLimit = ({ windowMs, max, message }: { windowMs: number; max: number; message: string }): RequestHandler =>
   rateLimitWith(createLimiter({ windowMs, max }), message);
 
-export { createLimiter, rateLimitWith };
+// Sadece giriş yapmamış ziyaretçileri IP başına sınırlar (optionalAuth'tan sonra kullanılmalı).
+// Herkese açık listeleme / arama / önizlemenin toplu veri çekmede kullanılmasını zorlaştırır; üyeler etkilenmez.
+const guestRateLimit = ({ windowMs, max }: { windowMs: number; max: number }): RequestHandler => {
+  const allow = createLimiter({ windowMs, max });
+  return (req, _res, next) =>
+    req.user || allow(req.ip || '')
+      ? next()
+      : next(new ApiError(429, 'Too many requests. Please wait a moment, or log in to keep browsing.'));
+};
+
+export { createLimiter, rateLimitWith, guestRateLimit };
 export default rateLimit;

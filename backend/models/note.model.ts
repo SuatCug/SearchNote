@@ -27,7 +27,9 @@ const noteSchema = new mongoose.Schema(
     // Not bir gruba paylaşıldıysa (opsiyonel). Grup notları da herkese açıktır; grup sayfasında listelenir.
     group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', index: true },
     // Görünürlük (grupsuz notlar için): herkes ya da sadece yazarı takip edenler. Bkz. services/note.service.js
-    visibility: { type: String, enum: ['public', 'followers'], default: 'public' },
+    // private: Quizzes & flashcards sayfasından yüklenen kişisel çalışma dosyası; sadece yazarı görür ve hiçbir
+    // listede (akış, profil, arama, sayaçlar) çıkmaz.
+    visibility: { type: String, enum: ['public', 'followers', 'private'], default: 'public' },
     // Depolama katmanındaki konum (services/storage.service.js). İstemciye gönderilmez;
     // dosyaya sadece /api/notes/:id/download üzerinden erişilir.
     fileUrl: { type: String, required: true, select: false },

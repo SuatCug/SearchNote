@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import * as aiController from '../controllers/ai.controller.ts';
+import { createStudyFile } from '../controllers/note.controller.ts';
+import { uploadNoteFile } from '../middlewares/upload.middleware.ts';
 import authenticate from '../middlewares/auth.middleware.ts';
 import requireVerified from '../middlewares/verified.middleware.ts';
 import validate from '../middlewares/validate.middleware.ts';
@@ -21,7 +23,7 @@ router.post('/ask', verifiedOnly, askRules, validate, aiController.ask);
 router.post(
   '/notes/:id/study/:kind',
   idParamRules,
-  param('kind').isIn(['quiz', 'flashcards', 'topic-quiz']).withMessage('Unknown study tool.'),
+  param('kind').isIn(['quiz', 'note-quiz', 'flashcards', 'topic-quiz']).withMessage('Unknown study tool.'),
   validate,
   verifiedOnly,
   aiController.getStudySet
@@ -33,7 +35,7 @@ router.post(
   idParamRules,
   body('index').isInt({ min: 0, max: 500 }),
   body('choice').isInt({ min: 0, max: 10 }),
-  body('set').optional().isIn(['quiz', 'topic-quiz']),
+  body('set').optional().isIn(['quiz', 'note-quiz', 'topic-quiz']),
   validate,
   verifiedOnly,
   aiController.answerQuiz
@@ -45,6 +47,18 @@ router.get(
   validate,
   verifiedOnly,
   aiController.getPracticeList
+);
+
+// Kişisel çalışma dosyası yükleme (multipart/form-data, dosya alanı: "file"): sadece yükleyen görür.
+// Silme: DELETE /api/notes/:id (yazar).
+router.post(
+  '/files',
+  verifiedOnly,
+  uploadNoteFile,
+  body('title').optional().isString().trim().isLength({ max: 150 }).withMessage('Title can be at most 150 characters.'),
+  body('courseCode').optional().isString().trim().isLength({ max: 20 }).withMessage('Course code can be at most 20 characters.'),
+  validate,
+  createStudyFile
 );
 
 export default router;

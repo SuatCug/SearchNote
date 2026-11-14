@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import { UserCheck, UserPlus } from 'lucide-react';
 import { useToggleFollowMutation } from '@/services/usersApi';
@@ -37,6 +37,7 @@ export default function FollowButton({ userId, isFollowing, name, compact = fals
   const token = useAppSelector((state) => state.auth.token);
   const isVerified = useAppSelector((state) => state.auth.user?.isVerified);
   const navigate = useNavigate();
+  const location = useLocation();
   const [toggleFollow, { isLoading }] = useToggleFollowMutation();
   const dialog = useDialog();
 
@@ -50,7 +51,7 @@ export default function FollowButton({ userId, isFollowing, name, compact = fals
   const following = optimistic ?? isFollowing;
 
   const handleClick = async () => {
-    if (!token) return navigate('/login');
+    if (!token) return navigate('/login', { state: { from: location.pathname + location.search } });
     if (isLoading) return;
     if (
       following &&

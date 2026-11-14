@@ -8,11 +8,13 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
+  // Daha uzun pencere (quiz gibi kaydırmadan görülmesi gereken içerik): ekranın %92'sine kadar.
+  tall?: boolean;
 }
 
 // Telefonda alttan açılan sayfa, büyük ekranda ortada pencere (LikesModal ile aynı görünüm).
 // Esc ve arka plana tıklama kapatır; açıkken arkadaki sayfa kaymaz.
-export default function Modal({ title, onClose, children, footer, size = 'md' }: ModalProps) {
+export default function Modal({ title, onClose, children, footer, size = 'md', tall = false }: ModalProps) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
@@ -41,7 +43,7 @@ export default function Modal({ title, onClose, children, footer, size = 'md' }:
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`relative flex max-h-[85vh] sm:max-h-[min(640px,85vh)] w-full ${
+        className={`relative flex ${tall ? 'max-h-[92vh] sm:max-h-[min(860px,92vh)]' : 'max-h-[85vh] sm:max-h-[min(640px,85vh)]'} w-full ${
           size === 'sm' ? 'sm:max-w-sm' : size === 'lg' ? 'sm:max-w-xl' : 'sm:max-w-md'
         } flex-col rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl pb-safe`}
       >

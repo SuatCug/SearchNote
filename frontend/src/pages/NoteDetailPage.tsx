@@ -51,7 +51,7 @@ const buildTags = (note: NoteDetail) =>
 export default function NoteDetailPage() {
   const { id = '' } = useParams();
   // ?page=7: içerik aramasından / quizden gelinen sayfa önizlemede açılır.
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const targetPage = Number(searchParams.get('page')) || undefined;
   const navigate = useNavigate();
   const { token, user } = useAppSelector((state) => state.auth);
@@ -217,7 +217,7 @@ export default function NoteDetailPage() {
           </div>
 
           <div className="mx-5 rounded-lg bg-gray-200/70 p-3 sm:p-4">
-            <NotePreview note={note} token={token} canView={canInteract} page={targetPage} />
+            <NotePreview note={note} token={token} canView={!token || canInteract} page={targetPage} />
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
@@ -358,11 +358,9 @@ export default function NoteDetailPage() {
             )}
           </section>
 
+          {!token && <GuestStudyCard noteId={note._id} />}
           {canInteract && (
-            <StudyTools
-              note={note}
-              onOpenPage={(page) => setSearchParams({ page: String(page) }, { replace: true })}
-            />
+            <StudyTools note={note} />
           )}
 
           <section className="card p-5" aria-labelledby="desc-title">
@@ -375,22 +373,16 @@ export default function NoteDetailPage() {
               <p className="mt-2 text-sm text-gray-400">No description added.</p>
             )}
             <div className="mt-4 flex flex-wrap gap-2">
-              {/* Etiketler aramaya götürür; ziyaretçi arama yapamadığı için onlara düz etiket gösterilir. */}
-              {buildTags(note).map((tag) =>
-                token ? (
-                  <Link
-                    key={tag.label}
-                    to={`/?${new URLSearchParams(tag.params)}`}
-                    className="rounded-md bg-gray-100 px-2.5 py-1 text-sm text-gray-700 hover:bg-navy-50 hover:text-navy-700 transition-colors"
-                  >
-                    {tag.label}
-                  </Link>
-                ) : (
-                  <span key={tag.label} className="rounded-md bg-gray-100 px-2.5 py-1 text-sm text-gray-700">
-                    {tag.label}
-                  </span>
-                )
-              )}
+              {/* Etiketler aramaya götürür (ziyaretçi de arama yapabilir). */}
+              {buildTags(note).map((tag) => (
+                <Link
+                  key={tag.label}
+                  to={`/?${new URLSearchParams(tag.params)}`}
+                  className="rounded-md bg-gray-100 px-2.5 py-1 text-sm text-gray-700 hover:bg-navy-50 hover:text-navy-700 transition-colors"
+                >
+                  {tag.label}
+                </Link>
+              ))}
             </div>
           </section>
         </aside>
@@ -403,6 +395,23 @@ export default function NoteDetailPage() {
       {showLikes && <LikesModal noteId={note._id} onClose={() => setShowLikes(false)} />}
       {showSend && <ForwardSheet item={{ note: { _id: note._id, title: note.title } }} onClose={() => setShowSend(false)} />}
     </PageLayout>
+  );
+}
+
+// Ziyaretçiye "Study this note" yerine: AI quiz / flashcard / not içinde arama giriş gerektirir.
+function GuestStudyCard({ noteId }: { noteId: string }) {
+  return (
+    <section className="card p-5" aria-labelledby="study-title">
+      <h2 id="study-title" className="text-lg font-semibold text-gray-900">
+        Study this note
+      </h2>
+      <p className="mt-2 text-sm leading-relaxed text-gray-600">
+        Turn this note into a practice quiz or flashcards, or search inside it. Log in to use the AI study tools.
+      </p>
+      <Link to="/login" state={{ from: `/notes/${noteId}` }} className="btn-primary mt-4 w-full">
+        Log in to study
+      </Link>
+    </section>
   );
 }
 

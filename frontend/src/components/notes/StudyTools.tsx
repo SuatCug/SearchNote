@@ -8,7 +8,6 @@ import type { NoteDetail, StudyKind } from '@/types/api';
 
 interface StudyToolsProps {
   note: Pick<NoteDetail, '_id' | 'ai' | 'fileType'>;
-  onOpenPage: (page: number) => void;
 }
 
 const STATUS_TEXT: Partial<Record<string, string>> = {
@@ -19,7 +18,7 @@ const STATUS_TEXT: Partial<Record<string, string>> = {
 
 // Not detayında "Study this note": nottan quiz / flashcard ve sadece bu notun içinde arama.
 // Metin yüklemeden sonra arka planda çıkarılır; o sırada kısa bir bekleme mesajı gösterilir.
-export default function StudyTools({ note, onOpenPage }: StudyToolsProps) {
+export default function StudyTools({ note }: StudyToolsProps) {
   const navigate = useNavigate();
   const { data: aiStatus } = useGetAiStatusQuery();
   const [open, setOpen] = useState<StudyKind | null>(null);
@@ -81,7 +80,7 @@ export default function StudyTools({ note, onOpenPage }: StudyToolsProps) {
         </>
       )}
 
-      {open && <StudyModal noteId={note._id} kind={open} onClose={() => setOpen(null)} onOpenPage={onOpenPage} />}
+      {open && <StudyModal noteId={note._id} kind={open} onClose={() => setOpen(null)} />}
     </section>
   );
 }

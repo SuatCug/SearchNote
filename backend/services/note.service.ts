@@ -46,12 +46,14 @@ const cardProjection = (viewerId: string | undefined, savedIds: mongoose.Types.O
 // (Grup silinince notun group alanı kaldırılır ve not genel paylaşıma döner.)
 // Herkese açık notlar: grupsuz ve "sadece takipçiler" olmayanlar (eski kayıtlarda visibility alanı yok = public).
 // Filtre seçenekleri, popüler dersler ve genel sayaçlar sadece bunlardan üretilir.
-const PUBLIC_NOTES_MATCH = { group: null, visibility: { $ne: 'followers' as const } };
+const PUBLIC_NOTES_MATCH = { group: null, visibility: { $nin: ['followers', 'private'] as ('followers' | 'private')[] } };
 
 // İzleyicinin görebileceği grupsuz notlar: herkese açık olanlar + kendi notları + takip ettiklerinin
 // "sadece takipçiler" notları.
+// Kişisel çalışma dosyaları (private) hiçbir listede çıkmaz; sadece Quizzes & flashcards sayfasında listelenir.
 const visibleNotesMatch = (viewerId: string | undefined, following: mongoose.Types.ObjectId[] = []) => ({
   group: null,
+  visibility: { $ne: 'private' },
   $or: [
     { visibility: { $ne: 'followers' } },
     ...(viewerId ? [{ author: { $in: [new mongoose.Types.ObjectId(viewerId), ...following] } }] : []),
@@ -70,6 +72,11 @@ const assertNoteVisible = async (
   viewerId: string | undefined
 ) => {
   const groupId = note.group?._id;
+  // Kişisel çalışma dosyası: sadece yazarı görür.
+  if (note.visibility === 'private') {
+    if (viewerId && note.author?._id?.equals(viewerId)) return;
+    throw new ApiError(404, 'Note not found.');
+  }
   const followersOnly = !groupId && note.visibility === 'followers';
   if (!groupId && !followersOnly) return;
 

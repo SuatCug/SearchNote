@@ -36,7 +36,7 @@ import PracticePage from '@/pages/PracticePage';
 function RequireAuth({ children }: { children: ReactNode }) {
   const token = useAppSelector((state) => state.auth.token);
   const location = useLocation();
-  return token ? children : <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  return token ? children : <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
 }
 
 // Zaten giriş yapmış kullanıcı login/register ekranlarını görmez. Sadece sayfa açıldığı andaki

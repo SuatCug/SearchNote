@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as userController from '../controllers/user.controller.ts';
 import authenticate, { optionalAuth } from '../middlewares/auth.middleware.ts';
+import { guestRateLimit } from '../middlewares/rateLimit.middleware.ts';
 import requireVerified from '../middlewares/verified.middleware.ts';
 import validate from '../middlewares/validate.middleware.ts';
 import { uploadAvatar } from '../middlewares/upload.middleware.ts';
@@ -38,7 +39,8 @@ router.patch(
 );
 
 // Herkese açık profiller (/search, /:id'den önce tanımlanmalı)
-router.get('/search', authenticate, userController.searchUsers);
+// Ziyaretçi kişi araması IP başına dakikada 60 istekle sınırlı.
+router.get('/search', optionalAuth, guestRateLimit({ windowMs: 60 * 1000, max: 60 }), userController.searchUsers);
 router.get('/active', authenticate, userController.getActiveUsers);
 router.get('/suggestions', authenticate, userController.getSuggestions);
 router.get('/:id', idParamRules, validate, optionalAuth, userController.getProfile);

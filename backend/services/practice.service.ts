@@ -15,11 +15,14 @@ const OWN_LIMIT = 30;
 const SEARCH_LIMIT = 20;
 const PRACTICE_STATUSES: ('ready' | 'pending' | 'processing')[] = ['ready', 'pending', 'processing'];
 const SEARCH_FIELDS = ['title', 'courseCode', 'courseName', 'instructorName', 'description'];
-const NOTE_FIELDS = 'title courseCode courseName fileType author group visibility ai.status ai.pages';
+const NOTE_FIELDS = 'title courseCode courseName fileType author group visibility ai.status ai.pages createdAt';
 const AUTHOR_FIELDS = 'fullName avatarUrl';
 
-type Source = 'practiced' | 'saved' | 'mine' | 'search';
+type Source = 'practiced' | 'saved' | 'mine' | 'uploaded' | 'search';
 type Stats = { _id: mongoose.Types.ObjectId; answered: number; correct: number; lastAt: Date };
+
+// Listelenen notlar: metni okunan / okunmakta olanlar. Kişisel dosyalar okunamasa da listelenir (silinebilsin).
+const LISTED_MATCH = { $or: [{ 'ai.status': { $in: PRACTICE_STATUSES } }, { visibility: 'private' as const }] };
 
 const mockMatch = () => (isMock() ? {} : { mock: false });
 
@@ -51,12 +54,13 @@ const describeNotes = async (userId: string, order: string[], sources: Map<strin
   const orderIds = order.map((id) => new mongoose.Types.ObjectId(id));
 
   const [notes, sets] = await Promise.all([
-    Note.find({ _id: { $in: orderIds }, 'ai.status': { $in: PRACTICE_STATUSES } })
+    Note.find({ _id: { $in: orderIds }, ...LISTED_MATCH })
       .select(NOTE_FIELDS)
       .populate('author', AUTHOR_FIELDS)
       .lean(),
     // Daha önce üretilmiş setler anında açılır (bekleme ve hak harcama yok).
-    StudySet.find({ note: { $in: orderIds }, ...(isMock() ? {} : { model: { $ne: 'mock' } }) })
+    // Boş 'note-quiz' (notta soru bulunamadı) hazır set sayılmaz.
+    StudySet.find({ note: { $in: orderIds }, 'items.0': { $exists: true }, ...(isMock() ? {} : { model: { $ne: 'mock' } }) })
       .select('note kind')
       .lean(),
   ]);
@@ -92,10 +96,12 @@ const describeNotes = async (userId: string, order: string[], sources: Map<strin
         fileType: note.fileType,
         author: author ? { _id: author._id, fullName: author.fullName, avatarUrl: author.avatarUrl } : null,
         status: note.ai?.status ?? 'pending',
+        isPrivate: note.visibility === 'private',
+        createdAt: note.createdAt,
         pages: note.ai?.pages ?? null,
         sources: [...sources.get(id)!],
         practice: stat ? { answered: stat.answered, correct: stat.correct, lastAt: stat.lastAt } : null,
-        ready: { quiz: setKinds.get(id)?.has('quiz') ?? false, flashcards: setKinds.get(id)?.has('flashcards') ?? false },
+        ready: { quiz: Boolean(setKinds.get(id)?.has('quiz') || setKinds.get(id)?.has('note-quiz')), flashcards: setKinds.get(id)?.has('flashcards') ?? false },
       };
     });
 };
@@ -104,10 +110,10 @@ const buildPracticeList = async (userId: string) => {
   const [practiced, me, ownNotes] = await Promise.all([
     practiceStats(userId),
     User.findById(userId).select('savedNotes').lean(),
-    Note.find({ author: new mongoose.Types.ObjectId(userId), 'ai.status': { $in: PRACTICE_STATUSES } })
+    Note.find({ author: new mongoose.Types.ObjectId(userId), ...LISTED_MATCH })
       .sort({ createdAt: -1 })
       .limit(OWN_LIMIT)
-      .select('_id')
+      .select('_id visibility')
       .lean(),
   ]);
 
@@ -127,7 +133,9 @@ const buildPracticeList = async (userId: string) => {
   };
   practiced.forEach((p) => add(p._id, 'practiced'));
   savedIds.forEach((id) => add(id, 'saved'));
-  ownNotes.forEach((n) => add(n._id, 'mine'));
+  // Kişisel dosyalar ayrı bölümde listelenir (en yeni önce), sonra diğer kaynaklar.
+  ownNotes.filter((n) => n.visibility === 'private').forEach((n) => add(n._id, 'uploaded'));
+  ownNotes.filter((n) => n.visibility !== 'private').forEach((n) => add(n._id, 'mine'));
 
   return { notes: await describeNotes(userId, order, sources, practiced) };
 };
@@ -138,7 +146,16 @@ const searchPracticeNotes = async (userId: string, q: string) => {
   if (!words) return { notes: [] };
   const me = await User.findById(userId).select('following').lean();
   const found = await Note.aggregate<{ _id: mongoose.Types.ObjectId }>([
-    { $match: { $and: [words, visibleNotesMatch(userId, me?.following ?? []), { 'ai.status': 'ready' }] } },
+    // Görülebilen notlar + öğrencinin kendi yüklediği kişisel dosyalar.
+    {
+      $match: {
+        $and: [
+          words,
+          { $or: [visibleNotesMatch(userId, me?.following ?? []), { author: new mongoose.Types.ObjectId(userId), visibility: 'private' }] },
+          { 'ai.status': 'ready' },
+        ],
+      },
+    },
     { $sort: { createdAt: -1 } },
     { $limit: SEARCH_LIMIT },
     { $project: { _id: 1 } },

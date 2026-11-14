@@ -18,7 +18,7 @@ export const aiApi = baseApi.injectEndpoints({
     // Quiz cevabı bilgi haritası için kaydedilir; harita bir sonraki açılışta tazelenir.
     recordQuizAnswer: builder.mutation<
       ApiResponse<{ correct: boolean; answerIndex: number }>,
-      { noteId: string; index: number; choice: number; set?: 'quiz' | 'topic-quiz' }
+      { noteId: string; index: number; choice: number; set?: 'quiz' | 'note-quiz' | 'topic-quiz' }
     >({
       query: ({ noteId, index, choice, set }) => ({
         url: `/ai/notes/${noteId}/quiz/answers`,
@@ -31,6 +31,11 @@ export const aiApi = baseApi.injectEndpoints({
       query: () => '/ai/knowledge',
       providesTags: ['Knowledge'],
     }),
+    // Kişisel çalışma dosyası yükleme (FormData: file, title, courseCode). Liste tazelenir, dosya orada "okunuyor" görünür.
+    uploadStudyFile: builder.mutation<ApiResponse<{ note: { _id: string; title: string } }>, FormData>({
+      query: (body) => ({ url: '/ai/files', method: 'POST', body }),
+      invalidatesTags: ['Knowledge'],
+    }),
     // Quiz cevabı kaydedilince ('Knowledge') skorlar da tazelenir.
     // q verilirse görülebilen tüm notlar arasında ders / başlık araması.
     getPracticeList: builder.query<ApiResponse<{ notes: PracticeNote[] }>, { q?: string } | void>({
@@ -40,5 +45,5 @@ export const aiApi = baseApi.injectEndpoints({
   }),
 });
 
-export const { useGetAiStatusQuery, useAskNotesQuery, useGetStudySetQuery, useRecordQuizAnswerMutation, useGetKnowledgeMapQuery, useGetPracticeListQuery } =
+export const { useGetAiStatusQuery, useAskNotesQuery, useGetStudySetQuery, useRecordQuizAnswerMutation, useGetKnowledgeMapQuery, useGetPracticeListQuery, useUploadStudyFileMutation } =
   aiApi;

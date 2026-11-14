@@ -214,6 +214,8 @@ const terms: LegalDocument = {
 
 const privacy: LegalDocument = {
   title: 'Privacy Policy',
+  // Ziyaretçi kişi araması açıldığı için (2026-11-14) sadece bu belgenin tarihi güncellendi.
+  updated: '2026-11-14',
   intro:
     'This page explains in plain words what SearchNote knows about you, why, and who can see what. The formal information required by the Turkish Personal Data Protection Law is in the KVKK Notice.',
   sections: [
@@ -299,7 +301,7 @@ const privacy: LegalDocument = {
           'Your name, school, department, bio and profile photo are visible to anyone who opens your profile, including visitors who are not signed in.',
           'Your followers and the people you follow are listed on your profile.',
           'Each note is visible only to the audience you chose: everyone, your followers, or the members of one study group. Comments and likes on a note are visible to everyone who can see that note.',
-          'Signed-in users can find you by name in search.',
+          'Anyone, including visitors who are not signed in, can find you by name in search.',
           'People who follow you and whom you follow back can see when you are online.',
           'In a direct message, the other person can see when you were last active and whether you read their messages.',
           'In a private study group, only members can see who else is in the group.',

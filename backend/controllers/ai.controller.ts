@@ -9,6 +9,7 @@ import {
   consumeQuota,
   generateFlashcards,
   generateQuiz,
+  generateNoteQuiz,
   generateTopicQuiz,
   isAiEnabled,
   isMock,
@@ -25,10 +26,13 @@ import { buildPracticeList, searchPracticeNotes } from '../services/practice.ser
 
 // Yapay zekâ ile çalışma araçları: notların içinde arama + soru cevaplama, quiz ve flashcard.
 
-const STUDY_KINDS = ['quiz', 'flashcards', 'topic-quiz'] as const;
+const STUDY_KINDS = ['quiz', 'note-quiz', 'flashcards', 'topic-quiz'] as const;
 type StudyKind = (typeof STUDY_KINDS)[number];
 
 const MIN_STUDY_TEXT_CHARS = 200;
+// "New questions" üretim yönteminin sürümü. 3: hepsi yapay zekânın kendi sorusu (notun soruları ayrı modda,
+// note-quiz). Daha eski sürümle üretilmiş setler açılınca yeniden üretilir.
+const QUIZ_VERSION = 3;
 // Cevap üretirken modele verilen en fazla kaynak parça sayısı.
 const ANSWER_SOURCES = 6;
 
@@ -74,22 +78,38 @@ const ask = asyncHandler<AuthedRequest>(async (req, res) => {
 
   const data: {
     sources: Omit<ContentHit, 'text'>[];
-    answer: Awaited<ReturnType<typeof answerFromSources>> | null;
+    answer: Awaited<ReturnType<typeof answerFromSources>>;
     answerError?: string;
+    // Yapay zekâ bulunan sayfaların soruyu cevaplamadığına karar verdi: sayfalar gösterilmez.
+    notCovered?: boolean;
     aiEnabled: boolean;
   } = { sources: hits.map(toSource), answer: null, aiEnabled: isAiEnabled() };
 
   if (hits.length && isAiEnabled() && req.body.answer !== false) {
     try {
       await consumeQuota(req.user.id, 'ask');
+      const given = hits.slice(0, ANSWER_SOURCES);
+      let answer;
       try {
-        data.answer = await answerFromSources(
+        answer = await answerFromSources(
           question,
-          hits.slice(0, ANSWER_SOURCES).map((h) => ({ title: sourceTitle(h), text: h.text }))
+          given.map((h) => ({ title: sourceTitle(h), text: h.text }))
         );
       } catch (error) {
         await refundQuota(req.user.id, 'ask');
         throw error;
+      }
+      if (!answer) {
+        // Kelime eşleşmesi tesadüfi (ör. "best pizza recipe" -> "best"): cevap da sayfa da gösterilmez, hak geri verilir.
+        await refundQuota(req.user.id, 'ask');
+        data.sources = [];
+        data.notCovered = true;
+      } else {
+        // Sadece cevabın dayandığı sayfalar listelenir; numaralar yeni listeye göre düzeltilir.
+        const cited = [...new Set(answer.flatMap((s) => s.sources))].sort((a, b) => a - b);
+        const newIndex = new Map(cited.map((old, i) => [old, i]));
+        data.sources = cited.map((i) => toSource(given[i]));
+        data.answer = answer.map((s) => ({ ...s, sources: s.sources.map((i) => newIndex.get(i)!) }));
       }
     } catch (error) {
       console.error('AI answer error:', (error as Error).message);
@@ -166,11 +186,17 @@ const nextTopicRound = (noteId: string, title: string, course: string | undefine
     }
 
     if (!isAiEnabled()) throw new ApiError(503, 'AI features are not configured on this server.');
-    const base = await StudySet.findOne({ note: noteId, kind: 'quiz', ...(isMock() ? {} : { model: { $ne: 'mock' } }) }).lean();
-    const noteQuestions = (base?.items ?? []) as QuizItem[];
+    // Konular notun iki quiz'inden de (yeni sorular / notun soruları) gelebilir; hangisi çözüldüyse.
+    const bases = await StudySet.find({
+      note: noteId,
+      kind: { $in: ['quiz', 'note-quiz'] },
+      ...(isMock() ? {} : { model: { $ne: 'mock' } }),
+    }).lean();
+    const noteQuestions = bases.flatMap((b) => (b.items ?? []) as QuizItem[]);
+    const baseTopics = bases.flatMap((b) => (b.topics ?? []) as TopicInfo[]);
     const topics = [
       ...new Set(
-        [...((base?.topics ?? []) as TopicInfo[]).map((t) => t.name), ...noteQuestions.map((q) => q.topic)]
+        [...baseTopics.map((t) => t.name), ...noteQuestions.map((q) => q.topic)]
           .map((name) => name?.trim())
           .filter(Boolean)
       ),
@@ -204,8 +230,8 @@ const generateSet = async (noteId: string, title: string, course: string | undef
   try {
     let items: unknown[];
     let topics: unknown[] | undefined;
-    if (kind === 'quiz') {
-      const quiz = await generateQuiz(title, text);
+    if (kind === 'quiz' || kind === 'note-quiz') {
+      const quiz = kind === 'quiz' ? await generateQuiz(title, text) : await generateNoteQuiz(title, text);
       items = quiz.questions;
       topics = quiz.topics;
       // Bilgi haritasının konu grafiği (konular ve ön koşulları).
@@ -213,10 +239,21 @@ const generateSet = async (noteId: string, title: string, course: string | undef
     } else {
       items = await generateFlashcards(title, text);
     }
-    if (!items.length) throw new ApiError(502, 'The AI could not create study material. Please try again.');
+    if (!items.length) {
+      // Notta hiç soru yok: boş set saklanır (her açılışta tekrar aranmasın), hak iade edilir.
+      if (kind === 'note-quiz') {
+        await refundQuota(userId, 'study');
+        return await StudySet.findOneAndUpdate(
+          { note: noteId, kind },
+          { $setOnInsert: { items: [], topics, model: AI_MODEL, version: 1 } },
+          { upsert: true, returnDocument: 'after' }
+        ).lean();
+      }
+      throw new ApiError(502, 'The AI could not create study material. Please try again.');
+    }
     return await StudySet.findOneAndUpdate(
       { note: noteId, kind },
-      { $setOnInsert: { items, topics, model: AI_MODEL } },
+      { $setOnInsert: { items, topics, model: AI_MODEL, version: kind === 'quiz' ? QUIZ_VERSION : 1 } },
       { upsert: true, returnDocument: 'after' }
     ).lean();
   } catch (error) {
@@ -256,6 +293,15 @@ const getStudySet = asyncHandler<AuthedRequest>(async (req, res) => {
     await StudySet.deleteOne({ _id: set._id });
     set = null;
   }
+  // "New questions" eski yöntemle (v1 / v2: notun soruları da karışıktı) üretildiyse yeniden üretilir.
+  // O sete ait cevaplar da silinir: soru sırasına bağlı oldukları için yeni sorularla yanlış eşleşirlerdi.
+  if (kind === 'quiz' && set && ((set as { version?: number }).version ?? 1) < QUIZ_VERSION) {
+    await Promise.all([
+      StudySet.deleteOne({ _id: set._id }),
+      QuizAttempt.deleteMany({ note: note._id, questionIndex: { $lt: TOPIC_QUIZ_INDEX_OFFSET } }),
+    ]);
+    set = null;
+  }
   if (!set) {
     if (!isAiEnabled()) throw new ApiError(503, 'AI features are not configured on this server.');
     if (note.ai?.status !== 'ready') {
@@ -290,7 +336,7 @@ const answerQuiz = asyncHandler<AuthedRequest>(async (req, res) => {
     noteId: req.params.id,
     index: Number(req.body.index),
     choice: Number(req.body.choice),
-    kind: req.body.set === 'topic-quiz' ? 'topic-quiz' : 'quiz',
+    kind: req.body.set === 'topic-quiz' || req.body.set === 'note-quiz' ? req.body.set : 'quiz',
   });
   res.json({ success: true, data });
 });

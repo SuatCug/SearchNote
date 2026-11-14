@@ -1,11 +1,14 @@
-import { useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Layers, ListChecks, Loader2, Search, Sparkles, X } from 'lucide-react';
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { AlertCircle, ArrowLeft, Layers, ListChecks, Loader2, Lock, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import Spinner from '@/components/common/Spinner';
 import Alert from '@/components/common/Alert';
 import StudyModal from '@/components/notes/StudyModal';
 import PracticeIllustration from '@/components/ai/PracticeIllustration';
+import UploadStudyFileModal, { STUDY_FILE_ACCEPT } from '@/components/ai/UploadStudyFileModal';
+import { useDialog } from '@/components/common/DialogProvider';
+import { useDeleteNoteMutation } from '@/services/notesApi';
 import { useGetAiStatusQuery, useGetPracticeListQuery } from '@/services/aiApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import { pluralize, timeAgo } from '@/lib/format';
@@ -48,10 +51,28 @@ export default function PracticePage() {
   const notes = list.data?.data.notes ?? [];
   // Sayfaları okunmakta olan not varsa liste 5 saniyede bir tazelenir; okuma bitince Quiz / Flashcards açılır
   // (aynı önbellek kaydı, not detayındaki "Study this note" ile aynı yöntem).
-  const preparing = notes.some((n) => n.status !== 'ready');
+  const preparing = notes.some((n) => isReading(n.status));
   useGetPracticeListQuery(undefined, { pollingInterval: 5000, skip: searching || !preparing, skipPollingIfUnfocused: true });
+  const uploaded = notes.filter((n) => n.sources[0] === 'uploaded');
   const practiced = notes.filter((n) => n.sources[0] === 'practiced');
-  const yours = notes.filter((n) => n.sources[0] !== 'practiced');
+  const yours = notes.filter((n) => n.sources[0] !== 'practiced' && n.sources[0] !== 'uploaded');
+
+  // Kişisel dosya: önce dosya seçilir, sonra başlık / ders kodu penceresi açılır.
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
+  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) setPickedFile(file);
+  };
+  const uploadButton = (
+    <>
+      <button type="button" onClick={() => fileInput.current?.click()} className="btn-primary">
+        <Upload size={16} /> Upload your own file
+      </button>
+      <input ref={fileInput} type="file" accept={STUDY_FILE_ACCEPT} onChange={onPickFile} className="hidden" />
+    </>
+  );
 
   // Hızlı seçim: öğrencinin notlarındaki ders kodları (en son çalışılan önce).
   const courses = [...new Set(notes.map((n) => n.courseCode).filter(Boolean))].slice(0, MAX_COURSE_CHIPS) as string[];
@@ -93,7 +114,6 @@ export default function PracticePage() {
 
   // Quiz / flashcard penceresi sayfa düzeyinde tutulur: cevap kaydedilince liste tazelenir ve not başka bölüme
   // geçebilir (ör. "Pick up where you left off"); pencere satırın içinde olsaydı satırla birlikte kapanırdı.
-  const navigate = useNavigate();
   const [study, setStudy] = useState<{ noteId: string; kind: StudyKind } | null>(null);
   const openStudy = (noteId: string, kind: StudyKind) => setStudy({ noteId, kind });
   const studyModal = study && (
@@ -101,7 +121,6 @@ export default function PracticePage() {
       noteId={study.noteId}
       kind={study.kind}
       onClose={() => setStudy(null)}
-      onOpenPage={(page) => navigate(`/notes/${study.noteId}?page=${page}`)}
     />
   );
 
@@ -173,6 +192,10 @@ export default function PracticePage() {
               ))}
             </div>
           )}
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            {uploadButton}
+            <span className="text-xs text-gray-500">PDF, Word or a photo of your notes · only you can see it</span>
+          </div>
           {aiOffNotice}
           <p className="mt-6 flex items-start gap-2 text-xs text-gray-500">
             <Sparkles size={14} className="mt-px shrink-0 text-navy-400" />
@@ -195,15 +218,29 @@ export default function PracticePage() {
           <Alert>{getErrorMessage(list.error)}</Alert>
         ) : (
           <>
+            {uploaded.length > 0 && <NoteList title="Your uploaded files" notes={uploaded} aiEnabled={aiEnabled} onOpen={openStudy} />}
             {practiced.length > 0 && <NoteList title="Pick up where you left off" notes={practiced} aiEnabled={aiEnabled} onOpen={openStudy} />}
             {yours.length > 0 && <NoteList title="Your notes and saved notes" notes={yours} aiEnabled={aiEnabled} onOpen={openStudy} />}
           </>
         )}
       </div>
       {studyModal}
+      {pickedFile && (
+        <UploadStudyFileModal
+          file={pickedFile}
+          onClose={() => setPickedFile(null)}
+          onUploaded={() => {
+            setPickedFile(null);
+            list.refetch();
+          }}
+        />
+      )}
     </PageLayout>
   );
 }
+
+// Sayfaları henüz okunmakta (sırada / işleniyor).
+const isReading = (status: PracticeNote['status']) => status === 'pending' || status === 'processing';
 
 type OpenStudy = (noteId: string, kind: StudyKind) => void;
 
@@ -225,11 +262,13 @@ const scoreClass = (ratio: number) =>
 
 // Tek satır: ders kodu, başlık, kısa bilgi; sağda skor ve Quiz / Flashcards (telefonda altta, iki eşit düğme).
 function NoteRow({ note, aiEnabled, onOpen }: { note: PracticeNote; aiEnabled: boolean; onOpen: OpenStudy }) {
-  const preparing = note.status !== 'ready';
+  const preparing = isReading(note.status);
+  // Kişisel dosyanın metni okunamadıysa (boş / taranamayan / hata) quiz açılamaz; dosya silinebilir.
+  const unreadable = !preparing && note.status !== 'ready';
   const canOpen = (kind: keyof PracticeNote['ready']) => !preparing && (aiEnabled || note.ready[kind]);
   const { practice } = note;
   const meta = [
-    note.author?.fullName,
+    note.isPrivate ? 'Only you' : note.author?.fullName,
     note.pages ? pluralize(note.pages, 'page') : null,
     practice ? `practiced ${timeAgo(practice.lastAt)}` : null,
   ].filter(Boolean);
@@ -237,7 +276,8 @@ function NoteRow({ note, aiEnabled, onOpen }: { note: PracticeNote; aiEnabled: b
   return (
     <li className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
       <div className="min-w-0 flex-1">
-        {(note.courseCode || note.courseName) && (
+        {/* Ders kodu girilmeden yüklenen kişisel dosyada ders adı = başlık; aynı yazı iki kez görünmesin. */}
+        {(note.courseCode || (note.courseName && note.courseName !== note.title)) && (
           <p className="truncate text-xs font-bold uppercase tracking-wide text-navy-600">
             {note.courseCode || note.courseName}
           </p>
@@ -245,13 +285,26 @@ function NoteRow({ note, aiEnabled, onOpen }: { note: PracticeNote; aiEnabled: b
         <Link to={`/notes/${note._id}`} className="block truncate font-semibold text-gray-900 hover:text-navy-700">
           {note.title}
         </Link>
-        <p className="truncate text-xs text-gray-500">{meta.join(' · ')}</p>
+        <p className="flex items-center gap-1 truncate text-xs text-gray-500">
+          {note.isPrivate && <Lock size={11} className="shrink-0" />}
+          {meta.join(' · ')}
+        </p>
       </div>
 
       {preparing ? (
-        <p className="flex items-center gap-2 text-sm text-gray-500">
-          <Loader2 size={15} className="animate-spin" /> Reading the pages…
-        </p>
+        <div className="flex items-center gap-2 sm:shrink-0">
+          <p className="flex flex-1 items-center gap-2 text-sm text-gray-500">
+            <Loader2 size={15} className="animate-spin" /> Reading the pages…
+          </p>
+          {note.isPrivate && <DeleteFileButton note={note} />}
+        </div>
+      ) : unreadable ? (
+        <div className="flex items-center gap-2 sm:shrink-0">
+          <p className="flex flex-1 items-center gap-2 text-sm text-rose-700">
+            <AlertCircle size={15} className="shrink-0" /> Couldn’t read text in this file
+          </p>
+          {note.isPrivate && <DeleteFileButton note={note} />}
+        </div>
       ) : (
         <div className="flex items-center gap-2 sm:shrink-0">
           {practice && (
@@ -277,9 +330,49 @@ function NoteRow({ note, aiEnabled, onOpen }: { note: PracticeNote; aiEnabled: b
           >
             <Layers size={16} /> Flashcards
           </button>
+          {note.isPrivate && <DeleteFileButton note={note} />}
         </div>
       )}
 
     </li>
+  );
+}
+
+// Kişisel dosyayı silme (onay sorulur). Silinince liste tazelenir; quiz / flashcard setleri ve cevaplar da silinir.
+function DeleteFileButton({ note }: { note: PracticeNote }) {
+  const dialog = useDialog();
+  const [deleteNote] = useDeleteNoteMutation();
+  const [deleting, setDeleting] = useState(false);
+  const { refetch } = useGetPracticeListQuery();
+
+  const remove = async () => {
+    if (deleting) return;
+    const ok = await dialog.confirm({
+      title: 'Delete this file?',
+      message: `“${note.title}” and its quizzes and flashcards will be deleted.`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await deleteNote(note._id).unwrap();
+      refetch();
+    } catch (error) {
+      setDeleting(false);
+      await dialog.alert({ title: 'Couldn’t delete the file', message: getErrorMessage(error) });
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={remove}
+      aria-label={`Delete ${note.title}`}
+      title="Delete file"
+      className="shrink-0 rounded-lg p-2 text-gray-400 hover:bg-rose-50 hover:text-rose-600"
+    >
+      {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+    </button>
   );
 }

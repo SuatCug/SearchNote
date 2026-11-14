@@ -13,6 +13,9 @@ import { dropLegacyUniversityData } from './services/university.service.ts';
 import { resumePendingIndexing } from './services/noteIndex.service.ts';
 
 const app = express();
+// Render önünde tek bir proxy var: req.ip gerçek ziyaretçi adresi olsun (IP bazlı istek sınırları için şart;
+// aksi halde tüm ziyaretçiler proxy'nin adresini paylaşır).
+app.set('trust proxy', 1);
 
 // Avatarlar frontend'den (farklı origin) <img> ile yüklenebilsin diye CORP gevşetiliyor.
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));

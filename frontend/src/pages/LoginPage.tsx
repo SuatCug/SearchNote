@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import AuthLayout from '@/components/auth/AuthLayout';
 import PasswordField from '@/components/auth/PasswordField';
 import GoogleButton, { OrDivider } from '@/components/auth/GoogleButton';
@@ -14,8 +14,28 @@ import { EMAIL_PLACEHOLDER } from '@/lib/constants';
 
 type Field = 'email' | 'password';
 
+// Ziyaretçi giriş gerektiren bir şeye tıklayıp buraya geldiyse (state.from) neden giriş istendiği yazılır;
+// böylece navbar'daki "Ask" gibi bir bağlantı ziyaretçiyi açıklamasız giriş ekranına atmış gibi durmaz.
+const LOGIN_REASONS: [prefix: string, text: string][] = [
+  ['/ask', 'Log in to ask questions and get answers from your classmates’ notes.'],
+  ['/practice', 'Log in to turn notes into practice quizzes and flashcards.'],
+  ['/knowledge', 'Log in to see your knowledge map.'],
+  ['/upload', 'Log in to share your notes.'],
+  ['/messages', 'Log in to send messages.'],
+  ['/groups/new', 'Log in to create a study group.'],
+  ['/groups/', 'Log in to join this study group.'],
+  ['/notes/', 'Log in to like, comment on, save or download this note.'],
+  ['/users/', 'Log in to follow or message this student.'],
+];
+
+const loginReason = (from?: string) => (from ? LOGIN_REASONS.find(([prefix]) => from.startsWith(prefix))?.[1] : undefined);
+
 export default function LoginPage() {
   const finishAuth = useFinishAuth();
+  const location = useLocation();
+  // plain: navbar'daki düz "Log in" butonu; dönüş adresi taşınır ama sebep yazılmaz.
+  const loginState = location.state as { from?: string; plain?: boolean } | null;
+  const reason = loginState?.plain ? undefined : loginReason(loginState?.from);
   const [login, { isLoading }] = useLoginMutation();
 
   const [email, setEmail] = useState('');
@@ -44,6 +64,9 @@ export default function LoginPage() {
     <AuthLayout>
       <h1 className="text-3xl font-bold text-gray-900 text-center">Log In</h1>
       <p className="text-sm text-gray-500 mt-2 text-center">Log in with your email and password.</p>
+      {reason && (
+        <p className="mt-4 rounded-lg bg-navy-50 px-4 py-3 text-center text-sm font-medium text-navy-800">{reason}</p>
+      )}
 
       <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-4">
         <TextField

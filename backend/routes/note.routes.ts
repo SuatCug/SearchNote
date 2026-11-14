@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as noteController from '../controllers/note.controller.ts';
 import * as commentController from '../controllers/comment.controller.ts';
 import authenticate, { optionalAuth } from '../middlewares/auth.middleware.ts';
+import { guestRateLimit } from '../middlewares/rateLimit.middleware.ts';
 import requireVerified from '../middlewares/verified.middleware.ts';
 import validate from '../middlewares/validate.middleware.ts';
 import { uploadNoteFile } from '../middlewares/upload.middleware.ts';
@@ -18,13 +19,17 @@ const router = Router();
 
 const verifiedOnly = [authenticate, requireVerified];
 
-// Arama & listeleme: sadece giriş yapmış kullanıcılar (ziyaretçi not kataloğunu göremez;
-// paylaşılan tek bir not bağlantısı (GET /:id) ise herkese açıktır).
-router.get('/', listNotesRules, validate, authenticate, noteController.searchNotes);
-router.get('/filters', authenticate, noteController.getFilterOptions);
+// Ziyaretçi (girişsiz) istek sınırları: IP başına dakikada.
+const guestBrowseLimit = guestRateLimit({ windowMs: 60 * 1000, max: 120 });
+const guestPreviewLimit = guestRateLimit({ windowMs: 60 * 1000, max: 30 });
+
+// Arama & listeleme: ziyaretçilere de açık (sadece genel notlar). Beğeni, yorum, kaydetme, yükleme,
+// indirme ve AI araçları giriş gerektirir.
+router.get('/', listNotesRules, validate, optionalAuth, guestBrowseLimit, noteController.searchNotes);
+router.get('/filters', optionalAuth, guestBrowseLimit, noteController.getFilterOptions);
 router.get('/feed', authenticate, noteController.getFeed);
 router.get('/saved', authenticate, noteController.getSavedNotes);
-router.get('/trending-courses', authenticate, noteController.getTrendingCourses);
+router.get('/trending-courses', optionalAuth, guestBrowseLimit, noteController.getTrendingCourses);
 router.get('/:id', idParamRules, validate, optionalAuth, noteController.getNote);
 
 // Not yükleme / düzenleme / silme (multipart/form-data, dosya alanı: "file")
@@ -32,8 +37,8 @@ router.post('/', verifiedOnly, uploadNoteFile, createNoteRules, validate, noteCo
 router.patch('/:id', idParamRules, updateNoteRules, validate, verifiedOnly, noteController.updateNote);
 router.delete('/:id', idParamRules, validate, authenticate, noteController.deleteNote);
 
-// Önizleme ve indirme (giriş + doğrulama gerekli, kredi sınırı yok)
-router.get('/:id/preview', idParamRules, validate, verifiedOnly, noteController.previewNote);
+// Önizleme ziyaretçilere açık (görünürlük kuralları geçerli); indirme giriş + doğrulama gerektirir (kredi sınırı yok)
+router.get('/:id/preview', idParamRules, validate, optionalAuth, guestPreviewLimit, noteController.previewNote);
 router.get('/:id/download', idParamRules, validate, verifiedOnly, noteController.downloadNote);
 
 // Beğeni

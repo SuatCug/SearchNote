@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSelector } from '@/app/hooks';
 import { MessageCircle } from 'lucide-react';
 import { messagesApi, useStartConversationMutation } from '@/services/messagesApi';
@@ -32,6 +32,7 @@ export default function MessageButton({ userId, noteId, label = 'Message', class
         .data?.data.conversations.find((c) => c.otherUser?._id === userId)?._id
   );
   const navigate = useNavigate();
+  const location = useLocation();
   const [startConversation] = useStartConversationMutation();
   const prefetchConversation = messagesApi.usePrefetch('getConversation');
   // Açılırken tekrar tıklama yok sayılır. Buton disabled yapılmaz: kısa bir an "yasak" imleci ve soluklaşma görünüyordu.
@@ -69,7 +70,7 @@ export default function MessageButton({ userId, noteId, label = 'Message', class
   };
 
   const handleClick = async () => {
-    if (!token) return navigate('/login');
+    if (!token) return navigate('/login', { state: { from: location.pathname + location.search } });
     if (opening.current) return;
     opening.current = true;
     try {

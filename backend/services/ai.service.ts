@@ -155,14 +155,35 @@ export interface AnswerSegment {
 }
 
 const ASK_SYSTEM =
-  'You are SearchNote’s study assistant. Students ask questions and you answer ONLY from the provided note excerpts ' +
-  '(each excerpt is a page of a student’s lecture note). Answer in the language of the question, clearly and concisely ' +
-  '(at most about 150 words), like a helpful classmate. Cite the excerpts you rely on. ' +
-  'If the excerpts do not contain the answer, say briefly that the notes don’t cover it — never invent facts.';
+  'You are SearchNote’s study assistant. Students ask questions and you answer ONLY from the numbered note excerpts ' +
+  'you are given (each excerpt is a page of a student’s lecture note, numbered from 0). ' +
+  'First decide whether the excerpts actually answer the question. If they do not (the question is unrelated to them, ' +
+  'or they only share a word with it), set covered to false, answer to an empty string and sources to an empty list. ' +
+  'Never use outside knowledge and never invent facts. ' +
+  'If they do, set covered to true and write the answer clearly and concisely (at most about 150 words), like a helpful ' +
+  'classmate explaining the topic. Write every sentence in the language of the question; if the excerpts are in another ' +
+  'language, translate them in your own words (technical terms may stay in parentheses). Do not paste sentences from ' +
+  'the excerpts. Give the answer directly: never mention the notes, excerpts, pages, documents or their authors in the ' +
+  'answer (no "according to the notes", "the notes say" or "in note X"), because the sources are listed separately ' +
+  'below it. Plain text only, no Markdown; use short paragraphs. ' +
+  'In sources, list the numbers of only the excerpts the answer actually relies on.';
 
-// Kaynak parçalar "document" bloğu olarak verilir ve alıntı (citation) açılır; böylece cevabın her cümlesinin
-// hangi notun hangi sayfasından geldiği API tarafından işaretlenir.
-const answerFromSources = async (question: string, sources: AnswerSource[]): Promise<AnswerSegment[]> => {
+const ANSWER_SCHEMA = {
+  type: 'object',
+  properties: {
+    covered: { type: 'boolean' },
+    answer: { type: 'string' },
+    sources: { type: 'array', items: { type: 'integer' } },
+  },
+  required: ['covered', 'answer', 'sources'],
+  additionalProperties: false,
+};
+
+// Kaynak parçalar numaralı "document" blokları olarak verilir; model JSON ile cevabı ve dayandığı parçaların
+// numaralarını döndürür. (Citation özelliği kapalı: açıkken model kaynak cümleleri birebir kopyalıyordu, ayrıca
+// structured output ile birlikte kullanılamıyor.)
+// Notlar soruyu cevaplamıyorsa null döner.
+const answerFromSources = async (question: string, sources: AnswerSource[]): Promise<AnswerSegment[] | null> => {
   if (MOCK) {
     // Deneme: ilk iki kaynağın ilk cümlesi, kaynak işaretleriyle.
     return sources.slice(0, 2).map((s, i) => ({
@@ -170,52 +191,41 @@ const answerFromSources = async (question: string, sources: AnswerSource[]): Pro
       sources: [i],
     }));
   }
-  const message = await requireClient().messages.create({
-    model: AI_MODEL,
-    max_tokens: 4000,
+  const result = await createJson<{ covered: boolean; answer: string; sources: number[] }>({
     system: ASK_SYSTEM,
-    output_config: { effort: 'low' },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          ...sources.map(
-            (s): Anthropic.DocumentBlockParam => ({
-              type: 'document',
-              source: { type: 'text', media_type: 'text/plain', data: s.text },
-              title: s.title,
-              citations: { enabled: true },
-            })
-          ),
-          { type: 'text', text: question },
-        ],
-      },
-    ],
-  });
-  assertCompleted(message);
-
-  const segments: AnswerSegment[] = [];
-  for (const block of message.content) {
-    if (block.type !== 'text') continue;
-    const cited = [
-      ...new Set(
-        (block.citations ?? [])
-          .map((c) => ('document_index' in c ? c.document_index : -1))
-          .filter((i) => i >= 0 && i < sources.length)
+    maxTokens: 4000,
+    content: [
+      ...sources.map(
+        (s, i): Anthropic.DocumentBlockParam => ({
+          type: 'document',
+          source: { type: 'text', media_type: 'text/plain', data: s.text },
+          title: `Excerpt ${i}: ${s.title}`,
+        })
       ),
-    ];
-    const last = segments.at(-1);
-    // Alıntısız ardışık metinler tek parçada birleştirilir.
-    if (last && !cited.length && !last.sources.length) last.text += block.text;
-    else segments.push({ text: block.text, sources: cited });
-  }
-  return segments;
+      { type: 'text', text: question },
+    ],
+    schema: ANSWER_SCHEMA,
+  });
+
+  const cited = [...new Set(result.sources)].filter((i) => Number.isInteger(i) && i >= 0 && i < sources.length);
+  const text = result.answer.trim();
+  // Notlara dayanan bir cevap en az bir kaynağa dayanır; aksi halde "notlarda yok" sayılır.
+  if (!result.covered || !text || !cited.length) return null;
+  return [{ text, sources: cited }];
 };
 
 // ---------- Quiz / flashcard üretimi ----------
 
+// Sorunun kaynağı: note = notta zaten olan soru (çıkmış soru, alıştırma, örnek) çoktan seçmeliye çevrildi;
+// similar = notta bulunan bir soruya benzer yeni soru (aynı beceri, farklı sayı / senaryo); concept = notun
+// açıklayıcı içeriğinden üretildi. Eski setlerde yok.
+export type QuizOrigin = 'note' | 'similar' | 'concept';
+
 export interface QuizItem {
   question: string;
+  origin?: QuizOrigin;
+  // Modelin şıkları yazmadan önce yaptığı çözüm (cevabın doğruluğu için; arayüzde gösterilmez).
+  solution?: string;
   options: string[];
   answerIndex: number;
   explanation: string;
@@ -236,7 +246,7 @@ export interface FlashcardItem {
   page: number | null;
 }
 
-const QUIZ_SCHEMA = {
+const quizSchema = (origins: QuizOrigin[]) => ({
   type: 'object',
   properties: {
     topics: {
@@ -255,22 +265,25 @@ const QUIZ_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
+        // Sıra önemli: model önce soruyu ve çözümünü yazar, şıkları ve doğru cevabı ondan sonra seçer.
         properties: {
           question: { type: 'string' },
+          origin: { type: 'string', enum: origins },
+          solution: { type: 'string' },
           options: { type: 'array', items: { type: 'string' } },
           answerIndex: { type: 'integer' },
           explanation: { type: 'string' },
           page: { type: ['integer', 'null'] },
           topic: { type: 'string' },
         },
-        required: ['question', 'options', 'answerIndex', 'explanation', 'page', 'topic'],
+        required: ['question', 'origin', 'solution', 'options', 'answerIndex', 'explanation', 'page', 'topic'],
         additionalProperties: false,
       },
     },
   },
   required: ['topics', 'questions'],
   additionalProperties: false,
-};
+});
 
 const FLASHCARD_SCHEMA = {
   type: 'object',
@@ -299,6 +312,28 @@ const STUDY_SYSTEM =
   'Pages are marked like [Page 3]; set "page" to the page an item comes from (null if the note has no page marks). ' +
   'Prefer the important concepts, definitions, formulas and typical exam topics over trivia.';
 
+// Konu listesi ve ön koşulları (bilgi haritası); iki quiz türünde de aynı.
+const TOPICS_INSTRUCTION =
+  'First list the 3-8 main topics of this note. Topic names are short (1-3 words), general course concepts ' +
+  '(e.g. "Derivatives", "AVL Trees", "Türev"), in the note’s language. For each topic give its prerequisites: ' +
+  'the foundational topics a student must know first (e.g. Derivatives -> Functions, Limits). Prerequisites may be ' +
+  'topics that are not in the note. ';
+
+const QUESTION_RULES =
+  'Each question has exactly 4 options with one correct answer (answerIndex is 0-3), a one or two sentence ' +
+  'explanation of why the answer is correct, and "topic" set to exactly one of the topic names above. ' +
+  'In "solution", first work out the answer step by step; then write the options so that the correct one matches ' +
+  'your solution and the wrong ones are plausible mistakes. Vary the position of the correct answer. Options are ' +
+  'shown in random order, so never refer to them by letter or position (no "option B", "all of the above").';
+
+const validQuestions = (questions: QuizItem[]) =>
+  questions.filter(
+    (q) => q.options.length >= 2 && Number.isInteger(q.answerIndex) && q.answerIndex >= 0 && q.answerIndex < q.options.length
+  );
+
+// "New questions": yapay zekânın kendi yazdığı sorular. Notta hazır sorular varsa onları kopyalamaz; aynı beceriyi
+// ölçen benzerlerini (similar) yazar, kalanlar notun açıklamalarından (concept). Notun kendi soruları için
+// generateNoteQuiz (ayrı mod) kullanılır.
 const generateQuiz = async (noteTitle: string, noteText: string) => {
   if (MOCK) return mockQuiz(noteText);
   const { topics, questions } = await createJson<{ topics: TopicInfo[]; questions: QuizItem[] }>({
@@ -308,22 +343,72 @@ const generateQuiz = async (noteTitle: string, noteText: string) => {
       {
         type: 'text',
         text:
-          'First list the 3-8 main topics of this note. Topic names are short (1-3 words), general course concepts ' +
-          '(e.g. "Derivatives", "AVL Trees", "Türev"), in the note’s language. For each topic give its prerequisites: ' +
-          'the foundational topics a student must know first (e.g. Derivatives -> Functions, Limits). Prerequisites may be ' +
-          'topics that are not in the note. ' +
-          'Then write 10 multiple-choice questions. Each has exactly 4 options with one correct answer (answerIndex is 0-3), ' +
-          'plausible wrong options, a one or two sentence explanation of why the answer is correct, and "topic" set to ' +
-          'exactly one of the topic names above. Vary the position of the correct answer. Options are shown in random order, so never refer to them by letter or position (no "option B", "all of the above").',
+          TOPICS_INSTRUCTION +
+          'Then look for questions that are already in the note: past exam questions, exercises, homework or review ' +
+          'questions, and solved examples (e.g. "Soru 1", "Örnek", "Q3", "Exercise 2.4", numbered problems). ' +
+          'Then write 10 multiple-choice questions that you write yourself, of two kinds (set "origin"). Every question ' +
+          'must be your own, original question. Never reuse, reword or shorten a question, exercise or worked example ' +
+          'from the note, never reuse its numbers, data, names or scenario, and never refer to it ("in Example 5.1", ' +
+          '"in the note’s example", "in the parachutist problem"): students practise the note’s own questions separately.\n' +
+          '- "similar": a question that tests the same skill as a question in the note, built from scratch in a ' +
+          'completely different context with different values (if the note’s question is about mines, use for ' +
+          'example a bakery, a hospital or a delivery company; or ask the reverse direction or a related case), so a ' +
+          'student who understood the original can solve it but cannot recognise it as the same question. Up to 4, or ' +
+          'up to 7 if the note is mostly questions (for example a past exam).\n' +
+          '- "concept": a question that checks understanding of the explanations, definitions and formulas in the note ' +
+          '(apply them, compare them, spot a mistake), not a question copied from a sentence. Use this for the rest; if ' +
+          'the note contains no questions, all 10 are "concept".\n' +
+          'Every question must make sense on its own, without seeing the note: include every value, definition and ' +
+          'condition it needs, keep it consistent with itself and with the note, and make sure exactly one option is ' +
+          'correct. Set "page" to the page of the original question for "similar", or of the explained content for ' +
+          '"concept". ' +
+          QUESTION_RULES,
       },
     ],
-    schema: QUIZ_SCHEMA,
+    schema: quizSchema(['similar', 'concept']),
     maxTokens: 16000,
   });
-  const valid = questions.filter(
-    (q) => q.options.length >= 2 && Number.isInteger(q.answerIndex) && q.answerIndex >= 0 && q.answerIndex < q.options.length
-  );
+  const valid = validQuestions(questions);
+  // Benzer sorular önce gelir (öğrenci önce notundaki sorulara en yakın olanlarla karşılaşır).
+  const ORDER: Record<QuizOrigin, number> = { note: 0, similar: 1, concept: 2 };
+  valid.sort((a, b) => ORDER[a.origin ?? 'concept'] - ORDER[b.origin ?? 'concept']);
   return { topics, questions: valid };
+};
+
+// "Questions from the note": notta zaten olan soruların aynısı (çıkmış sorular, alıştırmalar, örnekler), notta
+// geçtiği sırayla. Şıklı sorularda notun şıkları, açık uçlularda soru metni aynen kalır ve 4 şık eklenir.
+// Notta soru yoksa questions boş döner.
+const NOTE_QUIZ_MAX = 25;
+const generateNoteQuiz = async (noteTitle: string, noteText: string) => {
+  if (MOCK) {
+    const mock = mockQuiz(noteText);
+    return { topics: mock.topics, questions: mock.questions.map((q) => ({ ...q, origin: 'note' as const })) };
+  }
+  const { topics, questions } = await createJson<{ topics: TopicInfo[]; questions: QuizItem[] }>({
+    system: STUDY_SYSTEM,
+    content: [
+      { type: 'text', text: `Note title: ${noteTitle}\n\n${noteText}` },
+      {
+        type: 'text',
+        text:
+          TOPICS_INSTRUCTION +
+          'Then find the questions that are already in the note: past exam questions, exercises, homework or review ' +
+          'questions, and solved examples (e.g. "Soru 1", "Örnek", "Q3", "Exercise 2.4", numbered problems). Return them ' +
+          `in the order they appear, at most ${NOTE_QUIZ_MAX}, with "origin" set to "note". Do not invent questions: if the ` +
+          'note contains no questions, return an empty questions list. ' +
+          'Ask each question exactly as the note asks it: keep its wording, numbers and conditions (you may only fix ' +
+          'obvious text-extraction errors, and add the values from a table or figure described in the note if the ' +
+          'question needs them). If the question already has options, use those options and its correct answer. If it ' +
+          'is open-ended, keep the question text unchanged and write 4 options: the correct answer and three plausible ' +
+          'wrong ones. If the note shows the answer or solution, use it; otherwise work it out. Set "page" to the page ' +
+          'where the question appears. ' +
+          QUESTION_RULES,
+      },
+    ],
+    schema: quizSchema(['note']),
+    maxTokens: 16000,
+  });
+  return { topics, questions: validQuestions(questions).slice(0, NOTE_QUIZ_MAX) };
 };
 
 // Konu pratiği: notun quiz'inden çıkan konular üzerine, notla sınırlı olmayan yeni sorular.
@@ -500,6 +585,7 @@ export {
   transcribeFile,
   answerFromSources,
   generateQuiz,
+  generateNoteQuiz,
   generateTopicQuiz,
   generateFlashcards,
   OCR_MAX_PAGES,

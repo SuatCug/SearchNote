@@ -243,11 +243,72 @@ const createNote = asyncHandler<AuthedRequest>(async (req, res) => {
   });
 });
 
+// Quizzes & flashcards sayfasından yüklenen kişisel çalışma dosyası: sadece yükleyen görür (visibility: private),
+// hiçbir listede çıkmaz. Metni arka planda okunur; hazır olunca quiz / flashcard üretilebilir.
+const MAX_STUDY_FILES = 100;
+const STUDY_FILE_TYPES = ['pdf', 'docx', 'image'];
+
+const createStudyFile = asyncHandler<AuthedRequest>(async (req, res) => {
+  if (!req.file) throw new ApiError(400, 'A file is required (form field: file).');
+
+  const ext = getExtension(req.file.originalname);
+  if (!STUDY_FILE_TYPES.includes(NOTE_FILE_TYPES[ext])) {
+    throw new ApiError(415, 'Quizzes can be made from PDF, DOCX, JPG or PNG files.');
+  }
+  if (!matchesSignature(req.file.buffer, ext)) {
+    throw new ApiError(415, 'The file content does not match its extension.');
+  }
+
+  const [author, count] = await Promise.all([
+    User.findById(req.user.id).select('university department'),
+    Note.countDocuments({ author: req.user.id, visibility: 'private' }),
+  ]);
+  if (!author) throw new ApiError(404, 'User not found.');
+  if (count >= MAX_STUDY_FILES) {
+    throw new ApiError(409, `You can keep up to ${MAX_STUDY_FILES} files. Delete an old one first.`);
+  }
+
+  const title = String(req.body.title ?? '').trim() || req.file.originalname.replace(/\.[^.]+$/, '');
+  const courseCode = String(req.body.courseCode ?? '').replace(/\s+/g, '').toUpperCase();
+  const fileUrl = await saveNoteFile(req.file.buffer, ext);
+
+  let note;
+  try {
+    note = await Note.create({
+      author: req.user.id,
+      title: title.slice(0, 150),
+      // Zorunlu alanlar: okul / bölüm profilden; ders adı verilmezse ders kodu, o da yoksa başlık.
+      university: author.university || '-',
+      department: author.department || '-',
+      courseCode: courseCode || undefined,
+      courseName: courseCode || title.slice(0, 150),
+      visibility: 'private',
+      fileUrl,
+      originalName: req.file.originalname,
+      fileType: NOTE_FILE_TYPES[ext],
+      fileSize: req.file.size,
+    });
+  } catch (error) {
+    await removeFile(fileUrl);
+    throw error;
+  }
+
+  enqueueNoteIndex(note._id).catch((e) => console.error('Index queue error:', (e as Error).message));
+  res.status(201).json({
+    success: true,
+    message: 'File uploaded.',
+    data: { note: { _id: note._id, title: note.title, courseCode: note.courseCode, fileType: note.fileType } },
+  });
+});
+
 const updateNote = asyncHandler<AuthedRequest>(async (req, res) => {
   const note = await findNoteOrFail(req.params.id);
   assertOwner(note, req.user.id);
 
+  // Kişisel çalışma dosyasının görünürlüğü düzenleme formundan değişmez (yanlışlıkla herkese açılmasın).
+  const isPrivate = note.visibility === 'private';
   EDITABLE_FIELDS.forEach((field) => {
+    if (isPrivate && field === 'visibility') return;
     if (req.body[field] !== undefined) note.set(field, req.body[field]);
   });
   await note.save();
@@ -280,9 +341,9 @@ const readExistingFile = async (note: { fileUrl: string }) => {
 // Sayfa içi önizleme (sadece PDF ve görseller). İndirme sayacını artırmaz.
 const PREVIEW_CONTENT_TYPES: Record<string, string> = { '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
 
-const previewNote = asyncHandler<AuthedRequest>(async (req, res) => {
+const previewNote = asyncHandler(async (req, res) => {
   const note = await findNoteOrFail(req.params.id, '+fileUrl');
-  await assertNoteVisible(note, req.user.id);
+  await assertNoteVisible(note, req.user?.id);
   const contentType = PREVIEW_CONTENT_TYPES[getExtension(note.fileUrl)];
   if (!contentType) throw new ApiError(415, 'Preview is not supported for this file type.');
 
@@ -409,6 +470,7 @@ const getTrendingCourses = asyncHandler(async (_req, res) => {
 });
 
 export {
+  createStudyFile,
   searchNotes,
   getFeed,
   getSavedNotes,

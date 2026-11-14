@@ -55,6 +55,8 @@ const saveQuizTopics = async (topics: TopicInfo[], questions: QuizItem[], course
 // Konu pratiği sorularının cevapları aynı koleksiyonda, soru sırası bu kadar kaydırılarak tutulur
 // (notun quiz'iyle çakışmasın diye; notun quiz'i ~10 soru, konu pratiği turlarla en fazla ~200 soru).
 const TOPIC_QUIZ_INDEX_OFFSET = 100;
+// "Questions from the note" cevapları: quiz (0–99) ve konu pratiği (100+) sıralarıyla çakışmasın diye.
+const NOTE_QUIZ_INDEX_OFFSET = 10_000;
 
 // Quiz cevabı kaydedilir; doğruluk sunucuda, kayıtlı setten hesaplanır.
 const recordQuizAnswer = async ({
@@ -68,7 +70,7 @@ const recordQuizAnswer = async ({
   noteId: string;
   index: number;
   choice: number;
-  kind?: 'quiz' | 'topic-quiz';
+  kind?: 'quiz' | 'note-quiz' | 'topic-quiz';
 }) => {
   const set = await StudySet.findOne({ note: noteId, kind }).lean();
   const question = set?.items?.[index] as QuizItem | undefined;
@@ -79,7 +81,8 @@ const recordQuizAnswer = async ({
     {
       user: userId,
       note: noteId,
-      questionIndex: kind === 'topic-quiz' ? TOPIC_QUIZ_INDEX_OFFSET + index : index,
+      questionIndex:
+        kind === 'topic-quiz' ? TOPIC_QUIZ_INDEX_OFFSET + index : kind === 'note-quiz' ? NOTE_QUIZ_INDEX_OFFSET + index : index,
       mock: set.model === 'mock',
     },
     { $set: { topicKey: normalizeTopic(topic), topic, correct } },

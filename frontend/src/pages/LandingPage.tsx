@@ -6,14 +6,17 @@ import Footer from '@/components/layout/Footer';
 import StudyTableIllustration from '@/components/landing/StudyTableIllustration';
 import NotePageSample from '@/components/landing/NotePageSample';
 import GroupChatSample from '@/components/landing/GroupChatSample';
+import NotesSearchIllustration from '@/components/ai/NotesSearchIllustration';
+import PracticeIllustration from '@/components/ai/PracticeIllustration';
+import KnowledgeTreeIllustration from '@/components/ai/KnowledgeTreeIllustration';
 import GoogleButton from '@/components/auth/GoogleButton';
 import Alert from '@/components/common/Alert';
 import { ANDROID_APP_URL, GOOGLE_CLIENT_ID } from '@/lib/constants';
 import sampleProfilePhoto from '@/assets/landing/sample-profile.jpg';
 
 // Giriş yapmamış ziyaretçilere ana sayfada gösterilen tanıtım sayfası.
-// Bölüm id'leri (features, departments, profiles, community) Footer bağlantılarıyla eşleşir.
-// Ziyaretçi notlara göz atamadığı için ders/bölüm çipleri giriş sayfasına gider; girişten sonra o aramaya dönülür.
+// Zemin sırası: beyaz, krem, beyaz, krem... (hero beyaz). Bölüm id'leri (features, departments, profiles, community) Footer bağlantılarıyla eşleşir.
+// Ders/bölüm çipleri doğrudan aramayı açar (ziyaretçi notları hesapsız gezebilir). AiSection üç AI özelliğini tanıtır.
 
 export default function LandingPage() {
   return (
@@ -22,6 +25,7 @@ export default function LandingPage() {
       <main className="flex-1 overflow-x-hidden font-display text-[#1b1f24]">
         <HeroSection />
         <BrowseSection />
+        <AiSection />
         <ProfileSection />
         <GroupsSection />
         <AudienceSection />
@@ -46,8 +50,8 @@ function Heading({ children }: { children: ReactNode }) {
   return <h2 className="m-0 font-light leading-[1.15] text-navy-900 text-balance text-[30px] sm:text-[36px] lg:text-[44px]">{children}</h2>;
 }
 
-// Ders ya da bölüm adı, girişten sonra açılacak arama adresi olarak giriş sayfasına taşınır.
-const searchState = (query: string) => ({ from: `/?q=${encodeURIComponent(query)}` });
+// Ders ya da bölüm adı doğrudan aramayı açar (ziyaretçi notları hesapsız gezebilir).
+const searchUrl = (query: string) => `/?q=${encodeURIComponent(query)}`;
 
 function ChipList({ items, extra }: { items: string[]; extra: string[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -59,8 +63,7 @@ function ChipList({ items, extra }: { items: string[]; extra: string[] }) {
       {shown.map((item) => (
         <Link
           key={item}
-          to="/login"
-          state={searchState(item)}
+          to={searchUrl(item)}
           className={`${pillBase} min-h-12 px-5 text-base sm:text-[17px] text-[#3d434a] hover:text-navy-900 ${chipClass}`}
         >
           {item}
@@ -120,7 +123,14 @@ function HeroSection() {
                 Join now
               </Link>
             </p>
-            {/* Telefondan girene doğrudan indirme bağlantısı; geniş ekranda navbar'daki "Get the app" QR'ı gösterir */}
+            {/* Hesapsız gezinme: notlar ve arama ziyaretçiye açık */}
+            <p className="m-0 text-center text-[15px] text-[#5e6670]">
+              Or{' '}
+              <Link to="/?all=1" className={textLink}>
+                browse notes without an account
+              </Link>
+            </p>
+            {/* Telefondan girene doğrudan Android uygulaması indirme bağlantısı */}
             <a
               href={ANDROID_APP_URL}
               target="_blank"
@@ -203,6 +213,98 @@ function BrowseSection() {
   );
 }
 
+/* ------------------------------------------------------- AI ile çalışma */
+
+// Uygulamadaki üç AI özelliği; görseller ilgili sayfalardaki görsellerin aynısı.
+// "Try it free" o özelliğin sayfasına gider: ziyaretçiyi RequireAuth giriş sayfasına yollar, girişten sonra sayfa açılır.
+const AI_TOOLS = [
+  {
+    id: 'ask',
+    label: 'Ask',
+    to: '/ask',
+    text: 'Type a question and get the answer from your classmates’ notes, with the note and the page it came from.',
+    Illustration: NotesSearchIllustration,
+  },
+  {
+    id: 'practice',
+    label: 'Practice',
+    to: '/practice',
+    text: 'Turn any note into a practice quiz or flashcards in seconds. You can also upload your own files and practice on them privately.',
+    Illustration: PracticeIllustration,
+  },
+  {
+    id: 'knowledge',
+    label: 'Knowledge map',
+    to: '/knowledge',
+    text: 'Your quiz answers build a map of the topics you know and the ones you’re stuck on, and point you to notes that fill the gaps.',
+    Illustration: KnowledgeTreeIllustration,
+  },
+] as const;
+
+// Beyaz zemin, ders/bölüm bölümündeki gibi sekmeli.
+function AiSection() {
+  const [tabId, setTabId] = useState<(typeof AI_TOOLS)[number]['id']>('ask');
+  const tool = AI_TOOLS.find((t) => t.id === tabId) ?? AI_TOOLS[0];
+  const { Illustration } = tool;
+
+  return (
+    <section id="study-with-ai" className="scroll-mt-[72px]">
+      <Container className="py-14 sm:py-[72px] flex flex-wrap items-center gap-10 lg:gap-16">
+        <div className="flex-[1_1_360px] max-w-[500px] flex flex-col gap-5">
+          <Heading>Study the notes, don&rsquo;t just read them</Heading>
+          <p className="m-0 text-lg text-[#5e6670]">Every public note on SearchNote can become a study session.</p>
+
+          <div className="mt-2 flex gap-6 border-b border-[#d6d1c4]" role="tablist" aria-label="AI study tools">
+            {AI_TOOLS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`ai-tab-${t.id}`}
+                aria-selected={tabId === t.id}
+                aria-controls="ai-tab-panel"
+                onClick={() => setTabId(t.id)}
+                className={`-mb-px border-b-2 pb-2.5 text-[17px] font-semibold whitespace-nowrap transition-colors ${
+                  tabId === t.id ? 'border-navy-900 text-navy-900' : 'border-transparent text-[#5e6670] hover:text-navy-900'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div id="ai-tab-panel" role="tabpanel" aria-labelledby={`ai-tab-${tool.id}`} className="flex flex-col gap-6">
+            {/* Üç metin üst üste aynı hücrede durur, sadece seçili olan görünür: yükseklik en uzun metne göre sabit kalır,
+                sekme değişince sayfa kaymaz. */}
+            <div className="grid">
+              {AI_TOOLS.map((t) => (
+                <p
+                  key={t.id}
+                  aria-hidden={t.id !== tool.id}
+                  className={`m-0 [grid-area:1/1] text-[17px] leading-relaxed text-[#3d434a] ${t.id === tool.id ? "" : "invisible"}`}
+                >
+                  {t.text}
+                </p>
+              ))}
+            </div>
+            <Link to={tool.to} className={`${pillPrimary} self-start`}>
+              Try it free
+            </Link>
+          </div>
+        </div>
+
+        <div className="flex-[1_1_380px] min-w-0 flex justify-center">
+          {/* Görsellerin oranları farklı (diğerleri 480×400, bilgi ağacı 480×560): alan kare ve sabit; ikisinin arasında
+              bir oran seçildi ki ağaç fazla küçülmesin, diğerleri de fazla boşlukta kalmasın. */}
+          <div className="w-full max-w-[480px] aspect-square">
+            <Illustration key={tool.id} className="h-full w-full" />
+          </div>
+        </div>
+      </Container>
+    </section>
+  );
+}
+
 /* ---------------------------------------------------------------- Profil */
 
 // Paylaşılan not kutuları marka tonlarında (lacivert, orta mavi, açık mavi).
@@ -214,7 +316,7 @@ const SAMPLE_NOTES = [
 
 function ProfileSection() {
   return (
-    <section id="profiles" className="scroll-mt-[72px]">
+    <section id="profiles" className="scroll-mt-[72px] bg-[#f4f2ee]">
       <Container className="py-14 sm:py-[72px] flex flex-wrap items-center gap-10 lg:gap-16">
         <div className="flex-[1_1_360px] max-w-[460px] flex flex-col gap-5">
           <Heading>Build your profile and let your notes speak for you</Heading>
@@ -313,7 +415,7 @@ function SampleProfile() {
 // İkonlu özellik listesi yerine uygulamadaki gerçek bir grup sohbetinin örneği gösterilir.
 function GroupsSection() {
   return (
-    <section id="community" className="scroll-mt-[72px] bg-[#f4f2ee]">
+    <section id="community" className="scroll-mt-[72px]">
       {/* Başlık sohbet kartının üstüyle aynı hizada: navbar'dan "Groups"a basınca başlık ekranın üstünde görünsün
           (ortalanınca uzun kartın yanında ekranın ortasına düşüyordu). flex-wrap-reverse dikey ekseni de ters çevirdiği için "üst" = items-end. */}
       <Container className="py-14 sm:py-[72px] flex flex-wrap-reverse items-end gap-10 lg:gap-14">
@@ -343,7 +445,7 @@ const AUDIENCES = [
 
 function AudienceSection() {
   return (
-    <section>
+    <section className="bg-[#f4f2ee]">
       {/* Sade üç sütunlu metin: kart / gölge yok, tıklanabilir gibi durmasın. */}
       <Container className="py-12 sm:py-16">
         <Heading>Who is SearchNote for?</Heading>
@@ -365,7 +467,7 @@ function AudienceSection() {
 // Footer'dan önceki son bölüm: sade bir davet ve uygulamadaki not sayfasının örneği (sahte arama yok).
 function ClosingSection() {
   return (
-    <section className="scroll-mt-[72px] bg-[#f4f2ee]">
+    <section className="scroll-mt-[72px]">
       <Container className="py-12 sm:py-20 flex flex-wrap items-center gap-10">
         <div className="flex-[1_1_320px] max-w-[460px] flex flex-col gap-5">
           <Heading>Someone in your class already wrote it down</Heading>

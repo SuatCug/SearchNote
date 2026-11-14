@@ -1,19 +1,20 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FileSearch, Loader2, Search, Sparkles, X } from 'lucide-react';
+import { FileSearch, Search, Sparkles, X } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import NotesSearchIllustration from '@/components/ai/NotesSearchIllustration';
 import EmptyState from '@/components/common/EmptyState';
+import StepProgress, { type ProgressStep } from '@/components/common/StepProgress';
 import Alert from '@/components/common/Alert';
 import UserAvatar from '@/components/users/UserAvatar';
-import { useAskNotesQuery } from '@/services/aiApi';
+import { useAskNotesQuery, useGetAiStatusQuery } from '@/services/aiApi';
 import { useGetNoteQuery } from '@/services/notesApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import type { AnswerSegment, AskResult, ContentSource } from '@/types/api';
 
 // Notların içinde arama: soru ya da konu yazılır, görülebilen notların sayfalarında aranır.
-// Sunucuda yapay zekâ açıksa bulunan sayfalardan kısa bir cevap yazılır; cevaptaki [1] gibi işaretler
-// cevabın hangi notun hangi sayfasından geldiğini gösterir. Adres: /ask?q=…&course=…&note=…
+// Sunucuda yapay zekâ açıksa sayfalar soruyu cevaplıyorsa kısa bir cevap yazılır ve altında sadece dayandığı
+// sayfalar listelenir; cevaplamıyorsa hiçbir sayfa gösterilmez. Adres: /ask?q=…&course=…&note=…
 export default function AskPage() {
   const [params, setParams] = useSearchParams();
   const q = params.get('q')?.trim() ?? '';
@@ -35,6 +36,7 @@ export default function AskPage() {
     { skip: q.length < 2 }
   );
   const scopedNote = useGetNoteQuery(noteId, { skip: !noteId });
+  const { data: aiStatus } = useGetAiStatusQuery();
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -159,9 +161,8 @@ export default function AskPage() {
 
       <div className="mt-6">
         {isFetching ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-sm text-gray-500">
-            <Loader2 size={18} className="animate-spin" /> Looking through the pages…
-          </div>
+          // Her yeni soruda adımlar baştan başlasın diye key
+          <AskLoading key={`${q}|${course}|${noteId}`} withAnswer={aiStatus?.data.enabled ?? true} />
         ) : error ? (
           <Alert>{getErrorMessage(error)}</Alert>
         ) : result && result.sources.length ? (
@@ -169,7 +170,7 @@ export default function AskPage() {
         ) : (
           <EmptyState
             icon={FileSearch}
-            title="No page mentions that"
+            title={result?.notCovered ? 'The notes don’t cover that' : 'No page mentions that'}
             text={
               <>
                 Try other words, or{' '}
@@ -186,6 +187,31 @@ export default function AskPage() {
   );
 }
 
+// Bekleme ekranı: sunucuda sırayla olan adımlar (arama → sayfaları okuma → cevabı yazma) ve cevabın geleceği
+// kartın iskeleti. Yapay zekâ kapalıysa sadece arama adımı gösterilir.
+const ASK_STEPS: ProgressStep[] = [
+  { label: 'Searching notes', at: 0 },
+  { label: 'Reading the pages', at: 1500 },
+  { label: 'Writing the answer', at: 4000 },
+];
+
+function AskLoading({ withAnswer }: { withAnswer: boolean }) {
+  return (
+    <section className="card p-5">
+      <StepProgress steps={withAnswer ? ASK_STEPS : ASK_STEPS.slice(0, 1)} slowAfterMs={15000}>
+        {withAnswer && (
+          <div className="mt-5 space-y-2.5 border-t border-gray-100 pt-4">
+            <span className="skeleton-box block h-3.5 w-full rounded" />
+            <span className="skeleton-box block h-3.5 w-[94%] rounded" />
+            <span className="skeleton-box block h-3.5 w-[88%] rounded" />
+            <span className="skeleton-box block h-3.5 w-[60%] rounded" />
+          </div>
+        )}
+      </StepProgress>
+    </section>
+  );
+}
+
 function Results({ result, query }: { result: AskResult; query: string }) {
   return (
     <div className="space-y-6">
@@ -196,7 +222,7 @@ function Results({ result, query }: { result: AskResult; query: string }) {
           </h2>
           <Answer segments={result.answer} />
           <p className="mt-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
-            Written by AI from the pages below — check them before you rely on it.
+            Written by AI from the pages below. Check them before you rely on it.
           </p>
         </section>
       )}
@@ -204,7 +230,8 @@ function Results({ result, query }: { result: AskResult; query: string }) {
 
       <section aria-labelledby="sources-title">
         <h2 id="sources-title" className="mb-3 text-sm font-bold uppercase tracking-wide text-gray-500">
-          Pages that match
+          {/* Cevap varsa liste sadece cevabın dayandığı sayfalardır; yoksa (yapay zekâ kapalı / hata) kelime eşleşmeleri */}
+          {result.answer?.length ? 'Sources' : 'Pages that match'}
         </h2>
         <ol className="space-y-3">
           {result.sources.map((source, i) => (

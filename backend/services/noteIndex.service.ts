@@ -116,10 +116,16 @@ const splitText = (text: string) => {
 // ---------- Anlamsal arama (isteğe bağlı, Voyage AI) ----------
 
 const VOYAGE_KEY = process.env.VOYAGE_API_KEY;
-const VOYAGE_MODEL = process.env.VOYAGE_MODEL || 'voyage-3.5';
+// voyage-4: hesap başına ilk 200M token ücretsiz (voyage-3.5'te ücretsiz kota yok); varsayılan boyutu 1024.
+// Model değiştirilirse eski vektörlerle karışmasın diye tüm parçalar yeniden işlenmelidir.
+const VOYAGE_MODEL = process.env.VOYAGE_MODEL || 'voyage-4';
 const EMBEDDING_DIMENSIONS = 1024;
 const VECTOR_INDEX = 'chunk_embedding';
 const isVectorEnabled = () => Boolean(VOYAGE_KEY);
+// Anlamsal aramada bu benzerlik skorunun (Atlas vectorSearchScore, 0–1) altındaki parçalar alakasız sayılır:
+// en yakın komşu araması her soruya bir şey döndürdüğü için eşik olmadan rastgele sorularda da sonuç gelirdi.
+// 2026-11-14 ölçümü (voyage-4, 215 parça): alakasız sorularda en yüksek skor 0.59–0.66, alakalılarda 0.70–0.84.
+const VECTOR_MIN_SCORE = Number(process.env.VECTOR_MIN_SCORE) || 0.68;
 
 const embedTexts = async (texts: string[], inputType: 'document' | 'query') => {
   const vectors: number[][] = [];
@@ -156,6 +162,33 @@ const ensureVectorIndex = async () => {
   } catch (error) {
     console.error('Vector index could not be created:', (error as Error).message);
   }
+};
+
+// Anahtar sonradan eklendiyse: daha önce vektörsüz kaydedilmiş parçalar bir kez işlenir (açılışta, arka planda).
+const backfillEmbeddings = async () => {
+  if (!isVectorEnabled()) return;
+  // Ödeme yöntemi eklenmemiş Voyage hesabı dakikada 3 istek / 10K token ile sınırlı: küçük gruplar, 429'da bekleyip tekrar.
+  const BATCH = 16;
+  let done = 0;
+  let retries = 0;
+  for (;;) {
+    const chunks = await NoteChunk.find({ embedding: { $exists: false } }).select('text').limit(BATCH).lean();
+    if (!chunks.length) break;
+    let vectors: number[][];
+    try {
+      vectors = await embedTexts(chunks.map((c) => c.text), 'document');
+      retries = 0;
+    } catch (error) {
+      if (!String((error as Error).message).includes('(429)') || ++retries > 10) throw error;
+      await new Promise((r) => setTimeout(r, 30_000));
+      continue;
+    }
+    await NoteChunk.bulkWrite(
+      chunks.map((c, i) => ({ updateOne: { filter: { _id: c._id }, update: { $set: { embedding: vectors[i] } } } }))
+    );
+    done += chunks.length;
+  }
+  if (done) console.log(`🧭 ${done} chunk(s) embedded for semantic search.`);
 };
 
 // ---------- İndeksleme sırası ----------
@@ -240,6 +273,7 @@ const enqueueNoteIndex = async (noteId: string | mongoose.Types.ObjectId) => {
 const resumePendingIndexing = async () => {
   if (String(process.env.AI_INDEX_ON_START || 'true').toLowerCase() === 'false') return;
   await ensureVectorIndex();
+  await backfillEmbeddings().catch((e) => console.error('Embedding backfill error:', (e as Error).message));
   const conditions: Record<string, unknown>[] = [
     { 'ai.status': { $exists: false } },
     { 'ai.status': { $in: ['pending', 'processing'] } },
@@ -324,7 +358,9 @@ const vectorSearch = async (query: string, noteId?: string): Promise<RawHit[]> =
           ...(noteId && { filter: { note: new mongoose.Types.ObjectId(noteId) } }),
         },
       },
-      { $project: { note: 1, page: 1, text: 1 } },
+      { $project: { note: 1, page: 1, text: 1, score: { $meta: 'vectorSearchScore' } } },
+      { $match: { score: { $gte: VECTOR_MIN_SCORE } } },
+      { $project: { score: 0 } },
     ]);
   } catch (error) {
     console.error('Vector search error:', (error as Error).message);

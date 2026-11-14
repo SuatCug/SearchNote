@@ -65,7 +65,7 @@ const getProfile = asyncHandler(async (req, res) => {
   const canSeeFollowersNotes =
     viewerId && (viewerId === user._id.toString() || user.followers.some((id) => id.equals(viewerId)));
   const [stats] = await Note.aggregate([
-    { $match: { author: user._id, ...(canSeeFollowersNotes ? { group: null } : PUBLIC_NOTES_MATCH) } },
+    { $match: { author: user._id, ...(canSeeFollowersNotes ? { group: null, visibility: { $ne: 'private' } } : PUBLIC_NOTES_MATCH) } },
     {
       $group: {
         _id: null,

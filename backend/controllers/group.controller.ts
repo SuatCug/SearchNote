@@ -560,7 +560,7 @@ const sendMessage = asyncHandler<AuthedRequest>(async (req, res) => {
   if (noteId) {
     if (!note) throw new ApiError(404, 'Note not found.');
     await assertNoteVisible(note, req.user.id);
-    const visibleToGroup = note.group ? note.group.equals(group._id) : note.visibility !== 'followers';
+    const visibleToGroup = note.group ? note.group.equals(group._id) : note.visibility !== 'followers' && note.visibility !== 'private';
     if (!visibleToGroup) {
       throw new ApiError(403, "Group members can't see this note (it's shared with another group or only with followers).");
     }
