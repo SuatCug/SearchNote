@@ -16,7 +16,7 @@ interface StudyModalProps {
 const TITLES: Record<StudyKind, string> = {
   quiz: 'New questions',
   'note-quiz': 'Questions from the note',
-  'topic-quiz': 'Topic practice',
+  'topic-quiz': 'More new questions',
   flashcards: 'Flashcards',
 };
 
@@ -185,19 +185,19 @@ export default function StudyModal({ noteId, kind: initialKind, onClose }: Study
             kind={set.kind}
             questions={set.items}
             start={set.start ?? 0}
+            // Bitiş ekranı: notun sorularından sonra sıradaki adım yeni sorulardır; yeni sorulardan (ve devam
+            // turlarından) sonra aynı konulardan bir tur daha üretilir, nottaki sorulara dönüş de durur.
             onMore={
               set.kind === 'topic-quiz'
                 ? () => refetch()
-                : set.items.some((q) => q.topic)
+                : set.kind === 'quiz' && set.items.some((q) => q.topic)
                   ? () => setKind('topic-quiz')
                   : undefined
             }
             onSwitch={
               set.kind === 'note-quiz'
                 ? { label: 'Try new questions in this note', go: () => setKind('quiz') }
-                : set.kind === 'quiz'
-                  ? { label: 'Questions from the note', go: () => setKind('note-quiz') }
-                  : undefined
+                : { label: 'Questions from the note', go: () => setKind('note-quiz') }
             }
           />
         </>
@@ -275,9 +275,9 @@ function Quiz({
   questions: QuizQuestion[];
   // Konu pratiğinde turun ilk sorusunun sırası.
   start: number;
-  // Quiz bitince: notun quiz'inden konu pratiğine geçiş ya da konu pratiğinde yeni tur.
+  // Quiz bitince: aynı konulardan bir tur daha yeni soru (yeni sorularda ve devam turlarında).
   onMore?: () => void;
-  // Quiz bitince diğer moda geçiş (notun soruları <-> yeni sorular).
+  // Quiz bitince diğer moda geçiş (notun soruları <-> yeni sorular). onMore yoksa ana buton budur.
   onSwitch?: { label: string; go: () => void };
 }) {
   const [recordAnswer] = useRecordQuizAnswerMutation();
@@ -299,12 +299,12 @@ function Quiz({
         </p>
         <p className="mt-2 text-sm text-gray-600">
           {score === questions.length
-            ? kind !== 'topic-quiz'
+            ? kind === 'note-quiz'
               ? 'All correct. You know this note.'
               : 'All correct. You know these topics.'
             : score >= questions.length * 0.7
               ? 'Good. Go over the ones you missed once more.'
-              : kind !== 'topic-quiz'
+              : kind === 'note-quiz'
                 ? 'Read the note again and give it another try.'
                 : 'Review these topics and give it another try.'}
         </p>
@@ -322,18 +322,18 @@ function Quiz({
             <RotateCcw size={15} /> Start over
           </button>
           {questions.some((q) => q.topic) && (
-            <Link to="/knowledge" className={onMore ? 'btn-secondary' : 'btn-primary'}>
+            <Link to="/knowledge" className="btn-secondary">
               See your knowledge map
             </Link>
           )}
           {onSwitch && (
-            <button type="button" onClick={onSwitch.go} className="btn-secondary">
-              {onSwitch.label}
+            <button type="button" onClick={onSwitch.go} className={onMore ? 'btn-secondary' : 'btn-primary'}>
+              {kind === 'note-quiz' ? <Sparkles size={15} /> : <FileText size={15} />} {onSwitch.label}
             </button>
           )}
           {onMore && (
             <button type="button" onClick={onMore} className="btn-primary">
-              <Sparkles size={15} /> {kind === 'topic-quiz' ? 'New questions on these topics' : 'More questions on these topics'}
+              <Sparkles size={15} /> More new questions
             </button>
           )}
         </div>
