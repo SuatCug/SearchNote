@@ -26,14 +26,15 @@ type QuizKind = 'quiz' | 'note-quiz' | 'topic-quiz';
 const LOADING_STEPS: Record<StudyKind, ProgressStep[]> = {
   quiz: [
     { label: 'Reading the note', at: 0 },
-    { label: 'Looking at the note’s questions and topics', at: 3000 },
-    { label: 'Writing new questions', at: 8000 },
+    { label: 'Finding the note’s topics', at: 3000 },
+    { label: 'Writing new questions on these topics', at: 8000 },
     { label: 'Working out the answers', at: 15000 },
   ],
   'note-quiz': [
     { label: 'Reading the note', at: 0 },
-    { label: 'Finding the questions', at: 3000 },
-    { label: 'Preparing the answer options', at: 9000 },
+    { label: 'Picking the key points', at: 3000 },
+    { label: 'Writing questions from the note', at: 8000 },
+    { label: 'Working out the answers', at: 15000 },
   ],
   'topic-quiz': [
     { label: 'Looking at this note’s topics', at: 0 },
@@ -53,18 +54,19 @@ function originLabel(q: QuizQuestion) {
   return null;
 }
 
-// Quiz açılınca önce mod seçilir: notun kendi soruları ya da yapay zekânın yazdığı yeni sorular.
+// Quiz açılınca önce mod seçilir: notta anlatılanlardan sorular ya da notun konularından (notun dışına da çıkan)
+// yeni sorular.
 const QUIZ_MODES: { kind: 'note-quiz' | 'quiz'; title: string; text: string; icon: typeof FileText }[] = [
   {
     kind: 'note-quiz',
     title: 'Questions from the note',
-    text: 'Practise with the questions already in this note, such as past exam questions, exercises and worked examples, asked exactly as they are.',
+    text: 'The AI writes questions from what this note explains: its definitions, formulas, examples and key points. Every answer is in the note.',
     icon: FileText,
   },
   {
     kind: 'quiz',
     title: 'New questions',
-    text: 'The AI writes new questions from this note: ones similar to the note’s own questions, and ones on its explanations and formulas.',
+    text: 'The AI writes new questions on this note’s topics. They can go beyond the note and cover related parts of these topics that it doesn’t include.',
     icon: Sparkles,
   },
 ];
@@ -252,15 +254,11 @@ const shuffle = <T,>(list: T[]) => {
   return result;
 };
 
-// Her açılışta ve "Start over"da soruların sırası ve şıkların yerleri karışır (ezber olmasın).
+// Her açılışta ve "Start over"da şıkların yerleri karışır (ezber olmasın); sorular da karışır, ama notta
+// anlatılanlardan yazılan sorularda (note-quiz) notun sayfa sırası korunur.
 // index / order asıl sıralardır: cevap kaydı ve doğruluk kontrolü bunlarla yapılır.
-// Sorular ve şıklar karıştırılır. Notun kendi sorularında (note-quiz) sınavdaki gibi sıra ve şıklar aynen kalır.
 const deal = (questions: QuizQuestion[], keepOrder = false) => {
-  const deck = questions.map((q, index) => ({
-    q,
-    index,
-    order: keepOrder ? q.options.map((_, i) => i) : shuffle(q.options.map((_, i) => i)),
-  }));
+  const deck = questions.map((q, index) => ({ q, index, order: shuffle(q.options.map((_, i) => i)) }));
   return keepOrder ? deck : shuffle(deck);
 };
 

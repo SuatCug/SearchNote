@@ -6,8 +6,9 @@ const studySetSchema = new mongoose.Schema(
   {
     note: { type: mongoose.Schema.Types.ObjectId, ref: 'Note', required: true },
     kind: { type: String, enum: ['quiz', 'note-quiz', 'flashcards', 'topic-quiz'], required: true },
-    // quiz: [{ question, origin, solution, options[], answerIndex, explanation, page, topic }] (yapay zekânın yeni soruları)
-    // note-quiz: aynı biçim; notta zaten olan sorular (origin 'note'). Notta soru yoksa items boş kaydedilir.
+    // quiz: [{ question, origin, solution, options[], answerIndex, explanation, page, topic }] (notun konularından,
+    //   notun dışına da çıkabilen sorular; notun dışındakilerde page null)
+    // note-quiz: aynı biçim; notta anlatılanlardan yazılan sorular (origin 'note'), sayfa sırasıyla.
     // topic-quiz: quiz ile aynı biçim; notun konularından, notla sınırlı olmadan üretilir (page hep null)
     // flashcards: [{ front, back, page }]
     items: { type: [mongoose.Schema.Types.Mixed], default: [] },
@@ -17,8 +18,8 @@ const studySetSchema = new mongoose.Schema(
     // Öğrenciye bitirmediği bir tur verilir; hepsini bitirdiyse yeni tur üretilip sona eklenir.
     rounds: { type: [{ start: Number, count: Number, _id: false }], default: undefined },
     model: { type: String },
-    // Üretim yönteminin sürümü. quiz 2: notun kendi sorularını bulur, benzerlerini üretir (origin alanı).
-    // Eski setler yeniden üretilmez: QuizAttempt cevapları soru sırasına (questionIndex) bağlı.
+    // Üretim yönteminin sürümü (quiz 4, note-quiz 2). Daha eski sürümlü setler açılınca silinip yeniden üretilir;
+    // o setin QuizAttempt cevapları da silinir (soru sırasına, questionIndex, bağlılar).
     version: { type: Number },
   },
   { timestamps: true }

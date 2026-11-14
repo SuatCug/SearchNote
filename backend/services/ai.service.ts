@@ -331,9 +331,10 @@ const validQuestions = (questions: QuizItem[]) =>
     (q) => q.options.length >= 2 && Number.isInteger(q.answerIndex) && q.answerIndex >= 0 && q.answerIndex < q.options.length
   );
 
-// "New questions": yapay zekânın kendi yazdığı sorular. Notta hazır sorular varsa onları kopyalamaz; aynı beceriyi
-// ölçen benzerlerini (similar) yazar, kalanlar notun açıklamalarından (concept). Notun kendi soruları için
-// generateNoteQuiz (ayrı mod) kullanılır.
+// "New questions": notun konularından yapay zekânın yazdığı sorular. Notla sınırlı değildir: aynı konuların notta
+// geçmeyen ama derste / sınavda sorulan başlıkları da sorulabilir (origin 'concept'). Notta anlatılan bir yere
+// dayanan soruda page o sayfadır, notun dışına çıkan soruda null.
+const QUIZ_SIZE = 10;
 const generateQuiz = async (noteTitle: string, noteText: string) => {
   if (MOCK) return mockQuiz(noteText);
   const { topics, questions } = await createJson<{ topics: TopicInfo[]; questions: QuizItem[] }>({
@@ -344,41 +345,31 @@ const generateQuiz = async (noteTitle: string, noteText: string) => {
         type: 'text',
         text:
           TOPICS_INSTRUCTION +
-          'Then look for questions that are already in the note: past exam questions, exercises, homework or review ' +
-          'questions, and solved examples (e.g. "Soru 1", "Örnek", "Q3", "Exercise 2.4", numbered problems). ' +
-          'Then write 10 multiple-choice questions that you write yourself, of two kinds (set "origin"). Every question ' +
-          'must be your own, original question. Never reuse, reword or shorten a question, exercise or worked example ' +
-          'from the note, never reuse its numbers, data, names or scenario, and never refer to it ("in Example 5.1", ' +
-          '"in the note’s example", "in the parachutist problem"): students practise the note’s own questions separately.\n' +
-          '- "similar": a question that tests the same skill as a question in the note, built from scratch in a ' +
-          'completely different context with different values (if the note’s question is about mines, use for ' +
-          'example a bakery, a hospital or a delivery company; or ask the reverse direction or a related case), so a ' +
-          'student who understood the original can solve it but cannot recognise it as the same question. Up to 4, or ' +
-          'up to 7 if the note is mostly questions (for example a past exam).\n' +
-          '- "concept": a question that checks understanding of the explanations, definitions and formulas in the note ' +
-          '(apply them, compare them, spot a mistake), not a question copied from a sentence. Use this for the rest; if ' +
-          'the note contains no questions, all 10 are "concept".\n' +
+          `Then write ${QUIZ_SIZE} multiple-choice questions on these topics, with "origin" set to "concept". ` +
+          'These questions are NOT limited to the note: for this quiz you may go beyond the note and use standard, ' +
+          'well-established course material. Write about half of them on what the note explains, and the rest on ' +
+          'related parts of the same topics that the note does not cover but a typical university exam on these topics ' +
+          'would ask (definitions, how things work, comparisons, applications, short calculations or worked examples). ' +
+          'Spread the questions across the topics. Do not copy or reword the note’s own questions, exercises or worked ' +
+          'examples: write your own questions. ' +
           'Every question must make sense on its own, without seeing the note: include every value, definition and ' +
-          'condition it needs, keep it consistent with itself and with the note, and make sure exactly one option is ' +
-          'correct. Set "page" to the page of the original question for "similar", or of the explained content for ' +
-          '"concept". ' +
+          'condition it needs, keep it consistent with itself, and make sure exactly one option is clearly correct. ' +
+          'Set "page" to the page of the note the question is based on, or null if the question goes beyond the note. ' +
           QUESTION_RULES,
       },
     ],
-    schema: quizSchema(['similar', 'concept']),
+    schema: quizSchema(['concept']),
     maxTokens: 16000,
+    // Kısmen nota dayanmadığı için doğruluk daha önemli: biraz daha fazla düşünür (konu pratiği gibi).
+    effort: 'medium',
   });
-  const valid = validQuestions(questions);
-  // Benzer sorular önce gelir (öğrenci önce notundaki sorulara en yakın olanlarla karşılaşır).
-  const ORDER: Record<QuizOrigin, number> = { note: 0, similar: 1, concept: 2 };
-  valid.sort((a, b) => ORDER[a.origin ?? 'concept'] - ORDER[b.origin ?? 'concept']);
-  return { topics, questions: valid };
+  return { topics, questions: validQuestions(questions).slice(0, QUIZ_SIZE) };
 };
 
-// "Questions from the note": notta zaten olan soruların aynısı (çıkmış sorular, alıştırmalar, örnekler), notta
-// geçtiği sırayla. Şıklı sorularda notun şıkları, açık uçlularda soru metni aynen kalır ve 4 şık eklenir.
-// Notta soru yoksa questions boş döner.
-const NOTE_QUIZ_MAX = 25;
+// "Questions from the note": notta anlatılanlardan (açıklamalar, tanımlar, formüller, örnekler) yapay zekânın
+// yazdığı sorular. Notta hazır soru olması gerekmez; varsa onlar da kullanılabilir. Her sorunun cevabı notta
+// bulunur ve sorular notun sayfa sırasıyla gelir (öğrenci notu baştan sona gözden geçirmiş olur).
+const NOTE_QUIZ_SIZE = 10;
 const generateNoteQuiz = async (noteTitle: string, noteText: string) => {
   if (MOCK) {
     const mock = mockQuiz(noteText);
@@ -392,23 +383,26 @@ const generateNoteQuiz = async (noteTitle: string, noteText: string) => {
         type: 'text',
         text:
           TOPICS_INSTRUCTION +
-          'Then find the questions that are already in the note: past exam questions, exercises, homework or review ' +
-          'questions, and solved examples (e.g. "Soru 1", "Örnek", "Q3", "Exercise 2.4", numbered problems). Return them ' +
-          `in the order they appear, at most ${NOTE_QUIZ_MAX}, with "origin" set to "note". Do not invent questions: if the ` +
-          'note contains no questions, return an empty questions list. ' +
-          'Ask each question exactly as the note asks it: keep its wording, numbers and conditions (you may only fix ' +
-          'obvious text-extraction errors, and add the values from a table or figure described in the note if the ' +
-          'question needs them). If the question already has options, use those options and its correct answer. If it ' +
-          'is open-ended, keep the question text unchanged and write 4 options: the correct answer and three plausible ' +
-          'wrong ones. If the note shows the answer or solution, use it; otherwise work it out. Set "page" to the page ' +
-          'where the question appears. ' +
+          `Then write ${NOTE_QUIZ_SIZE} multiple-choice questions on what this note explains, with "origin" set to ` +
+          '"note". The note does not need to contain any questions: write questions that check understanding of its ' +
+          'explanations, definitions, formulas, examples and key points (apply them, compare them, spot a mistake), not ' +
+          'questions copied word for word from a sentence. If the note has its own questions, exercises or solved ' +
+          'examples, you may include some of them as multiple-choice questions too. Every question must be answerable ' +
+          'from the note alone: do not ask about anything the note does not cover. Spread the questions across the ' +
+          'whole note, not only its first pages. ' +
+          'Every question must make sense on its own, without seeing the note: include every value, definition and ' +
+          'condition it needs, keep it consistent with itself and with the note, and make sure exactly one option is ' +
+          'correct. Set "page" to the page the answer comes from. ' +
           QUESTION_RULES,
       },
     ],
     schema: quizSchema(['note']),
     maxTokens: 16000,
   });
-  return { topics, questions: validQuestions(questions).slice(0, NOTE_QUIZ_MAX) };
+  const valid = validQuestions(questions).slice(0, NOTE_QUIZ_SIZE);
+  // Notun sırasıyla (sayfası olmayanlar sona).
+  valid.sort((a, b) => (a.page ?? Infinity) - (b.page ?? Infinity));
+  return { topics, questions: valid };
 };
 
 // Konu pratiği: notun quiz'inden çıkan konular üzerine, notla sınırlı olmayan yeni sorular.

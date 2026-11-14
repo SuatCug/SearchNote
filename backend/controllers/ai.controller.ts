@@ -20,6 +20,7 @@ import {
   buildKnowledgeMap,
   recordQuizAnswer,
   saveQuizTopics,
+  NOTE_QUIZ_INDEX_OFFSET,
   TOPIC_QUIZ_INDEX_OFFSET,
 } from '../services/knowledge.service.ts';
 import { buildPracticeList, searchPracticeNotes } from '../services/practice.service.ts';
@@ -30,9 +31,11 @@ const STUDY_KINDS = ['quiz', 'note-quiz', 'flashcards', 'topic-quiz'] as const;
 type StudyKind = (typeof STUDY_KINDS)[number];
 
 const MIN_STUDY_TEXT_CHARS = 200;
-// "New questions" üretim yönteminin sürümü. 3: hepsi yapay zekânın kendi sorusu (notun soruları ayrı modda,
-// note-quiz). Daha eski sürümle üretilmiş setler açılınca yeniden üretilir.
-const QUIZ_VERSION = 3;
+// Üretim yöntemlerinin sürümü; daha eski sürümle üretilmiş setler açılınca yeniden üretilir.
+// quiz ("New questions") 4: notun konularından, notun dışına da çıkabilen sorular.
+// note-quiz ("Questions from the note") 2: notta anlatılanlardan yazılan sorular (notta soru olması gerekmez).
+const QUIZ_VERSION = 4;
+const NOTE_QUIZ_VERSION = 2;
 // Cevap üretirken modele verilen en fazla kaynak parça sayısı.
 const ANSWER_SOURCES = 6;
 
@@ -239,21 +242,10 @@ const generateSet = async (noteId: string, title: string, course: string | undef
     } else {
       items = await generateFlashcards(title, text);
     }
-    if (!items.length) {
-      // Notta hiç soru yok: boş set saklanır (her açılışta tekrar aranmasın), hak iade edilir.
-      if (kind === 'note-quiz') {
-        await refundQuota(userId, 'study');
-        return await StudySet.findOneAndUpdate(
-          { note: noteId, kind },
-          { $setOnInsert: { items: [], topics, model: AI_MODEL, version: 1 } },
-          { upsert: true, returnDocument: 'after' }
-        ).lean();
-      }
-      throw new ApiError(502, 'The AI could not create study material. Please try again.');
-    }
+    if (!items.length) throw new ApiError(502, 'The AI could not create study material. Please try again.');
     return await StudySet.findOneAndUpdate(
       { note: noteId, kind },
-      { $setOnInsert: { items, topics, model: AI_MODEL, version: kind === 'quiz' ? QUIZ_VERSION : 1 } },
+      { $setOnInsert: { items, topics, model: AI_MODEL, version: kind === 'quiz' ? QUIZ_VERSION : kind === 'note-quiz' ? NOTE_QUIZ_VERSION : 1 } },
       { upsert: true, returnDocument: 'after' }
     ).lean();
   } catch (error) {
@@ -293,12 +285,20 @@ const getStudySet = asyncHandler<AuthedRequest>(async (req, res) => {
     await StudySet.deleteOne({ _id: set._id });
     set = null;
   }
-  // "New questions" eski yöntemle (v1 / v2: notun soruları da karışıktı) üretildiyse yeniden üretilir.
-  // O sete ait cevaplar da silinir: soru sırasına bağlı oldukları için yeni sorularla yanlış eşleşirlerdi.
-  if (kind === 'quiz' && set && ((set as { version?: number }).version ?? 1) < QUIZ_VERSION) {
+  // Quiz eski yöntemle üretildiyse yeniden üretilir. O sete ait cevaplar da silinir: soru sırasına bağlı
+  // oldukları için yeni sorularla yanlış eşleşirlerdi.
+  const version = (set as { version?: number } | null)?.version ?? 1;
+  if (set && kind === 'quiz' && version < QUIZ_VERSION) {
     await Promise.all([
       StudySet.deleteOne({ _id: set._id }),
       QuizAttempt.deleteMany({ note: note._id, questionIndex: { $lt: TOPIC_QUIZ_INDEX_OFFSET } }),
+    ]);
+    set = null;
+  }
+  if (set && kind === 'note-quiz' && version < NOTE_QUIZ_VERSION) {
+    await Promise.all([
+      StudySet.deleteOne({ _id: set._id }),
+      QuizAttempt.deleteMany({ note: note._id, questionIndex: { $gte: NOTE_QUIZ_INDEX_OFFSET } }),
     ]);
     set = null;
   }

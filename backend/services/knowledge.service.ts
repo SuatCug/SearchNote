@@ -225,4 +225,4 @@ const buildKnowledgeMap = async (userId: string) => {
   };
 };
 
-export { normalizeTopic, saveQuizTopics, recordQuizAnswer, buildKnowledgeMap, TOPIC_QUIZ_INDEX_OFFSET };
+export { normalizeTopic, saveQuizTopics, recordQuizAnswer, buildKnowledgeMap, TOPIC_QUIZ_INDEX_OFFSET, NOTE_QUIZ_INDEX_OFFSET };

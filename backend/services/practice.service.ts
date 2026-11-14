@@ -59,7 +59,6 @@ const describeNotes = async (userId: string, order: string[], sources: Map<strin
       .populate('author', AUTHOR_FIELDS)
       .lean(),
     // Daha önce üretilmiş setler anında açılır (bekleme ve hak harcama yok).
-    // Boş 'note-quiz' (notta soru bulunamadı) hazır set sayılmaz.
     StudySet.find({ note: { $in: orderIds }, 'items.0': { $exists: true }, ...(isMock() ? {} : { model: { $ne: 'mock' } }) })
       .select('note kind')
       .lean(),
