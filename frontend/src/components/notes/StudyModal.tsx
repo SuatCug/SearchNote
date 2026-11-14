@@ -192,7 +192,7 @@ export default function StudyModal({ noteId, kind: initialKind, onClose }: Study
             }
             onSwitch={
               set.kind === 'note-quiz'
-                ? { label: 'Try new questions', go: () => setKind('quiz') }
+                ? { label: 'Try new questions in this note', go: () => setKind('quiz') }
                 : set.kind === 'quiz'
                   ? { label: 'Questions from the note', go: () => setKind('note-quiz') }
                   : undefined

@@ -178,7 +178,8 @@ function MapView({ courses }: { courses: CourseItem[] }) {
         .slice(0, MAX_FOCUS),
     [courses]
   );
-  const [selected, setSelected] = useState<string | null>(focus[0]?.key ?? null);
+  // İlk açılışta hiçbir kart seçili değil; detay ancak bir karta tıklanınca açılır.
+  const [selected, setSelected] = useState<string | null>(null);
   const selectedCourse = selected ? courses.find((c) => c.key === selected) : undefined;
 
   return (
