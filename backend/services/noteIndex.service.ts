@@ -164,9 +164,30 @@ const ensureVectorIndex = async () => {
   }
 };
 
-// Anahtar sonradan eklendiyse: daha önce vektörsüz kaydedilmiş parçalar bir kez işlenir (açılışta, arka planda).
-const backfillEmbeddings = async () => {
-  if (!isVectorEnabled()) return;
+// Vektörü olmayan parçaları arka planda işler: açılışta (anahtar sonradan eklendiyse) ve her not indekslendikten
+// sonra. Aynı anda tek çalışma olur; çalışırken yeni parça eklenirse bitince tekrar bakılır.
+let backfillRunning: Promise<void> | null = null;
+let backfillAgain = false;
+const backfillEmbeddings = (): Promise<void> => {
+  if (!isVectorEnabled()) return Promise.resolve();
+  if (backfillRunning) {
+    backfillAgain = true;
+    return backfillRunning;
+  }
+  backfillRunning = (async () => {
+    try {
+      do {
+        backfillAgain = false;
+        await embedMissingChunks();
+      } while (backfillAgain);
+    } finally {
+      backfillRunning = null;
+    }
+  })();
+  return backfillRunning;
+};
+
+const embedMissingChunks = async () => {
   // Ödeme yöntemi eklenmemiş Voyage hesabı dakikada 3 istek / 10K token ile sınırlı: küçük gruplar, 429'da bekleyip tekrar.
   const BATCH = 16;
   let done = 0;
@@ -211,22 +232,10 @@ const indexNote = async (noteId: string) => {
       splitText(p.text).map((text) => ({ note: note._id, page: p.page, order: order++, text, lang: detectLang(text) }))
     );
 
-    let embeddings: number[][] | null = null;
-    if (chunks.length && isVectorEnabled()) {
-      try {
-        embeddings = await embedTexts(chunks.map((c) => c.text), 'document');
-      } catch (error) {
-        // Vektörler olmadan da kelime araması çalışır.
-        console.error('Embedding error:', (error as Error).message);
-      }
-    }
-
     await NoteChunk.deleteMany({ note: note._id });
     // Not bu sırada silindiyse parçalar sahipsiz kalmasın.
     if (!(await Note.exists({ _id: note._id }))) return;
-    if (chunks.length) {
-      await NoteChunk.insertMany(chunks.map((c, i) => (embeddings ? { ...c, embedding: embeddings[i] } : c)));
-    }
+    if (chunks.length) await NoteChunk.insertMany(chunks);
 
     const status = extraction.status === 'ready' && !chunks.length ? 'empty' : extraction.status;
     await Note.updateOne(
@@ -243,6 +252,9 @@ const indexNote = async (noteId: string) => {
       }
     );
     console.log(`📚 Indexed note ${noteId}: ${status}, ${chunks.length} chunks${extraction.ocr ? ' (OCR)' : ''}`);
+    // Anlamsal arama vektörleri arka planda, Voyage hız sınırına uygun küçük gruplarla eklenir. Not bu arada
+    // kelime aramasıyla bulunabilir ve çalışma araçları kullanılabilir (status zaten ready).
+    if (chunks.length) void backfillEmbeddings().catch((e) => console.error('Embedding backfill error:', (e as Error).message));
   } catch (error) {
     console.error(`Indexing failed for note ${noteId}:`, (error as Error).message);
     await Note.updateOne({ _id: noteId }, { $set: { 'ai.status': 'failed', 'ai.indexedAt': new Date() } });
@@ -273,7 +285,8 @@ const enqueueNoteIndex = async (noteId: string | mongoose.Types.ObjectId) => {
 const resumePendingIndexing = async () => {
   if (String(process.env.AI_INDEX_ON_START || 'true').toLowerCase() === 'false') return;
   await ensureVectorIndex();
-  await backfillEmbeddings().catch((e) => console.error('Embedding backfill error:', (e as Error).message));
+  // Arka planda: bekleyen notların indekslenmesi vektör tamamlamayı beklemez.
+  void backfillEmbeddings().catch((e) => console.error('Embedding backfill error:', (e as Error).message));
   const conditions: Record<string, unknown>[] = [
     { 'ai.status': { $exists: false } },
     { 'ai.status': { $in: ['pending', 'processing'] } },

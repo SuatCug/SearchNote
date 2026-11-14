@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
-import { QuizAttempt, StudySet, Topic } from '../models/index.ts';
+import { Note, QuizAttempt, StudySet, Topic } from '../models/index.ts';
 import ApiError from '../utils/apiError.ts';
-import { searchNotesContent } from './noteIndex.service.ts';
 import { isMock, type QuizItem, type TopicInfo } from './ai.service.ts';
 
 // Kişisel bilgi haritası: öğrencinin quiz cevaplarından konu başına doğru / toplam hesaplanır, konular arasındaki
@@ -149,6 +148,21 @@ const buildKnowledgeMap = async (userId: string) => {
   }
 
   const statsByKey = new Map(stats.map((s) => [s._id, s]));
+  // Konunun hangi dersten geldiği (sorularının çıktığı notların ders kodu ve adı); kartlarda konu adının altında yazar.
+  const practicedNoteIds = [...new Set(stats.flatMap((s) => s.notes.map(String)))];
+  const courseByNote = new Map(
+    (await Note.find({ _id: { $in: practicedNoteIds } }).select('courseCode courseName').lean()).map((n) => {
+      const code = n.courseCode?.trim();
+      const name = n.courseName?.trim();
+      const label = code && name && name !== code ? `${code} – ${name}` : code || name || '';
+      return [String(n._id), label];
+    })
+  );
+  const coursesOf = (key: string) => [
+    ...new Set(
+      (statsByKey.get(key)?.notes ?? []).map((id) => courseByNote.get(String(id)) ?? '').filter(Boolean)
+    ),
+  ];
   const nodes = [...keys].map((key) => {
     const s = statsByKey.get(key);
     return {
@@ -157,6 +171,8 @@ const buildKnowledgeMap = async (userId: string) => {
       correct: s?.correct ?? 0,
       total: s?.total ?? 0,
       status: statusOf(s?.correct ?? 0, s?.total ?? 0),
+      // Hiç çalışılmamış ön koşul konularda boş.
+      courses: coursesOf(key),
     };
   });
   const nodesByKey = new Map(nodes.map((n) => [n.key, n]));
@@ -189,16 +205,14 @@ const buildKnowledgeMap = async (userId: string) => {
             : `${lead} (${score}). One more pass should do it.`;
 
       // Önce eksik temeli, sonra konunun kendisini anlatan notlar (izleyicinin görebildikleri).
-      const target = foundation ?? node;
-      const hits = await searchNotesContent({ query: target.name, viewerId: userId, limit: 3, perNote: 1 });
       return {
         topic: node.key,
         name: node.name,
         status: node.status,
         message,
         foundation: foundation ? { key: foundation.key, name: foundation.name } : null,
-        recommendedFor: target.name,
-        notes: hits.map((h) => ({ ...h.note, page: h.page, snippet: h.snippet })),
+        recommendedFor: (foundation ?? node).name,
+        courses: coursesOf(node.key),
       };
     })
   );

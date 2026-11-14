@@ -241,6 +241,8 @@ export interface KnowledgeNode {
   correct: number;
   total: number;
   status: TopicStatus;
+  // Konunun geldiği ders(ler), ör. "CENG213 – Data Structures"; hiç çalışılmamış ön koşul konularda boş.
+  courses: string[];
 }
 
 // from: ön koşul konu, to: ona dayanan konu.
@@ -255,9 +257,10 @@ export interface KnowledgeFocus {
   status: TopicStatus;
   message: string;
   foundation: { key: string; name: string } | null;
-  // Önerilen notların hangi konu için olduğu (eksik temel varsa o).
+  // Önerilen çalışmanın hangi konu için olduğu (eksik temel varsa o).
   recommendedFor: string;
-  notes: (ContentSource['note'] & { page: number | null; snippet: string })[];
+  // Konunun sorularının geldiği derslerin adları (ör. "CENG213 – Data Structures").
+  courses: string[];
 }
 
 // Pratik listesi: quiz / flashcard çalışılabilecek notlar.
