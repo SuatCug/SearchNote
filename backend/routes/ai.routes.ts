@@ -14,7 +14,8 @@ const verifiedOnly = [authenticate, requireVerified];
 const askRules = [
   body('question').isString().trim().isLength({ min: 2, max: 300 }).withMessage('Write a question (2-300 characters).'),
   body('noteId').optional({ values: 'falsy' }).isMongoId().withMessage('Invalid note id.'),
-  body('courseCode').optional({ values: 'falsy' }).isString().isLength({ max: 20 }),
+  // Ders kodu ya da ders adı ("MATH203" ya da "Calculus 2").
+  body('courseCode').optional({ values: 'falsy' }).isString().isLength({ max: 80 }),
   body('answer').optional().isBoolean(),
 ];
 
@@ -24,6 +25,8 @@ router.post(
   '/notes/:id/study/:kind',
   idParamRules,
   param('kind').isIn(['quiz', 'note-quiz', 'flashcards', 'topic-quiz']).withMessage('Unknown study tool.'),
+  // note-quiz: ?more=1 → "More questions from the note" turu.
+  query('more').optional().isIn(['1']),
   validate,
   verifiedOnly,
   aiController.getStudySet

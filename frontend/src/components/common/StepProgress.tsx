@@ -7,9 +7,15 @@ export interface ProgressStep {
   at: number;
 }
 
+// Bitişte kalan her adım bu kadar arayla tamamlandı işaretlenir; hepsi bitince bu kadar bekleyip onDone çağrılır.
+const FINISH_STEP_MS = 220;
+const FINISH_HOLD_MS = 300;
+
 // Yapay zekâ beklemelerinde (Ask cevabı, quiz / flashcard üretimi) dönen çubuk yerine adım listesi.
 // İstekler tek parça olduğu için adımlar arası geçiş gerçek ilerlemeye değil tahmini sürelere göre değişir;
 // son adım iş bitene kadar açık kalır. children: adımların altında gelecek içeriğin iskeleti.
+// finished + onDone verilirse: iş tahminden önce biterse ekran ilk adımlardayken birden içeriğe atlamaz; kalan
+// adımlar hızlıca tek tek tamamlanır, sonra onDone çağrılır (çağıran o zaman içeriği gösterir).
 // Her yeni beklemede sayaç sıfırlansın diye çağıran taraf key vermeli.
 export default function StepProgress({
   steps,
@@ -18,6 +24,8 @@ export default function StepProgress({
   note,
   children,
   className = '',
+  finished = false,
+  onDone,
 }: {
   steps: ProgressStep[];
   slowAfterMs?: number;
@@ -26,15 +34,30 @@ export default function StepProgress({
   note?: ReactNode;
   children?: ReactNode;
   className?: string;
+  finished?: boolean;
+  onDone?: () => void;
 }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const start = Date.now();
-    const id = window.setInterval(() => setElapsed(Date.now() - start), 250);
+    const id = window.setInterval(() => setElapsed(Date.now() - start), 100);
     return () => window.clearInterval(id);
   }, []);
 
-  const current = steps.reduce((last, step, i) => (elapsed >= step.at ? i : last), 0);
+  const timedStep = steps.reduce((last, step, i) => (elapsed >= step.at ? i : last), 0);
+  // İş bittiği an: o anki adım ve süre (kalan adımlar buradan itibaren hızlıca tamamlanır).
+  const [finish, setFinish] = useState<{ at: number; from: number } | null>(null);
+  if (finished && !finish) setFinish({ at: elapsed, from: timedStep });
+  // current === steps.length: hepsi tamamlandı.
+  const current = finish
+    ? Math.min(steps.length, finish.from + 1 + Math.floor((elapsed - finish.at) / FINISH_STEP_MS))
+    : timedStep;
+  const allDone = current >= steps.length;
+  useEffect(() => {
+    if (!allDone || !onDone) return;
+    const id = window.setTimeout(onDone, FINISH_HOLD_MS);
+    return () => window.clearTimeout(id);
+  }, [allDone, onDone]);
 
   return (
     <div role="status" aria-live="polite" className={className}>

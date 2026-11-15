@@ -11,8 +11,9 @@ export const aiApi = baseApi.injectEndpoints({
       query: (body) => ({ url: '/ai/ask', method: 'POST', body }),
       keepUnusedDataFor: 600,
     }),
-    getStudySet: builder.query<ApiResponse<{ set: StudySet }>, { noteId: string; kind: StudyKind }>({
-      query: ({ noteId, kind }) => ({ url: `/ai/notes/${noteId}/study/${kind}`, method: 'POST' }),
+    // more: notun sorularının ek turu ("More questions from the note"; sadece note-quiz).
+    getStudySet: builder.query<ApiResponse<{ set: StudySet }>, { noteId: string; kind: StudyKind; more?: boolean }>({
+      query: ({ noteId, kind, more }) => ({ url: `/ai/notes/${noteId}/study/${kind}${more ? '?more=1' : ''}`, method: 'POST' }),
       keepUnusedDataFor: 3600,
     }),
     // Quiz cevabı bilgi haritası için kaydedilir; harita bir sonraki açılışta tazelenir.

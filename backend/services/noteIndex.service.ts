@@ -6,7 +6,7 @@ import { readNoteFile } from './storage.service.ts';
 import { visibleNotesMatch } from './note.service.ts';
 import { canOcr, transcribeFile, OCR_MAX_PAGES } from './ai.service.ts';
 import { getExtension } from '../utils/fileTypes.util.ts';
-import { containsRegex, exactRegex } from '../utils/regex.util.ts';
+import { containsRegex } from '../utils/regex.util.ts';
 
 // Not içeriği araması: yüklenen dosyanın metni sayfa sayfa çıkarılır, parçalara bölünür ve NoteChunk
 // koleksiyonuna yazılır. Arama, MongoDB metin indeksiyle (Türkçe kök bulma) ve VOYAGE_API_KEY tanımlıysa
@@ -340,14 +340,17 @@ interface RawHit {
 
 // Notlar Türkçe ya da İngilizce olabilir ve soru başka dilde sorulabilir ("Thevenin eşdeğeri" -> İngilizce not):
 // sorgu iki dilin kök bulma kurallarıyla ayrı ayrı aranır, sonuçlar birleştirilir.
-const textSearch = async (query: string, language: 'turkish' | 'english', noteId?: string): Promise<RawHit[]> => {
+// scope: sadece bu notların içinde ara (tek not ya da ders filtresi).
+type Scope = mongoose.Types.ObjectId[] | undefined;
+
+const textSearch = async (query: string, language: 'turkish' | 'english', scope: Scope): Promise<RawHit[]> => {
   const terms = searchTerms(query);
   if (!terms.length) return [];
   return NoteChunk.aggregate([
     {
       $match: {
         $text: { $search: terms.join(' '), $language: language },
-        ...(noteId && { note: new mongoose.Types.ObjectId(noteId) }),
+        ...(scope && { note: { $in: scope } }),
       },
     },
     { $sort: { score: { $meta: 'textScore' } } },
@@ -356,7 +359,7 @@ const textSearch = async (query: string, language: 'turkish' | 'english', noteId
   ]);
 };
 
-const vectorSearch = async (query: string, noteId?: string): Promise<RawHit[]> => {
+const vectorSearch = async (query: string, scope: Scope): Promise<RawHit[]> => {
   if (!isVectorEnabled()) return [];
   try {
     const [vector] = await embedTexts([query], 'query');
@@ -368,7 +371,7 @@ const vectorSearch = async (query: string, noteId?: string): Promise<RawHit[]> =
           queryVector: vector,
           numCandidates: 300,
           limit: 60,
-          ...(noteId && { filter: { note: new mongoose.Types.ObjectId(noteId) } }),
+          ...(scope && { filter: { note: { $in: scope } } }),
         },
       },
       { $project: { note: 1, page: 1, text: 1, score: { $meta: 'vectorSearchScore' } } },
@@ -393,6 +396,88 @@ const fuseResults = (lists: RawHit[][]) => {
     });
   }
   return [...scores.values()].sort((a, b) => b.score - a.score).map((e) => e.hit);
+};
+
+// ---------- Ders adıyla / koduyla arama ----------
+// "calculus 2 örnek soruları" gibi sorgularda ders adı notun metninde geçmez (sadece notun ders bilgisindedir).
+// Sorgu bir dersin adını (tüm kelimeleriyle) ya da kodunu içeriyorsa o dersin notları sonuçlarda öne alınır.
+
+// Küçük harf, Türkçe karakterler sadeleşir; romen rakamları sayıya çevrilir ("Calculus II" = "calculus 2").
+const ROMAN: Record<string, string> = { i: '1', ii: '2', iii: '3', iv: '4' };
+const foldTokens = (value: string) =>
+  value
+    .toLocaleLowerCase('tr')
+    .replace(/ı/g, 'i')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .map((t) => ROMAN[t] ?? t);
+
+const COURSE_NOTE_LIMIT = 20;
+
+// Aday notlar: ders adında / kodunda metnin bir kelimesi geçen, indekslenmiş notlar; kesin eşleşmeyi `accept` söyler.
+const findCourseNotes = async (
+  text: string,
+  minTermLength: number,
+  accept: (code: string, nameTokens: string[]) => boolean
+) => {
+  const terms = searchTerms(text).filter((t) => t.length >= minTermLength);
+  if (!terms.length) return [];
+  const candidates = await Note.find({
+    'ai.status': 'ready',
+    $or: terms.flatMap((t) => [{ courseName: containsRegex(t) }, { courseCode: containsRegex(t) }]),
+  })
+    .select('courseName courseCode')
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .lean();
+  return candidates
+    .filter((n) => accept(foldTokens(n.courseCode ?? '').join(''), foldTokens(n.courseName ?? '')))
+    .map((n) => n._id);
+};
+
+// Sorgunun içinde bir dersin adı (tüm kelimeleri) ya da kodu geçiyor mu ("calculus 2 örnek soruları").
+const courseMatchedNoteIds = async (query: string) => {
+  const queryTokens = foldTokens(query);
+  const tokenSet = new Set(queryTokens);
+  const compact = queryTokens.join('');
+  const ids = await findCourseNotes(
+    query,
+    3,
+    (code, name) => (code.length >= 4 && compact.includes(code)) || (name.length > 0 && name.every((t) => tokenSet.has(t)))
+  );
+  return ids.slice(0, COURSE_NOTE_LIMIT);
+};
+
+// Ders filtresi (Ask sayfasındaki "Course code or name" kutusu): kodu ya da adı tam olarak bu olan dersin notları.
+// "MATH 203" = "MATH203", "Calculus II" = "calculus 2". Tam eşleşen ders yoksa adı bu kelimelerin hepsini içeren
+// dersler alınır ("Calculus" -> Calculus I, Calculus 2 ...).
+const courseFilterNoteIds = async (course: string) => {
+  const inputTokens = foldTokens(course);
+  const tokens = inputTokens.join(' ');
+  const compact = inputTokens.join('');
+  if (!compact) return [];
+  const exact = await findCourseNotes(course, 2, (code, name) => code === compact || (name.length > 0 && name.join(' ') === tokens));
+  if (exact.length) return exact;
+  return findCourseNotes(course, 2, (_code, name) => inputTokens.every((t) => name.includes(t)));
+};
+
+// Ders eşleşen notların parçaları en öne alınır: içlerinde de aramayla eşleşen parçalar önce, diğerleri sayfa
+// sırasıyla. Geri kalan sonuçlar ardından gelir.
+const boostCourseNotes = async (fused: RawHit[], courseNoteIds: mongoose.Types.ObjectId[]) => {
+  if (!courseNoteIds.length) return fused;
+  const ids = new Set(courseNoteIds.map(String));
+  const matched = fused.filter((h) => ids.has(String(h.note)));
+  const seen = new Set(matched.map((h) => String(h._id)));
+  const rest = (
+    await NoteChunk.find({ note: { $in: courseNoteIds } })
+      .sort({ order: 1 })
+      .select('note page text')
+      .limit(200)
+      .lean<RawHit[]>()
+  ).filter((h) => !seen.has(String(h._id)));
+  return [...matched, ...rest, ...fused.filter((h) => !ids.has(String(h.note)))];
 };
 
 // Arama kelimesinin geçtiği yerin çevresinden kısa bir alıntı.
@@ -441,12 +526,17 @@ interface SearchOptions {
 const searchNotesContent = async ({ query, viewerId, noteId, courseCode, limit = 8, perNote = 2 }: SearchOptions) => {
   const primary = detectLang(query);
   const secondary = primary === 'turkish' ? 'english' : 'turkish';
-  const lists = await Promise.all([
-    textSearch(query, primary, noteId),
-    textSearch(query, secondary, noteId),
-    vectorSearch(query, noteId),
+  // Ders filtresi verildiyse arama o dersin notlarıyla sınırlanır (dersin notu yoksa sonuç da yoktur).
+  const filterIds = !noteId && courseCode ? await courseFilterNoteIds(courseCode) : undefined;
+  if (filterIds && !filterIds.length) return [];
+  const scope = noteId ? [new mongoose.Types.ObjectId(noteId)] : filterIds;
+  const [lists, courseNoteIds] = await Promise.all([
+    Promise.all([textSearch(query, primary, scope), textSearch(query, secondary, scope), vectorSearch(query, scope)]),
+    // Öne alınacak ders notları: filtre varsa filtredeki ders (metinde kelime eşleşmesi olmasa da o dersin sayfaları
+    // gelir: "örnek soru" İngilizce bir notta geçmez), yoksa sorguda adı / kodu geçen ders. Tek not içinde gerekmez.
+    noteId ? Promise.resolve([]) : filterIds ?? courseMatchedNoteIds(query),
   ]);
-  const fused = fuseResults(lists);
+  const fused = await boostCourseNotes(fuseResults(lists), courseNoteIds);
   if (!fused.length) return [];
 
   // Sadece izleyicinin görebileceği notlar (grup notları genel aramada çıkmaz; tek not içinde aramada izin
@@ -455,10 +545,8 @@ const searchNotesContent = async ({ query, viewerId, noteId, courseCode, limit =
   let visibility = {};
   if (!noteId) {
     const viewer = await User.findById(viewerId).select('following').lean();
-    visibility = {
-      ...visibleNotesMatch(viewerId, viewer?.following),
-      ...(courseCode && { courseCode: exactRegex(courseCode.replace(/\s+/g, '')) }),
-    };
+    // Ders filtresi yukarıda scope ile uygulandı.
+    visibility = visibleNotesMatch(viewerId, viewer?.following);
   }
   const notes = await Note.find({ _id: { $in: noteIds }, ...visibility })
     .select('title courseCode courseName fileType author')

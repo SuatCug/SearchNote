@@ -159,6 +159,10 @@ const ASK_SYSTEM =
   'you are given (each excerpt is a page of a student’s lecture note, numbered from 0). ' +
   'First decide whether the excerpts actually answer the question. If they do not (the question is unrelated to them, ' +
   'or they only share a word with it), set covered to false, answer to an empty string and sources to an empty list. ' +
+  'Each excerpt title starts with its course code and course name. Students also search for material instead of ' +
+  'asking a question (e.g. "calculus 2 example questions", "thermodynamics summary"): if excerpts from that course ' +
+  'or topic contain such material, the request is covered; briefly describe what they contain (e.g. which topics ' +
+  'the questions are on) and list them in sources. ' +
   'Never use outside knowledge and never invent facts. ' +
   'If they do, set covered to true and write the answer clearly and concisely (at most about 150 words), like a helpful ' +
   'classmate explaining the topic. Write every sentence in the language of the question; if the excerpts are in another ' +
@@ -224,7 +228,8 @@ export type QuizOrigin = 'note' | 'similar' | 'concept';
 export interface QuizItem {
   question: string;
   origin?: QuizOrigin;
-  // Modelin şıkları yazmadan önce yaptığı çözüm (cevabın doğruluğu için; arayüzde gösterilmez).
+  // Modelin şıkları yazmadan önce yazdığı adım adım çözüm: cevabın doğruluğunu artırır, öğrenci de cevapladıktan
+  // sonra "Show step-by-step solution" ile görür. Eski topic-quiz setlerinde yok.
   solution?: string;
   options: string[];
   answerIndex: number;
@@ -306,11 +311,20 @@ const FLASHCARD_SCHEMA = {
   additionalProperties: false,
 };
 
+// Web arayüzü formülleri KaTeX ile gösterir (MathText): yalnız \( \) ve \[ \] ayırıcıları tanınır ($ değil:
+// para birimiyle karışırdı). Mobil uygulama bunları ham metin olarak gösterir.
+const MATH_RULE =
+  ' Write every mathematical expression (formulas, equations, integrals, fractions, powers, Greek letters) in LaTeX: ' +
+  'inline between \\( and \\), e.g. \\(\\int_0^1 x^2\\,dx = \\tfrac{1}{3}\\); a long formula on its own between ' +
+  '\\[ and \\], kept on a single line. Never use $ as a math delimiter. Do not use Markdown. In the JSON, ' +
+  'escape each LaTeX backslash exactly once, so the text contains \\frac, not \\\\frac.';
+
 const STUDY_SYSTEM =
   'You create exam-preparation material for university students from their lecture notes. ' +
   'Use only what is in the note; write in the same language as the note. ' +
   'Pages are marked like [Page 3]; set "page" to the page an item comes from (null if the note has no page marks). ' +
-  'Prefer the important concepts, definitions, formulas and typical exam topics over trivia.';
+  'Prefer the important concepts, definitions, formulas and typical exam topics over trivia.' +
+  MATH_RULE;
 
 // Konu listesi ve ön koşulları (bilgi haritası); iki quiz türünde de aynı.
 const TOPICS_INSTRUCTION =
@@ -319,21 +333,44 @@ const TOPICS_INSTRUCTION =
   'the foundational topics a student must know first (e.g. Derivatives -> Functions, Limits). Prerequisites may be ' +
   'topics that are not in the note. ';
 
+// Çözüm şıklardan önce yazılır (şemadaki sıra), bu yüzden şıklara değil soruya dayanır.
+const SOLUTION_RULE =
+  'In "solution", solve the question before writing the options, as a worked solution the student will read after ' +
+  'answering: numbered steps, each on its own line ("1. ...", "2. ..."), naming the rule, formula or definition used ' +
+  'and showing the intermediate results, then a last line with the final answer. Explain why, not only what; keep ' +
+  'it short for simple questions. Write it in the same language as the question. ';
+
 const QUESTION_RULES =
   'Each question has exactly 4 options with one correct answer (answerIndex is 0-3), a one or two sentence ' +
   'explanation of why the answer is correct, and "topic" set to exactly one of the topic names above. ' +
-  'In "solution", first work out the answer step by step; then write the options so that the correct one matches ' +
-  'your solution and the wrong ones are plausible mistakes. Vary the position of the correct answer. Options are ' +
+  SOLUTION_RULE +
+  'Then write the options so that the correct one matches your solution and the wrong ones are plausible mistakes. Vary the position of the correct answer. Options are ' +
   'shown in random order, so never refer to them by letter or position (no "option B", "all of the above").';
 
-const validQuestions = (questions: QuizItem[]) =>
-  questions.filter(
-    (q) => q.options.length >= 2 && Number.isInteger(q.answerIndex) && q.answerIndex >= 0 && q.answerIndex < q.options.length
-  );
+// Model bazen JSON'da ters eğik çizgiyi iki kez kaçırıyor: \(\frac..\) yerine \\(\\frac..\\) geliyor ve
+// formüller arayüzde bozuk görünüyor. Metinde \\( ya da \\[ varsa bütün metin çift kaçırılmıştır: \\ → \.
+// (Doğru yazılmış metinde \\( geçmez; frontend MathText eski kayıtlar için aynısını yapar.)
+const fixLatex = (text: string) => (/\\\\[([]/.test(text) ? text.replace(/\\\\/g, '\\') : text);
 
-// "New questions": notun konularından yapay zekânın yazdığı sorular. Notla sınırlı değildir: aynı konuların notta
-// geçmeyen ama derste / sınavda sorulan başlıkları da sorulabilir (origin 'concept'). Notta anlatılan bir yere
-// dayanan soruda page o sayfadır, notun dışına çıkan soruda null.
+const fixQuestionLatex = <T extends Omit<QuizItem, 'page'>>(q: T): T => ({
+  ...q,
+  question: fixLatex(q.question),
+  solution: q.solution && fixLatex(q.solution),
+  options: q.options.map(fixLatex),
+  explanation: fixLatex(q.explanation),
+});
+
+const validQuestions = (questions: QuizItem[]) =>
+  questions
+    .filter(
+      (q) => q.options.length >= 2 && Number.isInteger(q.answerIndex) && q.answerIndex >= 0 && q.answerIndex < q.options.length
+    )
+    .map(fixQuestionLatex);
+
+// "New questions": yapay zekânın notun konuları ve yöntemleriyle yazdığı yeni sorular (origin 'concept'). Notta
+// olmayan yöntem / alt konu sorulmaz (notta kısmi integrasyon varsa basit kesirlere ayırma gelmez); farklı sayılar,
+// fonksiyonlar ve senaryolarla aynı becerileri çalıştırır. page, sorunun çalıştırdığı konunun anlatıldığı sayfadır.
+// Notun dışına çıkmak isteyen için "More new questions" (konu pratiği) vardır.
 const QUIZ_SIZE = 10;
 const generateQuiz = async (noteTitle: string, noteText: string) => {
   if (MOCK) return mockQuiz(noteText);
@@ -345,16 +382,17 @@ const generateQuiz = async (noteTitle: string, noteText: string) => {
         type: 'text',
         text:
           TOPICS_INSTRUCTION +
-          `Then write ${QUIZ_SIZE} multiple-choice questions on these topics, with "origin" set to "concept". ` +
-          'These questions are NOT limited to the note: for this quiz you may go beyond the note and use standard, ' +
-          'well-established course material. Write about half of them on what the note explains, and the rest on ' +
-          'related parts of the same topics that the note does not cover but a typical university exam on these topics ' +
-          'would ask (definitions, how things work, comparisons, applications, short calculations or worked examples). ' +
-          'Spread the questions across the topics. Do not copy or reword the note’s own questions, exercises or worked ' +
-          'examples: write your own questions. ' +
+          `Then write ${QUIZ_SIZE} new multiple-choice questions, with "origin" set to "concept", that practise ` +
+          'exactly the concepts, methods and techniques this note covers. Stay within the note’s scope: do not ask ' +
+          'about any method, technique, rule or subtopic that the note does not explain or use, even if it belongs to ' +
+          'the same course or chapter (e.g. if the note covers integration by parts but not partial fractions, ask no ' +
+          'partial-fraction questions). Within that scope the questions are new: use different numbers, functions, ' +
+          'examples and situations than the note, apply the methods to new cases, ask why a step works, compare ' +
+          'cases, or spot a mistake. Do not copy or reword the note’s own questions, exercises or worked examples. ' +
+          'Spread the questions across the topics and the whole note, not only its first pages. ' +
           'Every question must make sense on its own, without seeing the note: include every value, definition and ' +
           'condition it needs, keep it consistent with itself, and make sure exactly one option is clearly correct. ' +
-          'Set "page" to the page of the note the question is based on, or null if the question goes beyond the note. ' +
+          'Set "page" to the page of the note where the method or concept the question practises is explained. ' +
           QUESTION_RULES,
       },
     ],
@@ -369,12 +407,29 @@ const generateQuiz = async (noteTitle: string, noteText: string) => {
 // "Questions from the note": notta anlatılanlardan (açıklamalar, tanımlar, formüller, örnekler) yapay zekânın
 // yazdığı sorular. Notta hazır soru olması gerekmez; varsa onlar da kullanılabilir. Her sorunun cevabı notta
 // bulunur ve sorular notun sayfa sırasıyla gelir (öğrenci notu baştan sona gözden geçirmiş olur).
+// "More questions from the note" turları: previous = öğrencinin daha önce gördüğü sorular (tekrarlanmaz),
+// topicNames = ilk turun konu adları (bilgi haritasında aynı konular kullanılsın diye aynen yazılır).
 const NOTE_QUIZ_SIZE = 10;
-const generateNoteQuiz = async (noteTitle: string, noteText: string) => {
+const generateNoteQuiz = async (
+  noteTitle: string,
+  noteText: string,
+  more?: { previous: string[]; topicNames: string[] }
+) => {
   if (MOCK) {
     const mock = mockQuiz(noteText);
-    return { topics: mock.topics, questions: mock.questions.map((q) => ({ ...q, origin: 'note' as const })) };
+    return {
+      topics: mock.topics,
+      questions: mock.questions.map((q) => ({ ...q, origin: 'note' as const, question: more ? `[More] ${q.question}` : q.question })),
+    };
   }
+  const moreInstruction = more
+    ? 'The student has already answered the questions listed below. Write different questions: cover parts of the ' +
+      'note those questions did not reach, or test the same points from a new angle. Do not repeat or rephrase them. ' +
+      (more.topicNames.length
+        ? `Use these topic names wherever they fit, spelled exactly like this: ${more.topicNames.join(', ')}. `
+        : '') +
+      `\n\nAlready answered:\n${more.previous.map((q, i) => `${i + 1}. ${q}`).join('\n')}\n\n`
+    : '';
   const { topics, questions } = await createJson<{ topics: TopicInfo[]; questions: QuizItem[] }>({
     system: STUDY_SYSTEM,
     content: [
@@ -382,6 +437,7 @@ const generateNoteQuiz = async (noteTitle: string, noteText: string) => {
       {
         type: 'text',
         text:
+          moreInstruction +
           TOPICS_INSTRUCTION +
           `Then write ${NOTE_QUIZ_SIZE} multiple-choice questions on what this note explains, with "origin" set to ` +
           '"note". The note does not need to contain any questions: write questions that check understanding of its ' +
@@ -411,7 +467,8 @@ const generateNoteQuiz = async (noteTitle: string, noteText: string) => {
 const TOPIC_QUIZ_SYSTEM =
   'You write exam-preparation questions for university students. Questions test standard, well-established ' +
   'course material on the given topics at the level of a university exam; each has exactly one clearly correct answer. ' +
-  'Write in the same language as the example questions.';
+  'Write in the same language as the example questions.' +
+  MATH_RULE;
 
 const generateTopicQuiz = async (params: {
   noteTitle: string;
@@ -431,14 +488,16 @@ const generateTopicQuiz = async (params: {
         type: 'array',
         items: {
           type: 'object',
+          // Sıra önemli: önce çözüm, sonra şıklar (bkz. quizSchema).
           properties: {
             question: { type: 'string' },
+            solution: { type: 'string' },
             options: { type: 'array', items: { type: 'string' } },
             answerIndex: { type: 'integer' },
             explanation: { type: 'string' },
             topic: { type: 'string', enum: topics },
           },
-          required: ['question', 'options', 'answerIndex', 'explanation', 'topic'],
+          required: ['question', 'solution', 'options', 'answerIndex', 'explanation', 'topic'],
           additionalProperties: false,
         },
       },
@@ -462,8 +521,10 @@ const generateTopicQuiz = async (params: {
         text:
           'Write 10 new multiple-choice questions on these topics. They may go beyond the note: ask about definitions, ' +
           'how things work, comparisons, complexity, short code or worked examples — whatever a typical exam on these ' +
-          'topics would ask. Spread the questions across the topics. Each has exactly 4 options with one correct answer ' +
-          '(answerIndex is 0-3), plausible wrong options, a one or two sentence explanation of why the answer is correct, ' +
+          'topics would ask. Spread the questions across the topics. ' +
+          SOLUTION_RULE +
+          'Then write exactly 4 options with one correct answer that matches your solution (answerIndex is 0-3), ' +
+          'plausible wrong options, a one or two sentence explanation of why the answer is correct, ' +
           'and "topic" set to the topic it tests. Vary the position of the correct answer. Options are shown in random order, so never refer to them by letter or position (no "option B", "all of the above").',
       },
     ],
@@ -481,7 +542,7 @@ const generateTopicQuiz = async (params: {
         q.answerIndex < q.options.length &&
         topics.includes(q.topic)
     )
-    .map((q) => ({ ...q, page: null }));
+    .map((q) => ({ ...fixQuestionLatex(q), page: null }));
 };
 
 const generateFlashcards = async (noteTitle: string, noteText: string) => {
@@ -500,7 +561,9 @@ const generateFlashcards = async (noteTitle: string, noteText: string) => {
     schema: FLASHCARD_SCHEMA,
     maxTokens: 12000,
   });
-  return cards.filter((c) => c.front.trim() && c.back.trim());
+  return cards
+    .filter((c) => c.front.trim() && c.back.trim())
+    .map((c) => ({ ...c, front: fixLatex(c.front), back: fixLatex(c.back) }));
 };
 
 // ---------- Deneme modu (AI_MOCK) içerikleri ----------
@@ -558,6 +621,7 @@ const mockQuiz = (noteText: string) => {
       question: `[Demo] Which of these does the note say about “${fact.topic}”?`,
       options,
       answerIndex,
+      solution: `1. Find the part of the note about “${fact.topic}”.\n2. It says: ${fact.line}\n3. So the answer is: ${fact.detail}`,
       explanation: `The note says: ${fact.line}`,
       page: fact.page,
       topic: fact.topic,

@@ -200,3 +200,14 @@ html {
     animation: none;
   }
 }
+
+/* KaTeX (MathText): uzun formüller dar ekranda taşmasın, kendi içinde kaysın. */
+.math-display {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.math-display .katex-display {
+  margin: 0.4em 0;
+}

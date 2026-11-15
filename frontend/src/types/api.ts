@@ -211,6 +211,8 @@ export interface QuizQuestion {
   options: string[];
   answerIndex: number;
   explanation: string;
+  // Adım adım çözüm (numaralı satırlar); cevaplandıktan sonra istenirse gösterilir. Eski topic-quiz setlerinde yok.
+  solution?: string;
   page: number | null;
   // Bilgi haritası için sorunun konusu (eski setlerde yok).
   topic?: string;

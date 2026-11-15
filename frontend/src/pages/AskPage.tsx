@@ -106,9 +106,9 @@ export default function AskPage() {
           <input
             value={courseInput}
             onChange={(e) => setCourseInput(e.target.value)}
-            maxLength={20}
-            placeholder="Course code"
-            aria-label="Course code (optional)"
+            maxLength={80}
+            placeholder="Course code or name"
+            aria-label="Course code or name (optional)"
             className="form-input w-36 sm:w-48 py-2 text-sm"
           />
         )}
