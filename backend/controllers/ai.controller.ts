@@ -32,10 +32,10 @@ type StudyKind = (typeof STUDY_KINDS)[number];
 
 const MIN_STUDY_TEXT_CHARS = 200;
 // Üretim yöntemlerinin sürümü; daha eski sürümle üretilmiş setler açılınca yeniden üretilir.
-// quiz ("New questions") 4: notun konularından, notun dışına da çıkabilen sorular.
-// note-quiz ("Questions from the note") 2: notta anlatılanlardan yazılan sorular (notta soru olması gerekmez).
-const QUIZ_VERSION = 4;
-const NOTE_QUIZ_VERSION = 2;
+// quiz ("New questions") 5: notun konularında tamamen yapay zekânın yazdığı sorular (notun örnekleri, adları, sayıları kullanılmaz).
+// note-quiz ("Questions from the note") 4: notun öğrettiği terim ve kavramlardan sorular; notun kendi soruları da aynen alınabilir.
+const QUIZ_VERSION = 5;
+const NOTE_QUIZ_VERSION = 4;
 // Cevap üretirken modele verilen en fazla kaynak parça sayısı.
 const ANSWER_SOURCES = 6;
 

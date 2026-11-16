@@ -386,9 +386,12 @@ const generateQuiz = async (noteTitle: string, noteText: string) => {
           'exactly the concepts, methods and techniques this note covers. Stay within the note’s scope: do not ask ' +
           'about any method, technique, rule or subtopic that the note does not explain or use, even if it belongs to ' +
           'the same course or chapter (e.g. if the note covers integration by parts but not partial fractions, ask no ' +
-          'partial-fraction questions). Within that scope the questions are new: use different numbers, functions, ' +
-          'examples and situations than the note, apply the methods to new cases, ask why a step works, compare ' +
-          'cases, or spot a mistake. Do not copy or reword the note’s own questions, exercises or worked examples. ' +
+          'partial-fraction questions). Within that scope every question is your own, written from scratch: apply ' +
+          'the methods to new cases, ask why a step works, compare cases, or spot a mistake. Take nothing from the ' +
+          'note’s questions, exercises, quick checks, code listings or worked examples: no copied or reworded ' +
+          'questions, and none of their numbers, sizes, values, variable or class names, data or scenarios (if an ' +
+          'example in the note uses certain names or numbers, do not use those names or numbers). Invent your own ' +
+          'names, numbers and situations. ' +
           'Spread the questions across the topics and the whole note, not only its first pages. ' +
           'Every question must make sense on its own, without seeing the note: include every value, definition and ' +
           'condition it needs, keep it consistent with itself, and make sure exactly one option is clearly correct. ' +
@@ -404,9 +407,9 @@ const generateQuiz = async (noteTitle: string, noteText: string) => {
   return { topics, questions: validQuestions(questions).slice(0, QUIZ_SIZE) };
 };
 
-// "Questions from the note": notta anlatılanlardan (açıklamalar, tanımlar, formüller, örnekler) yapay zekânın
-// yazdığı sorular. Notta hazır soru olması gerekmez; varsa onlar da kullanılabilir. Her sorunun cevabı notta
-// bulunur ve sorular notun sayfa sırasıyla gelir (öğrenci notu baştan sona gözden geçirmiş olur).
+// "Questions from the note": notun öğrettiklerinden (geçen terimler, kavramlar, tanımlar, formüller, kurallar)
+// yapay zekânın yazdığı sorular; notta hazır soru / alıştırma varsa bazıları aynen de alınabilir. Cevabı notta
+// bulunur ve sorular notun sayfa sırasıyla gelir.
 // "More questions from the note" turları: previous = öğrencinin daha önce gördüğü sorular (tekrarlanmaz),
 // topicNames = ilk turun konu adları (bilgi haritasında aynı konular kullanılsın diye aynen yazılır).
 const NOTE_QUIZ_SIZE = 10;
@@ -423,8 +426,9 @@ const generateNoteQuiz = async (
     };
   }
   const moreInstruction = more
-    ? 'The student has already answered the questions listed below. Write different questions: cover parts of the ' +
-      'note those questions did not reach, or test the same points from a new angle. Do not repeat or rephrase them. ' +
+    ? 'The student has already answered the questions listed below. Write different questions: cover terms and ' +
+      'concepts of the note those questions did not reach, or test the same points from a new angle. Do not repeat ' +
+      'or rephrase them. ' +
       (more.topicNames.length
         ? `Use these topic names wherever they fit, spelled exactly like this: ${more.topicNames.join(', ')}. `
         : '') +
@@ -439,16 +443,20 @@ const generateNoteQuiz = async (
         text:
           moreInstruction +
           TOPICS_INSTRUCTION +
-          `Then write ${NOTE_QUIZ_SIZE} multiple-choice questions on what this note explains, with "origin" set to ` +
-          '"note". The note does not need to contain any questions: write questions that check understanding of its ' +
-          'explanations, definitions, formulas, examples and key points (apply them, compare them, spot a mistake), not ' +
-          'questions copied word for word from a sentence. If the note has its own questions, exercises or solved ' +
-          'examples, you may include some of them as multiple-choice questions too. Every question must be answerable ' +
-          'from the note alone: do not ask about anything the note does not cover. Spread the questions across the ' +
-          'whole note, not only its first pages. ' +
+          `Then write ${NOTE_QUIZ_SIZE} multiple-choice questions on what this note teaches, with "origin" set to ` +
+          '"note": the terms and words it introduces and what they mean, its concepts, definitions, formulas, rules ' +
+          'and key facts (e.g. "What does X mean?", "Which statement about X is true?", "What is X used for?", how ' +
+          'two concepts differ). Every answer must be in the note: do not ask about anything the note does not ' +
+          'teach. If the note has its own questions, exercises, homework or solved examples, you may also take some of ' +
+          'them as they are (same wording and values; add 4 options if they are not multiple-choice, and use the ' +
+          'note’s answer if it gives one); mix them with questions on the note’s terms and concepts. Stay with the ' +
+          'note’s own examples: when a question uses an example, code, name or number, use exactly the one the note ' +
+          'uses and never change it. Questions with new numbers or examples belong to another mode, not this one. ' +
+          'Spread the questions across the whole note, not only its first pages. ' +
           'Every question must make sense on its own, without seeing the note: include every value, definition and ' +
           'condition it needs, keep it consistent with itself and with the note, and make sure exactly one option is ' +
-          'correct. Set "page" to the page the answer comes from. ' +
+          'correct. Set "page" to the page the answer comes from; for a question taken from the note, the page where ' +
+          'that question is written. ' +
           QUESTION_RULES,
       },
     ],

@@ -225,7 +225,7 @@ export interface Flashcard {
 }
 
 // topic-quiz: notun konularından, notla sınırlı olmayan sorular (sayfa yok).
-// quiz: yapay zekânın yeni soruları; note-quiz: notta zaten olan sorular (soru yoksa items boş gelir).
+// quiz: yapay zekânın yeni soruları; note-quiz: notun öğrettiği terim ve kavramlardan sorular.
 export type StudyKind = 'quiz' | 'note-quiz' | 'flashcards' | 'topic-quiz';
 
 export type StudySet =

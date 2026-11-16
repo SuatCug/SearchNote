@@ -34,7 +34,7 @@ const LOADING_STEPS: Record<StudyKind, ProgressStep[]> = {
   ],
   'note-quiz': [
     { label: 'Reading the note', at: 0 },
-    { label: 'Picking the key points', at: 4000 },
+    { label: 'Picking the key terms and concepts', at: 4000 },
     { label: 'Writing questions from the note', at: 12000 },
     { label: 'Writing step-by-step solutions', at: 28000 },
   ],
@@ -58,26 +58,19 @@ const NOTE_MORE_STEPS: ProgressStep[] = [
   { label: 'Writing step-by-step solutions', at: 28000 },
 ];
 
-// Notun kendi sorusunda (Questions from the note) sayfası gösterilir. Yapay zekânın yazdığı sorularda etiket yok:
-// hepsi yeni sorudur, nottan alınmış gibi görünmesin.
-function originLabel(q: QuizQuestion) {
-  if (q.origin === 'note') return q.page ? `Page ${q.page} of the note` : null;
-  return null;
-}
-
 // Quiz açılınca önce mod seçilir: notta anlatılanlardan sorular ya da notun konuları ve yöntemleriyle yazılmış yeni
 // sorular (notun dışına çıkmaz; dışına çıkan sorular quiz bitince "More new questions"tadır).
 const QUIZ_MODES: { kind: 'note-quiz' | 'quiz'; title: string; text: string; icon: typeof FileText }[] = [
   {
     kind: 'note-quiz',
     title: 'Questions from the note',
-    text: 'The AI writes questions from what this note explains: its definitions, formulas, examples and key points. Every answer is in the note.',
+    text: 'The AI asks about what this note teaches: the terms it uses, its concepts, definitions and formulas. Every answer is in the note.',
     icon: FileText,
   },
   {
     kind: 'quiz',
     title: 'New questions',
-    text: 'The AI writes new problems that practise the methods and topics in this note, with different numbers and examples. Nothing the note doesn’t cover.',
+    text: 'The AI writes its own new questions on this note’s topics, with different numbers and examples.',
     icon: Sparkles,
   },
 ];
@@ -442,15 +435,12 @@ function Quiz({
         <div className="h-full bg-navy-600 transition-all" style={{ width: `${(index / deck.length) * 100}%` }} />
       </div>
 
-      {(q.topic || originLabel(q)) && (
-        <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold uppercase tracking-wide">
-          {q.topic && <span className="text-navy-600">{q.topic}</span>}
-          {originLabel(q) && (
-            <span className="rounded bg-amber-50 px-1.5 py-0.5 normal-case tracking-normal text-amber-700">{originLabel(q)}</span>
-          )}
-        </p>
+      {/* Sorunun üstünde sayfa etiketi yok (sorular nottan kopyalanmış gibi görünmesin); cevabın olduğu sayfa
+          cevapladıktan sonra "See page N" bağlantısıyla gösterilir. */}
+      {q.topic && (
+        <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-navy-600">{q.topic}</p>
       )}
-      <p className={`${q.topic || originLabel(q) ? 'mt-1' : 'mt-3'} text-[15px] font-semibold leading-snug text-gray-900`}><MathText text={q.question} /></p>
+      <p className={`${q.topic ? 'mt-1' : 'mt-3'} text-[15px] font-semibold leading-snug text-gray-900`}><MathText text={q.question} /></p>
       <ul className="mt-2.5 space-y-1.5">
         {order.map((i, position) => {
           const option = q.options[i];
