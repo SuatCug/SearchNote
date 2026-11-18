@@ -71,13 +71,63 @@ const assertCompleted = (message: Anthropic.Message) => {
   if (message.stop_reason === 'max_tokens') throw new ApiError(502, 'The AI response was cut off. Please try again.');
 };
 
+// Akışla gelen JSON metninden, üst düzey nesnenin `key` dizisindeki elemanları tamamlandıkça çıkarır
+// ({"questions":[{...},{...}], ...} → her {...} kapanınca onItem). Model şemaya uyan geçerli JSON yazdığı için
+// karakter karakter derinlik / string takibi yeterlidir.
+const arrayItemScanner = (key: string, onItem: (item: unknown) => void) => {
+  let text = '';
+  let pos = 0;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let stringStart = 0;
+  let lastKey = '';
+  let inArray = false;
+  let itemStart = -1;
+  return (delta: string) => {
+    text += delta;
+    for (; pos < text.length; pos++) {
+      const ch = text[pos];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') {
+          inString = false;
+          if (depth === 1) lastKey = text.slice(stringStart + 1, pos);
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        stringStart = pos;
+      } else if (ch === '{' || ch === '[') {
+        depth++;
+        if (ch === '[' && depth === 2 && lastKey === key) inArray = true;
+        else if (ch === '{' && inArray && depth === 3) itemStart = pos;
+      } else if (ch === '}' || ch === ']') {
+        if (ch === '}' && inArray && depth === 3 && itemStart >= 0) {
+          try {
+            onItem(JSON.parse(text.slice(itemStart, pos + 1)));
+          } catch {
+            // Bozuk eleman atlanır; tam cevap yine sonda ayrıştırılır.
+          }
+          itemStart = -1;
+        } else if (ch === ']' && inArray && depth === 2) inArray = false;
+        depth--;
+      }
+    }
+  };
+};
+
 // JSON şemalı (structured output) istek: model şemaya uyan JSON döndürür.
+// stream verilirse `stream.key` dizisinin her elemanı yazılır yazılmaz stream.onItem ile bildirilir.
 const createJson = async <T>(params: {
   system: string;
   content: Anthropic.ContentBlockParam[];
   schema: Record<string, unknown>;
   maxTokens: number;
   effort?: 'low' | 'medium';
+  stream?: { key: string; onItem: (item: unknown) => void };
 }): Promise<T> => {
   const stream = requireClient().messages.stream({
     model: AI_MODEL,
@@ -86,6 +136,7 @@ const createJson = async <T>(params: {
     messages: [{ role: 'user', content: params.content }],
     output_config: { effort: params.effort ?? 'low', format: { type: 'json_schema', schema: params.schema } },
   });
+  if (params.stream) stream.on('text', arrayItemScanner(params.stream.key, params.stream.onItem));
   const message = await stream.finalMessage();
   assertCompleted(message);
   try {
@@ -251,21 +302,10 @@ export interface FlashcardItem {
   page: number | null;
 }
 
+// Sorular konu listesinden önce gelir: akışta ilk soru, konular yazılmadan öğrenciye gösterilebilsin.
 const quizSchema = (origins: QuizOrigin[]) => ({
   type: 'object',
   properties: {
-    topics: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          prerequisites: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['name', 'prerequisites'],
-        additionalProperties: false,
-      },
-    },
     questions: {
       type: 'array',
       items: {
@@ -285,8 +325,20 @@ const quizSchema = (origins: QuizOrigin[]) => ({
         additionalProperties: false,
       },
     },
+    topics: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          prerequisites: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['name', 'prerequisites'],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ['topics', 'questions'],
+  required: ['questions', 'topics'],
   additionalProperties: false,
 });
 
@@ -326,10 +378,12 @@ const STUDY_SYSTEM =
   'Prefer the important concepts, definitions, formulas and typical exam topics over trivia.' +
   MATH_RULE;
 
-// Konu listesi ve ön koşulları (bilgi haritası); iki quiz türünde de aynı.
+// Konu listesi ve ön koşulları (bilgi haritası); iki quiz türünde de aynı. Şemada konular sorulardan sonra
+// yazılır (akışta ilk soru erken gelsin), bu yüzden konu adları önce belirlenir, liste sonda yazılır.
 const TOPICS_INSTRUCTION =
-  'First list the 3-8 main topics of this note. Topic names are short (1-3 words), general course concepts ' +
-  '(e.g. "Derivatives", "AVL Trees", "Türev"), in the note’s language. For each topic give its prerequisites: ' +
+  'Decide the 3-8 main topics of this note first. Topic names are short (1-3 words), general course concepts ' +
+  '(e.g. "Derivatives", "AVL Trees", "Türev"), in the note’s language. Write the questions first; after them, ' +
+  'in "topics", list exactly those topics (every topic a question uses) and for each give its prerequisites: ' +
   'the foundational topics a student must know first (e.g. Derivatives -> Functions, Limits). Prerequisites may be ' +
   'topics that are not in the note. ';
 
@@ -342,7 +396,7 @@ const SOLUTION_RULE =
 
 const QUESTION_RULES =
   'Each question has exactly 4 options with one correct answer (answerIndex is 0-3), a one or two sentence ' +
-  'explanation of why the answer is correct, and "topic" set to exactly one of the topic names above. ' +
+  'explanation of why the answer is correct, and "topic" set to exactly one of the topic names you decided on. ' +
   SOLUTION_RULE +
   'Then write the options so that the correct one matches your solution and the wrong ones are plausible mistakes. Vary the position of the correct answer. Options are ' +
   'shown in random order, so never refer to them by letter or position (no "option B", "all of the above").';
@@ -360,21 +414,74 @@ const fixQuestionLatex = <T extends Omit<QuizItem, 'page'>>(q: T): T => ({
   explanation: fixLatex(q.explanation),
 });
 
-const validQuestions = (questions: QuizItem[]) =>
-  questions
-    .filter(
-      (q) => q.options.length >= 2 && Number.isInteger(q.answerIndex) && q.answerIndex >= 0 && q.answerIndex < q.options.length
-    )
-    .map(fixQuestionLatex);
+const isValidQuestion = (q: Omit<QuizItem, 'page'> | undefined | null) =>
+  !!q &&
+  typeof q.question === 'string' &&
+  Array.isArray(q.options) &&
+  q.options.length >= 2 &&
+  Number.isInteger(q.answerIndex) &&
+  q.answerIndex >= 0 &&
+  q.answerIndex < q.options.length;
+
+const validQuestions = (questions: QuizItem[]) => questions.filter(isValidQuestion).map(fixQuestionLatex);
+
+// Akışla üretim: her soru yazılır yazılmaz onQuestion çağrılır (ör. sete eklenir, öğrenci hemen görür).
+export type OnQuestion = (q: QuizItem) => Promise<void>;
+
+// Akışla gelen ham soruları doğrulayıp (prepare null dönerse atlanır) en fazla `limit` tanesini sırayla
+// onQuestion'a verir. Geri çağrılar sırayla çalışır (kayıt sırası = soru sırası). finish() hepsini bekler ve
+// akışta kabul edilen soruları döndürür (kaydedilenlerle aynı liste); onQuestion yoksa fallback'i döndürür.
+const questionFeed = (onQuestion: OnQuestion | undefined, limit: number, prepare: (raw: unknown) => QuizItem | null) => {
+  let chain: Promise<void> = Promise.resolve();
+  const accepted: QuizItem[] = [];
+  return {
+    stream: onQuestion && {
+      key: 'questions',
+      onItem: (raw: unknown) => {
+        if (accepted.length >= limit) return;
+        const q = prepare(raw);
+        if (!q) return;
+        accepted.push(q);
+        chain = chain.then(() => onQuestion(q));
+        // Hata finish()'te fırlatılır; o ana kadar "işlenmemiş hata" sayılmasın.
+        chain.catch(() => undefined);
+      },
+    },
+    finish: async (fallback: QuizItem[]) => {
+      await chain;
+      return onQuestion ? accepted : fallback;
+    },
+  };
+};
+
+const noteQuestion = (raw: unknown) => {
+  const q = raw as QuizItem;
+  return isValidQuestion(q) ? fixQuestionLatex({ ...q, page: Number.isInteger(q.page) ? q.page : null }) : null;
+};
+
+// Deneme modunda akış: hazır sorular kısa aralıklarla tek tek verilir (arayüzde kademeli yükleme denenebilsin).
+const mockFeed = async (questions: QuizItem[], onQuestion?: OnQuestion) => {
+  if (!onQuestion) return;
+  for (const q of questions) {
+    await new Promise((r) => setTimeout(r, 700));
+    await onQuestion(q);
+  }
+};
 
 // "New questions": yapay zekânın notun konuları ve yöntemleriyle yazdığı yeni sorular (origin 'concept'). Notta
 // olmayan yöntem / alt konu sorulmaz (notta kısmi integrasyon varsa basit kesirlere ayırma gelmez); farklı sayılar,
 // fonksiyonlar ve senaryolarla aynı becerileri çalıştırır. page, sorunun çalıştırdığı konunun anlatıldığı sayfadır.
 // Notun dışına çıkmak isteyen için "More new questions" (konu pratiği) vardır.
 const QUIZ_SIZE = 10;
-const generateQuiz = async (noteTitle: string, noteText: string) => {
-  if (MOCK) return mockQuiz(noteText);
+const generateQuiz = async (noteTitle: string, noteText: string, onQuestion?: OnQuestion) => {
+  if (MOCK) {
+    const mock = mockQuiz(noteText);
+    await mockFeed(mock.questions, onQuestion);
+    return mock;
+  }
+  const feed = questionFeed(onQuestion, QUIZ_SIZE, noteQuestion);
   const { topics, questions } = await createJson<{ topics: TopicInfo[]; questions: QuizItem[] }>({
+    stream: feed.stream,
     system: STUDY_SYSTEM,
     content: [
       { type: 'text', text: `Note title: ${noteTitle}\n\n${noteText}` },
@@ -404,31 +511,35 @@ const generateQuiz = async (noteTitle: string, noteText: string) => {
     // Kısmen nota dayanmadığı için doğruluk daha önemli: biraz daha fazla düşünür (konu pratiği gibi).
     effort: 'medium',
   });
-  return { topics, questions: validQuestions(questions).slice(0, QUIZ_SIZE) };
+  return { topics, questions: await feed.finish(validQuestions(questions).slice(0, QUIZ_SIZE)) };
 };
 
-// "Questions from the note": notun öğrettiklerinden (geçen terimler, kavramlar, tanımlar, formüller, kurallar)
-// yapay zekânın yazdığı sorular; notta hazır soru / alıştırma varsa bazıları aynen de alınabilir. Cevabı notta
-// bulunur ve sorular notun sayfa sırasıyla gelir.
+// "Questions from the note": önce notta hazır olan sorular (çıkmış soru, alıştırma, örnek) birebir alınır
+// (aynı metin ve sayılar; benzer soru yazılmaz). Yetmezse 2. aşama: notun tanımladığı terim / kelimeler, tanım,
+// teorem ve formüllerden sorular (hesap sorusu ve uydurma sayı yok). O da yetmezse 3. aşama: yapay zekâ notun
+// anlattığı yöntemlerle kendi sorularını yazar (kendi sayılarıyla, ama notun kapsamı dışına çıkmadan).
+// Sorular notun sayfa sırasıyla gelir.
 // "More questions from the note" turları: previous = öğrencinin daha önce gördüğü sorular (tekrarlanmaz),
 // topicNames = ilk turun konu adları (bilgi haritasında aynı konular kullanılsın diye aynen yazılır).
 const NOTE_QUIZ_SIZE = 10;
 const generateNoteQuiz = async (
   noteTitle: string,
   noteText: string,
-  more?: { previous: string[]; topicNames: string[] }
+  more?: { previous: string[]; topicNames: string[] },
+  onQuestion?: OnQuestion
 ) => {
   if (MOCK) {
     const mock = mockQuiz(noteText);
-    return {
-      topics: mock.topics,
-      questions: mock.questions.map((q) => ({ ...q, origin: 'note' as const, question: more ? `[More] ${q.question}` : q.question })),
-    };
+    const questions = mock.questions.map((q) => ({ ...q, origin: 'note' as const, question: more ? `[More] ${q.question}` : q.question }));
+    await mockFeed(questions, onQuestion);
+    return { topics: mock.topics, questions };
   }
+  const feed = questionFeed(onQuestion, NOTE_QUIZ_SIZE, noteQuestion);
   const moreInstruction = more
-    ? 'The student has already answered the questions listed below. Write different questions: cover terms and ' +
-      'concepts of the note those questions did not reach, or test the same points from a new angle. Do not repeat ' +
-      'or rephrase them. ' +
+    ? 'The student has already answered the questions listed below. Write different questions: first the note’s ' +
+      'own questions that are not in that list (exactly as the note asks them), then terms and definitions of the ' +
+      'note those questions did not reach, and only then your own questions on its methods (Steps 1-3 below). ' +
+      'Do not repeat or rephrase them. ' +
       (more.topicNames.length
         ? `Use these topic names wherever they fit, spelled exactly like this: ${more.topicNames.join(', ')}. `
         : '') +
@@ -443,30 +554,44 @@ const generateNoteQuiz = async (
         text:
           moreInstruction +
           TOPICS_INSTRUCTION +
-          `Then write ${NOTE_QUIZ_SIZE} multiple-choice questions on what this note teaches, with "origin" set to ` +
-          '"note": the terms and words it introduces and what they mean, its concepts, definitions, formulas, rules ' +
-          'and key facts (e.g. "What does X mean?", "Which statement about X is true?", "What is X used for?", how ' +
-          'two concepts differ). Every answer must be in the note: do not ask about anything the note does not ' +
-          'teach. If the note has its own questions, exercises, homework or solved examples, you may also take some of ' +
-          'them as they are (same wording and values; add 4 options if they are not multiple-choice, and use the ' +
-          'note’s answer if it gives one); mix them with questions on the note’s terms and concepts. Stay with the ' +
-          'note’s own examples: when a question uses an example, code, name or number, use exactly the one the note ' +
-          'uses and never change it. Questions with new numbers or examples belong to another mode, not this one. ' +
-          'Spread the questions across the whole note, not only its first pages. ' +
+          `Then write ${NOTE_QUIZ_SIZE} multiple-choice questions from this note, with "origin" set to "note". ` +
+          'Step 1, the note’s own questions come first: find every question already written in the note (past exam ' +
+          'questions, exercises, homework, review or quick-check questions, and solved examples such as "Soru 1", ' +
+          '"Örnek", "Example 3", "Exercise 2.4", numbered problems) and take as many of them as fit, exactly as the ' +
+          'note asks them: same wording, same functions, numbers, limits and conditions; never change a value, never ' +
+          'write a "similar" version and never combine two of them. You may only fix obvious text-extraction errors ' +
+          'and rewrite formulas in LaTeX. If such a question already has options, use them; otherwise keep its text ' +
+          'unchanged and add 4 options. Use the note’s answer or solution if it shows one; otherwise work it out. ' +
+          'Step 2, only if Step 1 gave fewer questions than needed: add questions on the terms and words the note ' +
+          'defines or introduces and what they mean, then its definitions, theorems, formulas and rules (e.g. "What ' +
+          'does X mean?", "Which statement about X is true?", "What does theorem X say?"). These are not ' +
+          'calculations: never invent an integral, function, number or example for them. Their answers must be in ' +
+          'the note. ' +
+          'Step 3, only if Steps 1 and 2 together still gave fewer questions than needed (the note has few questions ' +
+          'and few terms to ask about): write your own questions for the rest, practising the methods and concepts ' +
+          'the note explains; here you may use your own functions, numbers and examples. Stay within the note’s ' +
+          'scope: never ask about a method, rule or subtopic the note does not explain. ' +
+          'Do not move to the next step while the current one still has unused material. ' +
+          'Never mention the note in a question or option (no "according to the note", "in the note", "the note ' +
+          'says"): ask directly, e.g. "What does it mean that T(n) is Ω(g(n))?". ' +
+          'Spread the questions across the whole note, not only its first pages, and write them in the order of ' +
+          'the note’s pages (earlier pages first). ' +
           'Every question must make sense on its own, without seeing the note: include every value, definition and ' +
           'condition it needs, keep it consistent with itself and with the note, and make sure exactly one option is ' +
           'correct. Set "page" to the page the answer comes from; for a question taken from the note, the page where ' +
-          'that question is written. ' +
+          'that question is written; for a Step 3 question, the page where its method is explained. ' +
           QUESTION_RULES,
       },
     ],
     schema: quizSchema(['note']),
     maxTokens: 16000,
+    stream: feed.stream,
   });
   const valid = validQuestions(questions).slice(0, NOTE_QUIZ_SIZE);
-  // Notun sırasıyla (sayfası olmayanlar sona).
+  // Notun sırasıyla (sayfası olmayanlar sona). Akışta sorular kaydedildikleri sırada kalır (cevap kayıtları soru
+  // sırasına bağlı); model zaten sayfa sırasıyla yazar.
   valid.sort((a, b) => (a.page ?? Infinity) - (b.page ?? Infinity));
-  return { topics, questions: valid };
+  return { topics, questions: await feed.finish(valid) };
 };
 
 // Konu pratiği: notun quiz'inden çıkan konular üzerine, notla sınırlı olmayan yeni sorular.
@@ -483,12 +608,20 @@ const generateTopicQuiz = async (params: {
   course?: string;
   topics: string[];
   noteQuestions: QuizItem[];
+  onQuestion?: OnQuestion;
 }): Promise<QuizItem[]> => {
-  const { noteTitle, course, topics, noteQuestions } = params;
+  const { noteTitle, course, topics, noteQuestions, onQuestion } = params;
   if (MOCK) {
     // Deneme: notun quiz soruları ters sırayla, işaretlenerek.
-    return [...noteQuestions].reverse().map((q) => ({ ...q, question: `[Demo topic] ${q.question}`, page: null }));
+    const questions = [...noteQuestions].reverse().map((q) => ({ ...q, question: `[Demo topic] ${q.question}`, page: null }));
+    await mockFeed(questions, onQuestion);
+    return questions;
   }
+  const prepare = (raw: unknown): QuizItem | null => {
+    const q = raw as QuizItem;
+    return isValidQuestion(q) && topics.includes(q.topic) ? { ...fixQuestionLatex(q), page: null } : null;
+  };
+  const feed = questionFeed(onQuestion, 10, prepare);
   const schema = {
     type: 'object',
     properties: {
@@ -540,17 +673,9 @@ const generateTopicQuiz = async (params: {
     maxTokens: 16000,
     // Nota dayanmadığı için doğruluk daha önemli: biraz daha fazla düşünür.
     effort: 'medium',
+    stream: feed.stream,
   });
-  return questions
-    .filter(
-      (q) =>
-        q.options.length >= 2 &&
-        Number.isInteger(q.answerIndex) &&
-        q.answerIndex >= 0 &&
-        q.answerIndex < q.options.length &&
-        topics.includes(q.topic)
-    )
-    .map((q) => ({ ...fixQuestionLatex(q), page: null }));
+  return feed.finish(questions.map(prepare).filter((q): q is QuizItem => q !== null));
 };
 
 const generateFlashcards = async (noteTitle: string, noteText: string) => {

@@ -18,6 +18,9 @@ const studySetSchema = new mongoose.Schema(
     // Öğrenciye bitirmediği bir tur verilir; hepsini bitirdiyse yeni tur üretilip sona eklenir.
     rounds: { type: [{ start: Number, count: Number, _id: false }], default: undefined },
     model: { type: String },
+    // Quiz soruları akışla üretilirken true: sorular geldikçe items'a (turlu setlerde son tura) eklenir.
+    // Üretim bitince kaldırılır.
+    generating: { type: Boolean },
     // Üretim yönteminin sürümü (quiz 4, note-quiz 2). Daha eski sürümlü setler açılınca silinip yeniden üretilir;
     // o setin QuizAttempt cevapları da silinir (soru sırasına, questionIndex, bağlılar).
     version: { type: Number },

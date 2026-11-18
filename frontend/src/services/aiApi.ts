@@ -12,9 +12,23 @@ export const aiApi = baseApi.injectEndpoints({
       keepUnusedDataFor: 600,
     }),
     // more: notun sorularının ek turu ("More questions from the note"; sadece note-quiz).
+    // Quiz'ler kademeli gelir: ilk soru hazır olunca döner, set.generating ise kalanlar pollStudySet ile çekilir.
     getStudySet: builder.query<ApiResponse<{ set: StudySet }>, { noteId: string; kind: StudyKind; more?: boolean }>({
-      query: ({ noteId, kind, more }) => ({ url: `/ai/notes/${noteId}/study/${kind}${more ? '?more=1' : ''}`, method: 'POST' }),
+      query: ({ noteId, kind, more }) => ({
+        url: `/ai/notes/${noteId}/study/${kind}`,
+        method: 'POST',
+        params: { ...(more && { more: 1 }), ...(kind !== 'flashcards' && { progressive: 1 }) },
+      }),
       keepUnusedDataFor: 3600,
+    }),
+    // Üretimi süren quiz'in güncel hali (yeni üretim / tur başlatmaz). start: turlu setlerde turun başlangıcı.
+    pollStudySet: builder.query<ApiResponse<{ set: StudySet }>, { noteId: string; kind: StudyKind; start?: number }>({
+      query: ({ noteId, kind, start }) => ({
+        url: `/ai/notes/${noteId}/study/${kind}`,
+        method: 'POST',
+        params: { poll: 1, ...(start !== undefined && { start }) },
+      }),
+      keepUnusedDataFor: 0,
     }),
     // Quiz cevabı bilgi haritası için kaydedilir; harita bir sonraki açılışta tazelenir.
     recordQuizAnswer: builder.mutation<
@@ -46,5 +60,5 @@ export const aiApi = baseApi.injectEndpoints({
   }),
 });
 
-export const { useGetAiStatusQuery, useAskNotesQuery, useGetStudySetQuery, useRecordQuizAnswerMutation, useGetKnowledgeMapQuery, useGetPracticeListQuery, useUploadStudyFileMutation } =
+export const { useGetAiStatusQuery, useAskNotesQuery, useGetStudySetQuery, usePollStudySetQuery, useRecordQuizAnswerMutation, useGetKnowledgeMapQuery, useGetPracticeListQuery, useUploadStudyFileMutation } =
   aiApi;

@@ -1,10 +1,11 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, ChevronLeft, ChevronRight, ExternalLink, FileText, ListOrdered, RotateCcw, Sparkles, X } from 'lucide-react';
 import MathText from '@/components/common/MathText';
 import Modal from '@/components/common/Modal';
 import StepProgress, { type ProgressStep } from '@/components/common/StepProgress';
-import { useGetStudySetQuery, useRecordQuizAnswerMutation } from '@/services/aiApi';
+import { useAppDispatch } from '@/app/hooks';
+import { aiApi, useGetStudySetQuery, usePollStudySetQuery, useRecordQuizAnswerMutation } from '@/services/aiApi';
 import { getErrorMessage } from '@/lib/getErrorMessage';
 import type { Flashcard, QuizQuestion, StudyKind } from '@/types/api';
 
@@ -23,25 +24,22 @@ const TITLES: Record<StudyKind, string> = {
 
 type QuizKind = 'quiz' | 'note-quiz' | 'topic-quiz';
 
-// Üretim sırasında gösterilen adımlar (tek istek: geçişler tahmini sürelere göre). Adım adım çözümlerle quiz'ler
-// ~40–60 sn sürer (New questions bir Calculus notunda 48 sn ölçüldü), flashcard ~15 sn.
+// Üretim sırasında gösterilen adımlar (geçişler tahmini sürelere göre). Quiz'ler kademeli gelir: adımlar ilk soru
+// hazır olana kadar (birkaç saniye) görünür, kalan sorular öğrenci çözerken yüklenir. Flashcard ~15 sn.
 const LOADING_STEPS: Record<StudyKind, ProgressStep[]> = {
   quiz: [
     { label: 'Reading the note', at: 0 },
-    { label: 'Finding the note’s topics and methods', at: 4000 },
-    { label: 'Writing new problems', at: 12000 },
-    { label: 'Writing step-by-step solutions', at: 28000 },
+    { label: 'Finding the note’s topics and methods', at: 2500 },
+    { label: 'Loading the questions', at: 5000 },
   ],
   'note-quiz': [
     { label: 'Reading the note', at: 0 },
-    { label: 'Picking the key terms and concepts', at: 4000 },
-    { label: 'Writing questions from the note', at: 12000 },
-    { label: 'Writing step-by-step solutions', at: 28000 },
+    { label: 'Finding the note’s own questions', at: 2500 },
+    { label: 'Loading the questions', at: 5000 },
   ],
   'topic-quiz': [
     { label: 'Looking at this note’s topics', at: 0 },
-    { label: 'Writing new questions', at: 4000 },
-    { label: 'Writing step-by-step solutions', at: 20000 },
+    { label: 'Loading the questions', at: 3000 },
   ],
   flashcards: [
     { label: 'Reading the note', at: 0 },
@@ -53,10 +51,14 @@ const LOADING_STEPS: Record<StudyKind, ProgressStep[]> = {
 // "More questions from the note" turu üretilirken.
 const NOTE_MORE_STEPS: ProgressStep[] = [
   { label: 'Reading the note again', at: 0 },
-  { label: 'Finding parts you haven’t practised', at: 4000 },
-  { label: 'Writing more questions from the note', at: 12000 },
-  { label: 'Writing step-by-step solutions', at: 28000 },
+  { label: 'Finding parts you haven’t practised', at: 2500 },
+  { label: 'Loading the questions', at: 5000 },
 ];
+
+// Üretim sürerken beklenen soru sayısı (sunucu her turda 10 soru üretir); sayaç "Question 2 of 10" gösterir.
+const EXPECTED_QUESTIONS = 10;
+// Üretimi süren quiz'in yeni soruları bu aralıkla çekilir.
+const POLL_MS = 2500;
 
 // Quiz açılınca önce mod seçilir: notta anlatılanlardan sorular ya da notun konuları ve yöntemleriyle yazılmış yeni
 // sorular (notun dışına çıkmaz; dışına çıkan sorular quiz bitince "More new questions"tadır).
@@ -64,13 +66,13 @@ const QUIZ_MODES: { kind: 'note-quiz' | 'quiz'; title: string; text: string; ico
   {
     kind: 'note-quiz',
     title: 'Questions from the note',
-    text: 'The AI asks about what this note teaches: the terms it uses, its concepts, definitions and formulas. Every answer is in the note.',
+    text: 'The note’s own questions word for word, then questions on its terms and definitions.',
     icon: FileText,
   },
   {
     kind: 'quiz',
     title: 'New questions',
-    text: 'The AI writes its own new questions on this note’s topics, with different numbers and examples.',
+    text: 'New questions the AI writes on the note’s topics, with different numbers and examples.',
     icon: Sparkles,
   },
 ];
@@ -85,7 +87,7 @@ function QuizModeChooser({ onChoose }: { onChoose: (kind: 'note-quiz' | 'quiz') 
             key={kind}
             type="button"
             onClick={() => onChoose(kind)}
-            className="flex flex-col items-start gap-2 rounded-xl border border-gray-200 p-4 text-left transition-colors hover:border-navy-300 hover:bg-navy-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500"
+            className="flex flex-col items-center gap-2 rounded-xl border border-gray-200 p-4 text-center transition-colors hover:border-navy-300 hover:bg-navy-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-navy-50 text-navy-700">
               <Icon size={18} />
@@ -143,12 +145,29 @@ export default function StudyModal({ noteId, kind: initialKind, onClose }: Study
   const more = kind === 'note-quiz' && noteMore;
   // Konu pratiği ve ek not turları her açılışta sunucuya sorulur: bitirilen turun yerine sıradaki (ya da yeni) tur gelir.
   const rounds = kind === 'topic-quiz' || more;
-  const { data, error, isFetching, refetch } = useGetStudySetQuery(
-    { noteId, kind: kind ?? 'quiz', ...(more && { more: true }) },
-    { skip: !kind, refetchOnMountOrArgChange: rounds }
-  );
+  const setArgs = useMemo(() => ({ noteId, kind: kind ?? 'quiz', ...(more && { more: true }) }), [noteId, kind, more]);
+  const { data, error, isFetching, refetch } = useGetStudySetQuery(setArgs, { skip: !kind, refetchOnMountOrArgChange: rounds });
   const set = kind ? data?.data.set : undefined;
-  const loading = !!kind && isFetching && (!set || set.kind !== kind || rounds);
+  const generating = !!set && set.kind !== 'flashcards' && !!set.generating;
+  // Kademeli üretim: ilk sorular geldikten sonra kalanlar arka planda çekilir ve aynı önbellek kaydına yazılır
+  // (Quiz yeni soruları destenin sonuna ekler). Bu yenilemeler yükleme ekranı açmaz.
+  const { data: polled } = usePollStudySetQuery(
+    { noteId, kind: kind ?? 'quiz', ...(set && set.kind !== 'flashcards' && set.start !== undefined && { start: set.start }) },
+    { skip: !generating, pollingInterval: POLL_MS }
+  );
+  const dispatch = useAppDispatch();
+  useEffect(() => {
+    const live = polled?.data.set;
+    if (!live || live.kind === 'flashcards') return;
+    dispatch(
+      aiApi.util.updateQueryData('getStudySet', setArgs, (draft) => {
+        const current = draft.data.set;
+        if (current.kind !== live.kind || (current.start ?? 0) !== (live.start ?? 0)) return;
+        if (live.items.length >= current.items.length) draft.data.set = live;
+      })
+    );
+  }, [polled, dispatch, setArgs]);
+  const loading = !!kind && isFetching && (!set || set.kind !== kind || (rounds && !generating));
   // Üretim bitince adım listesi hemen kapanmaz: kalan adımlar hızlıca tamamlanır (StepProgress onDone), sonra
   // içerik gösterilir. Hata olursa beklemeden hata gösterilir.
   const [progressOpen, setProgressOpen] = useState(false);
@@ -174,13 +193,11 @@ export default function StudyModal({ noteId, kind: initialKind, onClose }: Study
           finished={!loading}
           onDone={closeProgress}
           // "Uzun sürüyor" uyarısı: tahmini sürenin belirgin şekilde aşılması.
-          slowAfterMs={kind === 'flashcards' ? 45000 : 90000}
+          slowAfterMs={45000}
           note={
-            kind === 'topic-quiz' || more
-              ? 'New questions with step-by-step solutions take up to a minute.'
-              : kind === 'quiz' || kind === 'note-quiz'
-                ? 'The first time takes up to a minute, because every question gets a step-by-step solution. After that it opens instantly.'
-                : 'The first time takes about 15 seconds. After that it opens instantly.'
+            kind === 'flashcards'
+              ? 'The first time takes about 15 seconds. After that it opens instantly.'
+              : 'You can start in a few seconds. More questions load while you answer.'
           }
         >
           <StudySkeleton kind={kind} />
@@ -203,6 +220,7 @@ export default function StudyModal({ noteId, kind: initialKind, onClose }: Study
             noteId={noteId}
             kind={set.kind}
             questions={set.items}
+            generating={!!set.generating}
             start={set.start ?? 0}
             // Bitiş ekranındaki "sıradaki adım" (üçüncü buton), aynı türden bir tur daha: notun sorularından sonra yine
             // nottan, öncekileri tekrarlamayan sorular; yeni sorulardan (ve devam turlarından) sonra aynı konulardan
@@ -310,8 +328,9 @@ const shuffle = <T,>(list: T[]) => {
 // Her açılışta ve "Start over"da şıkların yerleri karışır (ezber olmasın); sorular da karışır, ama notta
 // anlatılanlardan yazılan sorularda (note-quiz) notun sayfa sırası korunur.
 // index / order asıl sıralardır: cevap kaydı ve doğruluk kontrolü bunlarla yapılır.
-const deal = (questions: QuizQuestion[], keepOrder = false) => {
-  const deck = questions.map((q, index) => ({ q, index, order: shuffle(q.options.map((_, i) => i)) }));
+// offset: kademeli üretimde sonradan gelen soruların asıl sırası offset'ten başlar (destenin sonuna eklenirler).
+const deal = (questions: QuizQuestion[], keepOrder = false, offset = 0) => {
+  const deck = questions.map((q, i) => ({ q, index: offset + i, order: shuffle(q.options.map((_, j) => j)) }));
   return keepOrder ? deck : shuffle(deck);
 };
 
@@ -319,6 +338,7 @@ function Quiz({
   noteId,
   kind,
   questions,
+  generating,
   start,
   nextStep,
   onChangeMode,
@@ -326,6 +346,8 @@ function Quiz({
   noteId: string;
   kind: QuizKind;
   questions: QuizQuestion[];
+  // Sorular hâlâ üretiliyor: yeni gelenler destenin sonuna eklenir, son soruya gelen öğrenci kısa süre bekler.
+  generating: boolean;
   // Konu pratiğinde turun ilk sorusunun sırası.
   start: number;
   // Quiz bitince sıradaki adım (ana buton): notun sorularından sonra yeni sorular, yeni sorulardan sonra bir tur daha.
@@ -337,6 +359,12 @@ function Quiz({
   const keepOrder = kind === 'note-quiz';
   const rootRef = useRef<HTMLDivElement>(null);
   const [deck, setDeck] = useState(() => deal(questions, keepOrder));
+  // Desteye alınmış soru sayısı: yeni sorular gelince yalnız onlar karıştırılıp sona eklenir (çözülenler yerinde kalır).
+  const [dealt, setDealt] = useState(questions.length);
+  if (questions.length > dealt) {
+    setDeck((d) => [...d, ...deal(questions.slice(dealt), keepOrder, dealt)]);
+    setDealt(questions.length);
+  }
   const [index, setIndex] = useState(0);
   // Seçilen şıkkın asıl sırası.
   const [picked, setPicked] = useState<number | null>(null);
@@ -344,7 +372,24 @@ function Quiz({
   // Adım adım çözüm açık mı (her soruda kapalı başlar).
   const [showSolution, setShowSolution] = useState(false);
   const solutionRef = useRef<HTMLDivElement>(null);
-  const finished = index >= deck.length;
+  const finished = index >= deck.length && !generating;
+  // Üretim sürerken sayaç beklenen toplamı gösterir; bitince gerçek sayı.
+  const total = generating ? Math.max(deck.length, EXPECTED_QUESTIONS) : deck.length;
+
+  if (index >= deck.length && generating) {
+    return (
+      <div className="px-5 pt-3.5 pb-6" aria-live="polite">
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>
+            Question {index + 1} of {total}
+          </span>
+          <span>{score} correct</span>
+        </div>
+        <p className="mt-6 text-center text-sm text-gray-600">Preparing the next question…</p>
+        <StudySkeleton kind={kind} />
+      </div>
+    );
+  }
 
   if (finished) {
     return (
@@ -370,6 +415,7 @@ function Quiz({
             onClick={() => {
               // Aynı sorular baştan; sorular ve şıklar yeniden karışır (note-quiz'de sayfa sırası korunur).
               setDeck(deal(questions, keepOrder));
+              setDealt(questions.length);
               setIndex(0);
               setPicked(null);
               setShowSolution(false);
@@ -427,12 +473,12 @@ function Quiz({
     <div className="px-5 pt-3.5 pb-3">
       <div className="flex items-center justify-between text-xs text-gray-500">
         <span>
-          Question {index + 1} of {deck.length}
+          Question {index + 1} of {total}
         </span>
         <span>{score} correct</span>
       </div>
       <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-gray-100">
-        <div className="h-full bg-navy-600 transition-all" style={{ width: `${(index / deck.length) * 100}%` }} />
+        <div className="h-full bg-navy-600 transition-all" style={{ width: `${(index / total) * 100}%` }} />
       </div>
 
       {/* Sorunun üstünde sayfa etiketi yok (sorular nottan kopyalanmış gibi görünmesin); cevabın olduğu sayfa
@@ -507,7 +553,7 @@ function Quiz({
               </div>
             </div>
             <button type="button" onClick={next} className="btn-primary shrink-0">
-              {index + 1 === questions.length ? 'See score' : 'Next'}
+              {!generating && index + 1 === deck.length ? 'See score' : 'Next'}
             </button>
           </div>
         ) : (

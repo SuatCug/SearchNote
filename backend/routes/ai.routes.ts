@@ -27,6 +27,10 @@ router.post(
   param('kind').isIn(['quiz', 'note-quiz', 'flashcards', 'topic-quiz']).withMessage('Unknown study tool.'),
   // note-quiz: ?more=1 → "More questions from the note" turu.
   query('more').optional().isIn(['1']),
+  // progressive=1: quiz ilk soru hazır olunca döner; poll=1 (&start=N): üretimi süren setin güncel hali.
+  query('progressive').optional().isIn(['1']),
+  query('poll').optional().isIn(['1']),
+  query('start').optional().isInt({ min: 0, max: 100000 }),
   validate,
   verifiedOnly,
   aiController.getStudySet

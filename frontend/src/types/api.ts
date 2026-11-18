@@ -230,7 +230,8 @@ export type StudyKind = 'quiz' | 'note-quiz' | 'flashcards' | 'topic-quiz';
 
 export type StudySet =
   // start: konu pratiğinde turun ilk sorusunun sırası (cevap kaydında soru sırasına eklenir).
-  | { kind: 'quiz' | 'note-quiz' | 'topic-quiz'; items: QuizQuestion[]; start?: number; createdAt?: ISODate; mock?: boolean }
+  // generating: sorular hâlâ üretiliyor (kademeli üretim); kalanlar pollStudySet ile gelir.
+  | { kind: 'quiz' | 'note-quiz' | 'topic-quiz'; items: QuizQuestion[]; start?: number; generating?: boolean; createdAt?: ISODate; mock?: boolean }
   | { kind: 'flashcards'; items: Flashcard[]; createdAt?: ISODate; mock?: boolean };
 
 // --- Kişisel bilgi haritası ---
