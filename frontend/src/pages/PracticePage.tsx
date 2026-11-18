@@ -166,8 +166,8 @@ export default function PracticePage() {
   return (
     <PageLayout>
       {/* Üstte: solda görsel, sağda arama ve ders kısayolları (diğer "Learn with AI" sayfalarıyla aynı düzen). */}
-      <div className="grid items-center gap-6 sm:py-4 lg:grid-cols-2 lg:gap-12 lg:py-6">
-        <PracticeIllustration className="mx-auto h-auto w-full max-w-[260px] sm:max-w-[360px] lg:mx-0 lg:max-w-[500px]" />
+      <div className="grid items-center gap-6 sm:py-4 lg:grid-cols-[11fr_9fr] lg:gap-10 lg:py-6">
+        <PracticeIllustration className="mx-auto h-auto w-full max-w-[400px] sm:max-w-[560px] lg:mx-0 lg:max-w-none" />
         <div className="lg:max-w-2xl">
           <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl lg:text-4xl">Quizzes & flashcards</h1>
           <p className="mt-2 text-sm text-gray-600 sm:text-base lg:text-lg">{DESCRIPTION}</p>

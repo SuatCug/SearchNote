@@ -144,7 +144,7 @@ function HeroSection() {
         </div>
 
         <div className="flex-[1_1_440px] min-w-0 flex justify-center">
-          <StudyTableIllustration className="w-full max-w-[700px] h-auto" />
+          <StudyTableIllustration className="w-full max-w-[740px] h-auto" />
         </div>
       </Container>
     </section>
@@ -293,10 +293,10 @@ function AiSection() {
           </div>
         </div>
 
-        <div className="flex-[1_1_380px] min-w-0 flex justify-center">
-          {/* Görsellerin oranları farklı (diğerleri 480×400, bilgi ağacı 480×560): alan kare ve sabit; ikisinin arasında
-              bir oran seçildi ki ağaç fazla küçülmesin, diğerleri de fazla boşlukta kalmasın. */}
-          <div className="w-full max-w-[480px] aspect-square">
+        <div className="flex-[1_1_440px] min-w-0 flex justify-center">
+          {/* Görsellerin oranları farklı (Ask 3:2 ve Practice ~16:9 resim, bilgi ağacı 480×560 dikey çizim): alan 4:3 ve
+              sabit (sekme değişince sayfa kaymaz). Geniş resimler alanın enini doldurur, ağaç yüksekliğini. */}
+          <div className="w-full max-w-[640px] aspect-[4/3]">
             <Illustration key={tool.id} className="h-full w-full" />
           </div>
         </div>

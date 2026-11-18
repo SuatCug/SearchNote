@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FileSearch, Search, Sparkles, X } from 'lucide-react';
+import { ArrowRight, FileSearch, Search, Sparkles, X } from 'lucide-react';
 import PageLayout from '@/components/layout/PageLayout';
 import NotesSearchIllustration from '@/components/ai/NotesSearchIllustration';
 import EmptyState from '@/components/common/EmptyState';
@@ -124,8 +124,8 @@ export default function AskPage() {
   if (!searching) {
     return (
       <PageLayout>
-        <div className="grid items-center gap-6 sm:py-6 lg:grid-cols-2 lg:gap-12 lg:py-8">
-          <NotesSearchIllustration className="mx-auto h-auto w-full max-w-[280px] sm:max-w-[400px] lg:mx-0 lg:max-w-[560px]" />
+        <div className="grid items-center gap-6 sm:py-6 lg:grid-cols-[11fr_9fr] lg:gap-10 lg:py-8">
+          <NotesSearchIllustration className="mx-auto h-auto w-full max-w-[400px] sm:max-w-[560px] lg:mx-0 lg:max-w-none" />
           <div className="lg:max-w-2xl">
             {intro}
             {form}
@@ -146,7 +146,7 @@ export default function AskPage() {
             </div>
             <p className="mt-6 flex items-start gap-2 text-xs text-gray-500">
               <Sparkles size={14} className="mt-px shrink-0 text-navy-400" />
-              Answers are written by AI from the pages it finds, with numbers that link to each page.
+              Answers are written by AI from the pages it finds. The pages are listed under the answer.
             </p>
           </div>
         </div>
@@ -234,8 +234,8 @@ function Results({ result, query }: { result: AskResult; query: string }) {
           {result.answer?.length ? 'Sources' : 'Pages that match'}
         </h2>
         <ol className="space-y-3">
-          {result.sources.map((source, i) => (
-            <SourceCard key={source.chunkId} source={source} number={i + 1} query={query} />
+          {result.sources.map((source) => (
+            <SourceCard key={source.chunkId} source={source} query={query} />
           ))}
         </ol>
       </section>
@@ -243,43 +243,53 @@ function Results({ result, query }: { result: AskResult; query: string }) {
   );
 }
 
-// Cevap metni düz yazı olarak gösterilir; kaynaklar altta "Pages that match" listesinde.
+// Cevap metni düz yazı olarak gösterilir; kaynaklar altta "Pages that match" listesinde. Model kısa paragraflar
+// yazar: her biri ayrı, iki yana yaslı paragraf olur (satır sonları ve baştaki boşluklar hizayı bozmasın).
 function Answer({ segments }: { segments: AnswerSegment[] }) {
+  const paragraphs = segments
+    .map((segment) => segment.text)
+    .join('')
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim())
+    .filter(Boolean);
   return (
-    <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-gray-800">
-      {segments.map((segment) => segment.text).join('').trim()}
-    </p>
+    <div className="mt-2 space-y-3 text-[15px] leading-relaxed text-gray-800">
+      {paragraphs.map((p, i) => (
+        <p key={i} className="text-justify break-words">
+          {p}
+        </p>
+      ))}
+    </div>
   );
 }
 
-function SourceCard({ source, number, query }: { source: ContentSource; number: number; query: string }) {
+// Kaynak sayfa: başlık ve sağ üstteki sayfa bağlantısı aynı yere (notun o sayfası) gider. Numara yok: cevap
+// metni kaynaklara numarayla atıf yapmıyor. Alıntıdaki PDF satır sonları tek boşluğa indirilir.
+function SourceCard({ source, query }: { source: ContentSource; query: string }) {
   const { note, page } = source;
   const to = `/notes/${note._id}${page ? `?page=${page}` : ''}`;
   return (
-    <li id={`source-${number}`} className="card scroll-mt-24 p-4">
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-navy-50 text-xs font-bold text-navy-700">
-          {number}
-        </span>
-        <div className="min-w-0 flex-1">
-          <Link to={to} className="block font-semibold text-gray-900 hover:text-navy-700">
-            {note.courseCode ? `${note.courseCode} – ` : ''}
-            {note.title}
-          </Link>
-          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
-            {note.author && (
-              <span className="inline-flex items-center gap-1.5">
-                <UserAvatar user={note.author} size="xs" /> {note.author.fullName}
-              </span>
-            )}
-            {page && <span className="font-semibold text-navy-700">Page {page}</span>}
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">{highlight(source.snippet, query)}</p>
-          <Link to={to} className="mt-2 inline-block text-sm font-semibold text-navy-600 hover:underline">
-            {page ? `Open page ${page}` : 'Open note'}
-          </Link>
-        </div>
+    <li className="card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <Link to={to} className="min-w-0 font-semibold text-gray-900 hover:text-navy-700">
+          {note.courseCode ? `${note.courseCode} – ` : ''}
+          {note.title}
+        </Link>
+        <Link
+          to={to}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-navy-50 px-2 py-0.5 text-xs font-semibold text-navy-700 hover:bg-navy-100"
+        >
+          {page ? `Page ${page}` : 'Open note'} <ArrowRight size={12} aria-hidden="true" />
+        </Link>
       </div>
+      {note.author && (
+        <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-gray-500">
+          <UserAvatar user={note.author} size="xs" /> {note.author.fullName}
+        </p>
+      )}
+      <p className="mt-2 break-words text-sm leading-relaxed text-gray-700">
+        {highlight(source.snippet.replace(/\s+/g, ' ').trim(), query)}
+      </p>
     </li>
   );
 }
