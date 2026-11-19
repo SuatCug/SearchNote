@@ -7,8 +7,8 @@ export default function StudyTableIllustration({ className = '' }: { className?:
   return (
     <img
       src={studyTableImage}
-      width={1428}
-      height={906}
+      width={1535}
+      height={1024}
       decoding="async"
       fetchPriority="high"
       className={`object-contain mix-blend-multiply ${className}`}
