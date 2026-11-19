@@ -6,7 +6,7 @@
 keşfettiği ve aynı dersleri çalışan insanlarla bağ kurduğu; sosyal akış, anlık bildirimler,
 birebir mesajlaşma, çalışma grupları ve yapay zekâ destekli çalışma araçlarıyla birlikte gelen bir not paylaşım platformu.**
 
-[Özellikler](#-özellikler) · [Ekran görüntüleri](#-ekran-görüntüleri) · [Teknolojiler](#-kullanılan-teknolojiler) · [Kurulum](#-yerelde-çalıştırma) · [Deploy](#️-deploy)
+[Özellikler](#-özellikler) · [Ekran görüntüleri](#-ekran-görüntüleri) · [Teknolojiler](#-kullanılan-teknolojiler) · [Mobil uygulama](#-mobil-uygulama) · [Kurulum](#-yerelde-çalıştırma) · [Deploy](#️-deploy)
 
 ![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat&logo=node.js&logoColor=white)
 ![Express](https://img.shields.io/badge/Express_5-000000?style=flat&logo=express&logoColor=white)
@@ -70,14 +70,23 @@ dönülür. Yeni üyeler e-posta adreslerini doğrulamadan sitede gezemez.
   gibi ifadeler olmadan, sorunun dilinde) ve altında **sadece dayandığı sayfalar** listelenir; notlarda yoksa
   "The notes don't cover that" görünür, alakasız sayfa gösterilmez ve günlük soru hakkı iade edilir. Dış
   bilgiyle cevap verilmez
-- **Quizzes & flashcards (`/practice`):** ders kodu ya da konu yazıp not seç, 10 soruluk quiz ya da 15
-  flashcard al. Her soru geldiği sayfayı gösterir; üretilen setler not başına saklanır (sonraki öğrenciler
-  beklemeden açar). Quiz bitince "More questions on these topics" ile notla sınırlı olmayan konu pratiği turları
+- **Quizzes & flashcards (`/practice`):** ders kodu ya da konu yazıp not seç (sayfadaki arama + "Your courses"
+  kısayolları), quiz ya da 15 flashcard al. Üretilen setler not başına saklanır (sonraki öğrenciler beklemeden açar)
+- **İki quiz modu** (quiz açılırken seçilir):
+  - *Questions from the note* — notun öğrettiği terim, kavram, tanım ve formüller üzerine sorular; notun kendi
+    sorularından bazıları aynen alınabilir. "More questions from the note" ile yeni turlar
+  - *New questions* — aynı konu ve yöntemlerle, ama tamamen yapay zekânın yazdığı sorular (notun soru, örnek,
+    isim ve sayıları kullanılmaz)
+  - Quiz bitince "More new questions" ile notun ötesine geçen konu pratiği turları (yarısından azı doğru
+    cevaplanan tur tekrar gelir, en fazla 20 tur)
+- Soru ve şık sırası karıştırılır; her cevaptan sonra açıklama, *See page* bağlantısı ve **"Show step-by-step
+  solution"**. Matematik ifadeleri KaTeX ile gösterilir
 - **Kendi dosyanı yükle:** Quizzes & flashcards sayfasındaki *Upload your own file* ile PDF, DOCX ya da
   not fotoğrafı (JPG/PNG) yüklenir; dosya **sadece yükleyene görünür** (akış, Explore, profil, arama ve
   sayaçlarda çıkmaz, başkası bağlantıyla açarsa `404`). Sayfaları okununca quiz / flashcard açılır, istenince silinir
-- **Knowledge map (`/knowledge`):** quiz cevaplarından konu bazında doğru / yanlış takibi; zayıf konular,
-  onları besleyen temel konular ve çalışılacak not önerileri
+- **Knowledge map (`/knowledge`):** quiz cevaplarından konu bazında doğru / yanlış takibi, **ders bazında**
+  gösterilir: bilgi ağacı, özet sayılar, "Where to focus" (en zayıf dersler, önce tekrar edilecek konular ve
+  *Practise this course*) ve her dersin skor çubuğu + zayıf noktaları
 - Maliyet kontrolü için kullanıcı başına günlük soru / set sınırı; API anahtarı yoksa arama yine çalışır
 
 **👀 Ziyaretçi deneyimi**
@@ -103,7 +112,9 @@ dönülür. Yeni üyeler e-posta adreslerini doğrulamadan sitede gezemez.
 - JWT ile doğrulanan Socket.io bağlantısı; her kullanıcı kendi odasına, grup sohbetleri üyelere özel odalara bağlanır
 - Birebir mesajlar, grup sohbeti, bildirimler ve okunmamış rozetleri sayfa yenilenmeden anında güncellenir
 - **Active Now:** çevrimiçi durumu socket bağlantılarından canlı takip edilir; kişi uygulamayı kapatınca listeden anında düşer
-- Olaylar yalnızca "değişti" sinyali taşır, veri yetki kontrollü REST API'den çekilir; bağlantı koparsa polling yedeğe geçer ve yeniden bağlanınca kaçan olaylar senkronlanır
+- Mesaj olayları yeni / düzenlenen mesajı, silinen mesajın id'sini ya da okundu bilgisini doğrudan taşır;
+  istemci önbelleği yeniden istek atmadan günceller. Bağlantı koparsa polling yedeğe geçer ve yeniden
+  bağlanınca kaçan olaylar senkronlanır
 
 **🔔 Bildirimler**
 - Beğeni, yorum, yeni takipçi, gruba katılım, özel gruba katılma isteği ve isteğin onaylanması
@@ -113,14 +124,25 @@ dönülür. Yeni üyeler e-posta adreslerini doğrulamadan sitede gezemez.
 - Bildirimler 90 gün sonra MongoDB TTL index'iyle otomatik temizlenir
 
 **💬 Mesajlaşma & etkileşim**
-- Beğeni, yorum ve takip sistemi; profillerde not, beğeni, indirme ve takipçi istatistikleri
-- Birebir mesajlaşma, okunmamış mesaj rozeti, not sayfasından "Ask the author"
-- Kullanıcı engelleme (engellenen kişi mesaj atamaz, takip edemez, aramada çıkmaz)
+- Beğeni, yorum ve takip sistemi; beğenenler listesi ("N likes"), profillerde not, beğeni, indirme ve takipçi istatistikleri
+- Birebir mesajlaşma: yanıtlama, kendi mesajını düzenleme / silme, okundu bilgisi (tikler), "yazıyor…"
+  göstergesi, çevrimiçi durumu, emoji, sohbete not ekleme, eski mesajları yükleme
+- Mesaj anında görünür ("Sending" balonu); gönderilemezse *Retry / Remove*. Mesajlar socket üzerinden
+  gönderilir, cevap gelmezse aynı `clientId` ile REST'e düşer (sunucu tekrarları ayıklar)
+- Notu arkadaşlara gönderme / mesajı iletme (en fazla 10 kişi, isteğe bağlı mesajla)
+- Not sayfasından "Ask the author"; not detayında Like · Send · Save · Share
+- Kullanıcı engelleme (engellenen kişi mesaj atamaz, takip edemez, aramada çıkmaz), engellenenler listesi,
+  takipçi çıkarma, ortak takipçiler ("Followed by…"), kullanıcı şikâyeti
+- Takip, beğeni, kaydetme, yorum, bildirim okuma, engelleme gibi butonlar iyimser: sonuç beklenmeden anında güncellenir
 
 **👥 Çalışma grupları**
-- Herkese açık gruplar ve kurucu onaylı özel gruplar
-- Kurucu yetkileri: düzenleme, silme, üye çıkarma, kuruculuğu devretme, katılma isteklerini yönetme
-- Grup sohbeti ve yalnızca üyelere görünen grup notları
+- Herkese açık gruplar ve kurucu onaylı özel gruplar (katılma isteğine mesaj eklenebilir)
+- Grup rengi, ders kodu, üniversite ve **grup profil fotoğrafı**
+- Roller: **kurucular** (birden fazla olabilir; düzenleme, silme, kurucu / yönetici atama) ve **yöneticiler**
+  (normal üyeleri çıkarma, katılma isteklerini yönetme, sohbette mesaj silme)
+- Grup sohbeti (yanıtlama, düzenleme, not ekleme) ve yalnızca üyelere görünen grup notları
+- My Groups: okunmamış rozetli aktivite kartları, favoriler, gruplarda arama; Explore'da filtreler; Requests
+  sekmesinde gelen / gönderilen istekler; grubu sessize alma
 
 **🔎 Arama & keşif**
 - Kelime bazlı arama: başlık, ders adı/kodu, hoca, üniversite, bölüm ve **yazar adında** arar
@@ -133,15 +155,16 @@ dönülür. Yeni üyeler e-posta adreslerini doğrulamadan sitede gezemez.
   yatay kaydırmalı popüler ders etiketleri ve akış arasında takip önerisi kartları
 
 **✉️ Hesap & e-posta doğrulama**
-- Kayıttan sonra 24 saat geçerli, tek kullanımlık doğrulama bağlantısı (Brevo HTTP API ile gönderilir;
-  yoksa SMTP, o da yoksa geliştirmede konsola yazılır)
-- **Doğrulama zorunlu:** doğrulanmamış hesap her sayfada "Check your email" ekranına yönlendirilir;
-  bu ekrandan bağlantıyı tekrar isteyebilir ya da çıkış yapabilir
-- Bağlantı başka bir cihazda/sekmede tıklansa bile ekran durumu birkaç saniyede bir kontrol eder ve
-  doğrulanınca kendiliğinden siteye geçer
-- Kilit API düzeyinde de uygulanır: doğrulanmamış oturumların içerik endpoint'leri `403` döner,
-  Socket.io bağlantısı reddedilir
-- Mail gönderilemezse kayıt bozulmaz; kullanıcı daha sonra yeni bağlantı isteyebilir
+- **Kodlu kayıt**, her adımda tek soru: e-posta → 6 haneli kod (10 dakika geçerli) → ad → şifre → okul
+  (üniversite listesinden seçim). Tarayıcının geri tuşu bir önceki adıma döner
+- **Google ile giriş** (web: kendi Google butonu + GIS token client; mobil: idToken). Google ile gelen yeni
+  hesap sadece okulunu seçer
+- Yeni hesaplar `/welcome` sayfasına gelir: profil fotoğrafı ve sınıf arkadaşlarını takip önerileri
+- **Şifremi unuttum:** hesabı bulma → e-postaya kod → yeni şifre
+- Ayarlar: fotoğrafı kaldırma, şifresi olmayan (Google) hesaba şifre ekleme, engellenenler, e-posta koduyla hesap silme
+- Mailler Brevo HTTP API ile gönderilir; yoksa SMTP, o da yoksa geliştirmede konsola yazılır
+- **Doğrulama zorunlu:** doğrulanmamış hesap her sayfada "Check your email" ekranına yönlendirilir; kilit
+  API düzeyinde de uygulanır (içerik endpoint'leri `403`, Socket.io bağlantısı reddedilir)
 - İsteğe bağlı `.edu.tr` e-posta şartı (özellik anahtarıyla açılıp kapatılır)
 
 **Altyapı**
@@ -152,7 +175,9 @@ dönülür. Yeni üyeler e-posta adreslerini doğrulamadan sitede gezemez.
 - Dosyalar Cloudinary'de (not dosyaları imzalı / yetkili erişimle) ya da yapılandırılmamışsa yerel diskte
 - Yapay zekâ: Anthropic Claude API (cevaplar, quiz / flashcard, OCR), metin çıkarma için unpdf + mammoth
 - Özellik anahtarları: `REQUIRE_EMAIL_VERIFICATION`, `REQUIRE_EDU_EMAIL` (`.env` üzerinden açılıp kapatılır)
-- `npm run seed` ile demo kullanıcı, not, grup ve sohbet verisinin yüklenmesi
+- `npm run seed` ile demo kullanıcı, not, grup ve sohbet verisinin yüklenmesi; `npm run seed:people` ile
+  uygulamayı API üzerinden gerçek kullanıcı gibi kullanan 5 örnek kişi (aynı zamanda uçtan uca deneme)
+- Android uygulaması (Expo) aynı backend'i kullanır — bkz. [Mobil uygulama](#-mobil-uygulama)
 
 ## 📸 Ekran görüntüleri
 
@@ -161,7 +186,17 @@ dönülür. Yeni üyeler e-posta adreslerini doğrulamadan sitede gezemez.
 | **Tanıtım sayfası (ziyaretçi)** <br> ![Tanıtım sayfası](docs/screenshots/01-landing.png) | **Sosyal akış** <br> ![Akış](docs/screenshots/02-akis.png) |
 | **Not detayı — PDF önizleme** <br> ![Not detayı](docs/screenshots/03-not-detay.png) | **Bildirimler** <br> ![Bildirimler](docs/screenshots/04-bildirimler.png) |
 | **Profil** <br> ![Profil](docs/screenshots/05-profil.png) | **Çalışma grubu — sohbet** <br> ![Grup sohbeti](docs/screenshots/06-grup-sohbet.png) |
-| **Mobil — tanıtım sayfası** <br> <img src="docs/screenshots/07-mobil-landing.png" alt="Mobil tanıtım sayfası" width="300"> | **Mobil — akış** <br> <img src="docs/screenshots/08-mobil-akis.png" alt="Mobil akış" width="300"> |
+| **Search inside notes** <br> ![Search inside notes](docs/screenshots/07-ask.png) | **Quizzes & flashcards** <br> ![Quizzes & flashcards](docs/screenshots/08-practice.png) |
+| **Knowledge map** <br> ![Knowledge map](docs/screenshots/09-knowledge.png) | |
+
+### 📱 Mobil uygulama (Android)
+
+| | | |
+|---|---|---|
+| **Giriş** <br> <img src="docs/screenshots/mobil/01-giris.jpg" alt="Giriş" width="230"> | **Akış** <br> <img src="docs/screenshots/mobil/02-akis.jpg" alt="Akış" width="230"> | **Profil** <br> <img src="docs/screenshots/mobil/03-profil.jpg" alt="Profil" width="230"> |
+| **Profil — notlar ve gruplar** <br> <img src="docs/screenshots/mobil/04-profil-notlar.jpg" alt="Profil notları" width="230"> | **Gruplar** <br> <img src="docs/screenshots/mobil/05-gruplar.jpg" alt="Gruplar" width="230"> | **Mesajlar** <br> <img src="docs/screenshots/mobil/06-mesajlar.jpg" alt="Mesajlar" width="230"> |
+| **Not yükleme** <br> <img src="docs/screenshots/mobil/07-not-yukle.jpg" alt="Not yükleme" width="230"> | **Search inside notes** <br> <img src="docs/screenshots/mobil/08-ask.jpg" alt="Search inside notes" width="230"> | **Notlardan cevap ve kaynaklar** <br> <img src="docs/screenshots/mobil/09-ask-cevap.jpg" alt="Cevap" width="230"> |
+| **Quizzes & flashcards** <br> <img src="docs/screenshots/mobil/10-practice.jpg" alt="Quizzes & flashcards" width="230"> | **Quiz — Questions from the note** <br> <img src="docs/screenshots/mobil/11-quiz.jpg" alt="Quiz" width="230"> | **Knowledge map — ders detayı** <br> <img src="docs/screenshots/mobil/12-knowledge.jpg" alt="Knowledge map" width="230"> |
 
 ## 🛠 Kullanılan teknolojiler
 
@@ -169,9 +204,11 @@ dönülür. Yeni üyeler e-posta adreslerini doğrulamadan sitede gezemez.
 |---|---|
 | **Frontend** | React 19 + TypeScript (strict), Vite 8, Redux Toolkit + RTK Query, React Router 7, Tailwind CSS 4, Socket.io Client, lucide-react, pdf.js (pdfjs-dist), oxlint |
 | **Backend** | Node.js + TypeScript (strict, derleme adımı yok — Node `.ts` dosyalarını doğrudan çalıştırır), Express 5, MongoDB + Mongoose, Socket.io, JWT (jsonwebtoken), bcryptjs, express-validator, Multer, helmet, morgan, cors, Nodemailer, dotenv |
-| **Yapay zekâ** | Anthropic Claude API (`@anthropic-ai/sdk`), unpdf, mammoth, isteğe bağlı Voyage AI embeddings + Atlas Vector Search |
+| **Yapay zekâ** | Anthropic Claude API (`@anthropic-ai/sdk`), unpdf, mammoth, KaTeX, isteğe bağlı Voyage AI embeddings + Atlas Vector Search |
+| **Giriş** | Google Identity Services (web), Google token doğrulaması (backend) |
 | **Depolama** | Cloudinary (yapılandırılmamışsa `backend/uploads` yerel disk) |
-| **Deploy** | Netlify (frontend) · Render (backend) · MongoDB Atlas (veritabanı) |
+| **Mobil** | Expo + React Native (TypeScript), Expo Router, TanStack Query, Socket.io Client, expo-notifications, Google Sign-In, EAS Build — ayrı repo: [mobil-app](https://github.com/SuatCug/mobil-app) |
+| **Deploy** | Netlify (frontend) · Render (backend) · MongoDB Atlas (veritabanı) · Android APK (EAS) |
 
 ## 📁 Proje yapısı
 
@@ -188,7 +225,7 @@ proje4/
 │   │                        # (görünürlük kuralları), group, block, mail (Brevo / SMTP), noteIndex (metin
 │   │                        # çıkarma + arama), ai (Claude), practice, knowledge
 │   ├── sockets/             # Socket.io sunucusu: JWT el sıkışması, kullanıcı/grup odaları, presence
-│   ├── scripts/             # seed.ts (demo veri), migrateToCloudinary.ts
+│   ├── scripts/             # seed.ts (demo veri), seedPeople.ts (örnek kişiler), migrateToCloudinary.ts
 │   ├── types/               # Express req.user tanımı, ortak tipler
 │   ├── validations/         # express-validator kural setleri
 │   ├── utils/               # jwt, pagination, regex (kelime bazlı arama), dosya imzası kontrolü
@@ -213,6 +250,33 @@ proje4/
 │       └── lib/             # socket istemcisi, sabitler, biçimlendirme, indirme yardımcıları
 └── docs/screenshots/        # README ekran görüntüleri
 ```
+
+## 📱 Mobil uygulama
+
+Android uygulaması ayrı bir repoda: **[SuatCug/mobil-app](https://github.com/SuatCug/mobil-app)** (Expo / React Native).
+Web sitesiyle **aynı backend'i ve veritabanını** kullanır; hesaplar, notlar, gruplar ve mesajlar iki tarafta ortaktır.
+APK'yı tanıtım sayfasındaki *Get the Android app* bağlantısından indirebilirsiniz.
+
+- Akış, keşfet, not yükleme / indirme / önizleme, profil, takip, gruplar ve grup sohbeti, birebir mesajlaşma,
+  bildirimler ve Learn with AI (Search inside notes · Quizzes & flashcards · Knowledge map)
+- Sadece mobilde: **push bildirimleri** (`expo-notifications`; token'lar `/users/me/push-tokens`, tercihler
+  `/users/me/notification-settings` uçlarında) ve yerel Google ile giriş (`idToken`)
+- Paylaşılan not bağlantıları web sitesine gider, böylece uygulaması olmayan da açabilir
+- Backend adresi `src/constants/config.ts` → `API_ORIGIN` içinde sabit yazılıdır; adres değişirse yeni APK gerekir
+  (uygulamada `expo-updates` yok)
+
+```bash
+# mobil-app reposunda
+npm install
+npx expo start                                        # Expo Go ile QR kodu okut
+npx eas-cli@latest build -p android --profile preview # APK
+npx tsc --noEmit && npx expo lint                     # tip + lint kontrolü
+```
+
+> **Uyumluluk:** Backend'e eklenen alanlar eski APK'ları bozmamalı. Bu yüzden bazı eski uçlar ve alanlar
+> mobil için korunur (örn. `POST /groups/:id/owner/:userId`, tüm kuruculara `true` dönen `isOwner`, socket olaylarındaki eski alanlar).
+
+Ekran görüntüleri: [Mobil uygulama (Android)](#-mobil-uygulama-android).
 
 ## 🚀 Yerelde çalıştırma
 
@@ -256,6 +320,8 @@ npm run dev                 # http://localhost:5173
 | `BREVO_API_KEY` | Doğrulama e-postaları Brevo HTTP API ile gönderilir (önerilen; SMTP portu gerektirmez) |
 | `SMTP_HOST` · `SMTP_PORT` · `SMTP_USER` · `SMTP_PASS` | Brevo yoksa SMTP ile gönderim; ikisi de boşsa doğrulama bağlantısı konsola yazılır |
 | `MAIL_FROM` | Gönderici, örn. `SearchNote <adres@ornek.com>` (Brevo'da onaylanmış gönderici olmalı) |
+| `CONTACT_INBOX` | İletişim formundan gelen mesajların bildirileceği adres (boşsa sadece veritabanına kaydedilir) |
+| `GOOGLE_CLIENT_IDS` | Google ile girişte kabul edilen OAuth Client ID'leri (web + mobil, virgülle) |
 | `CLOUDINARY_URL` | `cloudinary://<api_key>:<api_secret>@<cloud_name>`; boşsa dosyalar yerel diske kaydedilir |
 | `ANTHROPIC_API_KEY` | Yapay zekâ cevapları, quiz / flashcard ve taranmış sayfa okuma; boşsa bu özellikler kapalıdır (not içi kelime araması yine çalışır) |
 | `AI_MODEL` | Kullanılan Claude modeli (varsayılan `claude-haiku-5-5`) |
@@ -272,6 +338,7 @@ npm run dev                 # http://localhost:5173
 |---|---|
 | `VITE_API_URL` | Backend API kök adresi (örn. `http://localhost:5000/api`) |
 | `VITE_REQUIRE_EDU_EMAIL` | Backend'deki `REQUIRE_EDU_EMAIL` ile aynı tutulmalı |
+| `VITE_GOOGLE_CLIENT_ID` | "Continue with Google" için Web OAuth Client ID; site adresi Google Console'da *Authorized JavaScript origins* listesinde olmalı. Boşsa buton gizlenir |
 
 ### Faydalı komutlar
 
@@ -282,6 +349,7 @@ npm run dev                 # http://localhost:5173
 | backend | `npm run typecheck` | TypeScript tip kontrolü (`tsc`) |
 | backend | `npm run seed` | Veritabanına demo kullanıcı, not, grup ve sohbet verisi yükle |
 | backend | `npm run seed:clear` | Demo veriyi sil |
+| backend | `npm run seed:people` · `npm run seed:people:clear` | Örnek kişileri oluştur (yerel API açık olmalı) / sil |
 | backend | `npm run migrate:cloudinary` | Yerel diskteki dosyaları Cloudinary'ye taşı |
 | frontend | `npm run dev` | Vite geliştirme sunucusu |
 | frontend | `npm run build` | Tip kontrolü + üretim derlemesi (`dist/`) |
@@ -303,9 +371,13 @@ görür, hiçbir listede çıkmaz ve düzenlemeyle herkese açılamaz.
 
 | Yöntem | Uç | Açıklama |
 |---|---|---|
-| `POST` | `/auth/register` · `/auth/login` | Kayıt / giriş |
+| `POST` | `/auth/register/send-code` · `/verify-code` · `/complete` | Kodlu kayıt adımları (eski `/auth/register` de duruyor) |
+| `POST` | `/auth/login` | Giriş |
+| `POST` | `/auth/google` · `/auth/google/complete` | Google ile giriş (`idToken` ya da `accessToken`) / yeni Google hesabını tamamlama |
+| `POST` | `/auth/forgot-password/lookup` · `/forgot-password` · `/verify` · `/reset` | Şifre sıfırlama adımları |
 | `GET` | `/auth/me` 🔒 | Oturumdaki kullanıcı |
 | `POST` | `/auth/verify-email` · `/auth/resend-verification` 🔒 | E-posta doğrulama |
+| `GET` | `/universities` · `/universities/departments` | Okul ve bölüm listeleri |
 | `GET` | `/notes` 👀 | Not arama ve filtreleme (`q`, `university`, `department`, `courseCode`, `sort` ...); ziyaretçiye sadece herkese açık notlar |
 | `GET` | `/notes/feed` · `/notes/saved` 🔒 | Takip edilenlerin notları / kaydedilen notlar |
 | `GET` | `/notes/filters` · `/notes/trending-courses` 👀 | Filtre seçenekleri / popüler dersler |
@@ -313,25 +385,36 @@ görür, hiçbir listede çıkmaz ve düzenlemeyle herkese açılamaz.
 | `POST` · `PATCH` · `DELETE` | `/notes` · `/notes/:id` 🔒 | Not yükleme (multipart, alan: `file`; isteğe bağlı `visibility`, `group`) / düzenleme / silme |
 | `GET` | `/notes/:id/preview` 👀 · `/notes/:id/download` 🔒 | Önizleme (görünürlük kuralları geçerli) / indirme |
 | `POST` · `DELETE` | `/notes/:id/like` 🔒 · `/notes/:id/save` 🔒 | Beğeni / kaydetme |
+| `GET` | `/notes/:id/likes` 🔒 | Beğenenler listesi (sayfalı) |
 | `POST` · `DELETE` | `/notes/:id/comments` 🔒 · `/notes/:id/comments/:commentId` 🔒 | Yorum ekleme / silme |
 | `GET` | `/users/search` 👀 · `/users/active` · `/users/suggestions` 🔒 | Kişi arama / aktif takipleşilenler / takip önerileri |
-| `GET` | `/users/:id` · `/users/:id/notes` · `/users/:id/followers` · `/users/:id/following` | Profil ve listeleri |
-| `PATCH` · `PUT` | `/users/me` · `/users/me/avatar` · `/users/me/password` 🔒 | Profil, avatar, şifre güncelleme |
+| `GET` | `/users/:id` · `/notes` · `/courses` · `/groups` · `/followers` · `/following` | Profil ve listeleri |
+| `GET` | `/users/:id/mutual-followers` 🔒 | Ortak takipçiler ("Followed by…") |
+| `PATCH` · `PUT` · `DELETE` | `/users/me` · `/users/me/avatar` · `/users/me/password` 🔒 | Profil, avatar (ekleme / kaldırma), şifre |
+| `POST` · `DELETE` | `/users/me/delete-code` · `/users/me` 🔒 | Hesap silme kodu / hesabı silme |
+| `GET` · `DELETE` | `/users/me/blocked` · `/users/me/followers/:id` 🔒 | Engellenenler / takipçi çıkarma |
 | `POST` · `DELETE` | `/users/:id/follow` 🔒 · `/users/:id/block` 🔒 | Takip / engelleme |
-| `GET` · `POST` | `/groups` · `/groups/mine` | Grup arama / gruplarım / grup oluşturma |
+| `POST` | `/users/:id/report` 🔒 | Kullanıcı şikâyeti |
+| `POST` · `DELETE` · `GET` · `PATCH` | `/users/me/push-tokens` · `/users/me/notification-settings` 🔒 | Mobil bildirim token'ları ve ayarları |
+| `GET` · `POST` | `/groups` · `/groups/mine` · `/groups/mine/activity` · `/groups/favorites` | Grup arama / gruplarım / aktivite / favoriler / grup oluşturma |
+| `GET` | `/groups/requests/incoming` · `/groups/requests/sent` 🔒 | Gelen / gönderilen katılma istekleri |
 | `GET` · `PATCH` · `DELETE` | `/groups/:id` | Grup detayı / düzenleme / silme (kurucu) |
-| `POST` · `DELETE` | `/groups/:id/join` 🔒 | Katılma (özel grupta istek) / ayrılma |
-| `GET` · `POST` · `DELETE` | `/groups/:id/requests/:userId` 🔒 | Katılma isteklerini listeleme / onaylama / reddetme (kurucu) |
-| `DELETE` · `POST` | `/groups/:id/members/:userId` · `/groups/:id/owner/:userId` 🔒 | Üye çıkarma / kuruculuğu devretme |
-| `GET` · `POST` | `/groups/:id/notes` · `/groups/:id/messages` 🔒 | Grup notları / grup sohbeti |
+| `PUT` · `DELETE` | `/groups/:id/avatar` 🔒 | Grup fotoğrafı (kurucu veya yönetici) |
+| `POST` · `DELETE` | `/groups/:id/join` · `/favorite` · `/mute` 🔒 | Katılma (özel grupta istek) / ayrılma, favori, sessize alma |
+| `GET` · `POST` · `DELETE` | `/groups/:id/requests/:userId` 🔒 | Katılma isteklerini listeleme / onaylama / reddetme (kurucu veya yönetici) |
+| `POST` · `DELETE` | `/groups/:id/founders/:userId` · `/groups/:id/admins/:userId` 🔒 | Kurucu / yönetici ekleme ve çıkarma (kendi rolünü bırakma) |
+| `DELETE` · `POST` | `/groups/:id/members/:userId` · `/groups/:id/owner/:userId` 🔒 | Üye çıkarma / kuruculuğu devretme (mobil uyumluluk için) |
+| `GET` | `/groups/:id/members` · `/groups/:id/followed-members` | Üyeler / takip ettiğin üyeler |
+| `GET` · `POST` · `PATCH` · `DELETE` | `/groups/:id/notes` · `/groups/:id/messages(/:messageId)` 🔒 | Grup notları / grup sohbeti (gönderme, düzenleme, silme) |
 | `GET` · `POST` | `/messages/conversations` 🔒 | Konuşmalar / yeni konuşma başlatma |
-| `GET` · `POST` · `DELETE` | `/messages/conversations/:id` · `/messages/conversations/:id/messages` 🔒 | Konuşma, mesaj gönderme ve silme |
+| `GET` · `DELETE` | `/messages/conversations/:id` 🔒 | Konuşma / konuşmayı silme |
+| `GET` · `POST` · `PATCH` · `DELETE` | `/messages/conversations/:id/messages(/:messageId)` 🔒 | Eski mesajlar, gönderme, düzenleme, silme |
 | `GET` | `/messages/unread-count` 🔒 | Okunmamış mesaj sayısı |
 | `GET` | `/notifications` · `/notifications/unread-count` 🔒 | Bildirimler / okunmamış sayısı |
 | `POST` · `PATCH` | `/notifications/read-all` · `/notifications/:id/read` 🔒 | Okundu işaretleme |
 | `GET` | `/ai/status` 🔒 | Yapay zekâ / anlamsal arama açık mı |
 | `POST` | `/ai/ask` 🔒 | Notların içinde arama + kaynaklı cevap (`question`, isteğe bağlı `noteId`, `courseCode`). Notlar soruyu cevaplamıyorsa `notCovered: true` ve boş `sources` döner |
-| `POST` | `/ai/notes/:id/study/:kind` 🔒 | Quiz / flashcard / konu pratiği seti (`quiz` · `flashcards` · `topic-quiz`) |
+| `POST` | `/ai/notes/:id/study/:kind` 🔒 | Çalışma seti: `note-quiz` (notun soruları, `?more=1` yeni tur) · `quiz` (yeni sorular) · `flashcards` · `topic-quiz` (konu pratiği turları) |
 | `POST` | `/ai/notes/:id/quiz/answers` 🔒 | Quiz cevabını kaydet (bilgi haritası) |
 | `GET` | `/ai/practice` · `/ai/knowledge` 🔒 | Quiz listesi (`q` ile arama) / kişisel bilgi haritası |
 | `POST` | `/ai/files` 🔒 | Kişisel çalışma dosyası yükleme (multipart, alan: `file`; isteğe bağlı `title`, `courseCode`). Silme: `DELETE /notes/:id` |
@@ -345,9 +428,13 @@ Bağlantı `io(API_ORIGIN, { auth: { token } })` ile kurulur; el sıkışmada JW
 | Yön | Olay | Açıklama |
 |---|---|---|
 | sunucu → istemci | `notifications:changed` | Yeni / silinen / okunan bildirim (zil rozeti ve liste yenilenir) |
-| sunucu → istemci | `message:changed` | Konuşmada yeni / silinen mesaj ya da okundu bilgisi (`{ conversationId }`) |
-| sunucu → istemci | `group:message` | Grup sohbetinde yeni / silinen mesaj (`{ groupId }`) |
-| sunucu → istemci | `presence:changed` | Takip edilen biri çevrimiçi / çevrimdışı oldu |
+| sunucu → istemci | `message:changed` | Konuşmada yeni / düzenlenen (`message`), silinen (`deletedId`) mesaj ya da okundu bilgisi (`readBy`, `readAt`) |
+| sunucu → istemci | `group:message` | Grup sohbetinde yeni / düzenlenen (`message`) ya da silinen (`deletedId`) mesaj |
+| sunucu → istemci | `group:activity` | Üyesi olunan grupta yeni mesaj / not (My Groups okunmamış rozetleri) |
+| sunucu → istemci | `presence:changed` · `dm:presence` | Takip edilen biri / mesajlaşılan kişi çevrimiçi ya da çevrimdışı oldu |
+| sunucu → istemci | `dm:typing` | Karşı taraf yazıyor |
+| istemci → sunucu | `dm:send` | Birebir mesaj gönderme (ack döner; zaman aşımında istemci REST'e düşer) |
+| istemci → sunucu | `dm:typing` | Yazıyor bilgisi (karşı tarafa iletilir) |
 | istemci → sunucu | `group:join` · `group:leave` | Grup sohbeti odasına katılma (üyelik kontrollü, ack döner) / ayrılma |
 
 Socket bağlı değilken mesajlar (5 sn), konuşma listesi (10 sn), rozetler/bildirimler (30 sn) ve aktif
@@ -359,7 +446,7 @@ kullanıcılar (60 sn) yedek olarak polling ile yenilenir.
 - Site oluştururken *Base directory* = `frontend`, *Build command* = `npm run build`, *Publish directory* = `frontend/dist`.
 - SPA yönlendirmesi `frontend/public/_redirects` dosyasındaki `/* /index.html 200` kuralıyla sağlanır
   (doğrudan `/notes/...` gibi bir path'e gidince 404 olmaması için).
-- Ortam değişkenleri: `VITE_API_URL` = yayınlanan backend'in `/api` adresi, `VITE_REQUIRE_EDU_EMAIL`.
+- Ortam değişkenleri: `VITE_API_URL` = yayınlanan backend'in `/api` adresi, `VITE_REQUIRE_EDU_EMAIL`, `VITE_GOOGLE_CLIENT_ID`.
 - `main` branch'e her push'ta Netlify otomatik yeniden build alır.
 
 **Backend → Render (veya Railway, Fly.io vb.)**
@@ -368,7 +455,8 @@ kullanıcılar (60 sn) yedek olarak polling ile yenilenir.
 - Ortam değişkenleri: `MONGO_URI` (MongoDB Atlas), `JWT_SECRET`, `JWT_EXPIRES_IN`, `CLIENT_URL`,
   `CLOUDINARY_URL`, `NODE_ENV=production`; e-posta doğrulaması için `REQUIRE_EMAIL_VERIFICATION=true`,
   `BREVO_API_KEY` ve `MAIL_FROM` (değeri tırnaksız, örn. `SearchNote <adres@ornek.com>`); yapay zekâ özellikleri
-  için `ANTHROPIC_API_KEY` (`AI_MOCK` canlıda eklenmemeli); anlamsal arama için `VOYAGE_API_KEY`.
+  için `ANTHROPIC_API_KEY` (`AI_MOCK` canlıda eklenmemeli); anlamsal arama için `VOYAGE_API_KEY`; Google ile
+  giriş için `GOOGLE_CLIENT_IDS`.
 - **Sıra önemli:** önce backend, sonra frontend deploy edilmeli (ziyaretçi Explore sayfası yeni herkese açık
   uçlara dayanır). `VOYAGE_API_KEY` Render'a ancak `voyage-4` varsayılanlı kod deploy edildikten sonra
   eklenmeli; eski kod `voyage-3.5` kullanır ve vektörler uyuşmaz.
