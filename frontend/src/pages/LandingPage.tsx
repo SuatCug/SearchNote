@@ -87,7 +87,7 @@ function ChipList({ items, extra }: { items: string[]; extra: string[] }) {
 function HeroSection() {
   const [googleError, setGoogleError] = useState('');
   return (
-    <section id="top" className="scroll-mt-[72px]">
+    <section id="top" className="scroll-mt-[72px] overflow-x-clip">
       <Container className="pt-8 pb-14 sm:pt-10 sm:pb-16 flex flex-wrap items-center gap-8">
         <div className="flex-[1_1_420px] max-w-[540px] flex flex-col gap-8">
           <h1 className="m-0 font-light leading-[1.15] text-navy-900 text-balance text-[36px] sm:text-[46px] lg:text-[56px]">
@@ -143,8 +143,9 @@ function HeroSection() {
           </div>
         </div>
 
-        <div className="flex-[1_1_440px] min-w-0 flex justify-center">
-          <StudyTableIllustration className="w-full max-w-[740px] h-auto" />
+        <div className="flex-[1_1_440px] min-w-0 flex justify-center lg:justify-start">
+          {/* lg+: sütun ~530px kalıyor; görsel %10 taşarak biraz büyür (sağa, kenar boşluğuna doğru) */}
+          <StudyTableIllustration className="w-full max-w-[740px] lg:w-[110%] lg:max-w-none lg:shrink-0 h-auto" />
         </div>
       </Container>
     </section>
@@ -293,7 +294,7 @@ function AiSection() {
           </div>
         </div>
 
-        <div className="flex-[1_1_440px] min-w-0 flex justify-center">
+        <div className="flex-[1_1_440px] min-w-0 flex justify-center lg:justify-start">
           {/* Görsellerin oranları farklı (Ask 3:2 ve Practice ~16:9 resim, bilgi ağacı 480×560 dikey çizim): alan 4:3 ve
               sabit (sekme değişince sayfa kaymaz). Geniş resimler alanın enini doldurur, ağaç yüksekliğini. */}
           <div className="w-full max-w-[640px] aspect-[4/3]">
